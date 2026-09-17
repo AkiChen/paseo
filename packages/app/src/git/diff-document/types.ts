@@ -40,7 +40,7 @@ export type DiffDocumentProps = DiffDocumentBaseProps &
           onChange: (paths: string[]) => void;
         };
       }
-    | { mode: { kind: "commit" }; collapseState?: never }
+    | { mode: { kind: "commit"; reviewActions?: InlineReviewActions }; collapseState?: never }
   );
 
 export interface DiffTypography {

@@ -2223,7 +2223,10 @@ const CheckoutCommitSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
   subject: z.string(),
+  // COMPAT(commitMessage): added in v0.8.0; older hosts omit the full body.
+  message: z.string().optional(),
   authorName: z.string(),
+  authorEmail: z.string().optional(),
   authorDate: z.string(), // ISO 8601
   isOnRemote: z.boolean(), // false = local-only (unpushed)
   // COMPAT(commitBaseClassification): added in v0.2.0, remove optional after 2027-01-23.

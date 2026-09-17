@@ -11,6 +11,13 @@ import { isWeb } from "@/constants/platform";
 import { DiffDocument } from "@/git/diff-document";
 import { ChangesSurface, DiffLayoutToggle, resolveDiffLayout } from "@/git/diff-pane";
 import { useCommitDiffFiles } from "@/git/use-diff-files";
+import { CommitDetails } from "@/git/commit-details";
+import {
+  buildReviewDraftKey,
+  useInlineReviewController,
+  useReviewAttachmentSnapshot,
+} from "@/review";
+import { usePublishWorkingDiffAttachment } from "@/git/use-working-diff";
 import { useChangesPreferences } from "@/hooks/use-changes-preferences";
 import { useAppSettings } from "@/hooks/use-settings";
 import { usePaneContext } from "@/panels/pane-context";
@@ -153,15 +160,43 @@ function CommitDiffPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target } = usePaneContext();
   const cwd = useWorkspaceDirectory(serverId, workspaceId);
+  const isActive = useRetainedPanelActive();
   const panelPreferences = useDiffPanelPreferences();
   invariant(target.kind === "commit_diff", "CommitDiffPanel requires commit_diff target");
-  const { files, isLoading, error, capabilityMissing } = useCommitDiffFiles({
+  const { files, commit, isLoading, error, capabilityMissing } = useCommitDiffFiles({
     serverId,
     cwd: cwd ?? "",
     sha: target.sha,
     enabled: Boolean(cwd),
   });
-  const mode = useMemo(() => ({ kind: "commit" as const }), []);
+  const reviewDraftKey = useMemo(
+    () =>
+      buildReviewDraftKey({
+        serverId,
+        workspaceId,
+        cwd: cwd ?? "",
+        mode: "base",
+        baseRef: `commit:${target.sha}`,
+        ignoreWhitespace: false,
+      }),
+    [cwd, serverId, target.sha, workspaceId],
+  );
+  const reviewActions = useInlineReviewController({ reviewDraftKey });
+  const reviewAttachment = useReviewAttachmentSnapshot({
+    key: reviewDraftKey,
+    diffFiles: files,
+    cwd: cwd ?? "",
+    mode: "base",
+    baseRef: `${target.sha}^`,
+  });
+  usePublishWorkingDiffAttachment({
+    serverId,
+    workspaceId,
+    cwd: cwd ?? "",
+    attachment: reviewAttachment,
+    enabled: Boolean(cwd) && isActive,
+  });
+  const mode = useMemo(() => ({ kind: "commit" as const, reviewActions }), [reviewActions]);
 
   let body: ReactNode;
   if (!cwd) {
@@ -205,6 +240,7 @@ function CommitDiffPanel() {
           </View>
         </PaneContentToolbar>
       ) : null}
+      {commit ? <CommitDetails commit={commit} /> : null}
       <View style={styles.body}>{body}</View>
     </View>
   );

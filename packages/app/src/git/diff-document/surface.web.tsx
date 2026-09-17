@@ -10,7 +10,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useToast } from "@/contexts/toast-context";
-import { InlineReviewAddButton, InlineReviewThread } from "@/review";
+import { InlineReviewAddButton, InlineReviewThread, type InlineReviewActions } from "@/review";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import type { ReviewableDiffTarget } from "@/utils/diff-layout";
 import { DocumentFileHeader } from "./document-file-header";
@@ -157,7 +157,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     readyTypographyResource === typographyResource ? typographyResource.typography : null;
   const measurement =
     readyTypographyResource === typographyResource ? typographyResource.measureText : null;
-  const reviewActions = props.mode.kind === "working" ? props.mode.reviewActions : undefined;
+  const reviewActions = props.mode.reviewActions;
   const model = useMemo(() => {
     if (!loadedTypography || !measurement) {
       return emptyDiffDocumentModel({
@@ -837,7 +837,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
                 onScroll={handleHorizontalScroll}
               />
             ))}
-          {props.mode.kind === "working" && reviewActions
+          {reviewActions
             ? model.rows.map((row) => {
                 if (row.kind !== "line" || row.reviewHeight === 0) return null;
                 const columnWidth = model.viewportWidth / row.cells.length;
@@ -1030,7 +1030,7 @@ function WebReviewThread({
   pinToViewport,
 }: {
   target: ReviewableDiffTarget;
-  actions: NonNullable<Extract<DiffSurfaceProps["mode"], { kind: "working" }>["reviewActions"]>;
+  actions: InlineReviewActions;
   top: number;
   left: number;
   width: number;

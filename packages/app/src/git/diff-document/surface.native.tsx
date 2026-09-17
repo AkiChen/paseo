@@ -107,7 +107,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     () => createNativeTextMeasurer({ configuredFamily: family, fontSize: typography.size }),
     [family, typography.size],
   );
-  const reviewActions = props.mode.kind === "working" ? props.mode.reviewActions : undefined;
+  const reviewActions = props.mode.reviewActions;
   const model = useMemo(() => {
     const dependencies = [
       props.displayPreferences.layout,
@@ -439,7 +439,7 @@ function NativeFileBody({
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
 }) {
   const touchRef = useRef<{ x: number; y: number; startedAt: number; moved: boolean } | null>(null);
-  const reviewActions = mode.kind === "working" ? mode.reviewActions : undefined;
+  const reviewActions = mode.reviewActions;
   const touchStart = useCallback((event: GestureResponderEvent) => {
     touchRef.current = {
       x: event.nativeEvent.pageX,
@@ -502,7 +502,7 @@ function NativeReviewOverlays({
   model: DiffDocumentModel;
   mode: DiffSurfaceProps["mode"];
 }) {
-  if (mode.kind !== "working" || !mode.reviewActions) return null;
+  if (!mode.reviewActions) return null;
   const reviewActions = mode.reviewActions;
   return model.rows.flatMap((row) => {
     if (row.kind !== "line" || row.reviewHeight === 0) return [];

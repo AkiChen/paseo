@@ -1586,6 +1586,30 @@ async function resolveBestComparisonBaseRef(
     return normalized.localName;
   }
 
+  // If no branch matches, accept any other commit-ish such as a tag or object id.
+  const exactCommit = await getRunGitCommand(context)(
+    ["rev-parse", "--verify", `${baseRef}^{commit}`],
+    {
+      cwd,
+      envOverlay: READ_ONLY_GIT_ENV,
+      acceptExitCodes: [0, 128],
+      logger: context?.logger,
+    },
+  );
+  if (exactCommit.exitCode === 0) {
+    return exactCommit.stdout.trim();
+  }
+
+  // A non-branch comparison is allowed to be a tag or commit SHA. Keep the
+  // failure actionable instead of reporting it as a missing branch.
+  if (
+    baseRef.startsWith("refs/tags/") ||
+    baseRef.startsWith("tag/") ||
+    /^[0-9a-f]{7,40}$/i.test(baseRef)
+  ) {
+    throw new Error(`Commit or tag not found in this checkout: ${baseRef}`);
+  }
+
   const refName =
     baseRef.startsWith("origin/") || baseRef.startsWith("refs/remotes/origin/")
       ? normalized.originRef
@@ -2261,10 +2285,11 @@ const CHECKOUT_BASE_COMMIT_LIMIT = 10;
 // Bytes git emits between fields/records. We split parsed output on these.
 const COMMIT_FIELD_SEPARATOR = "\x00";
 const COMMIT_RECORD_SEPARATOR = "\x1e";
+const COMMIT_BODY_SEPARATOR = "\x1f";
 // Record-separated, NUL-field-separated so arbitrary subject text stays parseable.
 // `%x1e`/`%x00` are git placeholders (literal text in the arg, real bytes in the
 // output) — passing actual NUL bytes as a process arg is rejected by Node.
-const COMMIT_LOG_FORMAT = "%x1e%H%x00%h%x00%an%x00%aI%x00%s";
+const COMMIT_LOG_FORMAT = "%x1e%H%x00%h%x00%an%x00%ae%x00%aI%x00%s%x00%b%x1f";
 
 type CheckoutCommitFileStatus = NonNullable<CheckoutCommitFile["status"]>;
 
@@ -2272,8 +2297,10 @@ interface ParsedCheckoutCommit {
   sha: string;
   shortSha: string;
   authorName: string;
+  authorEmail: string;
   authorDate: string;
   subject: string;
+  message: string;
   files: CheckoutCommitFile[];
 }
 
@@ -2358,9 +2385,10 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
   const records = stdout.split(COMMIT_RECORD_SEPARATOR).filter((record) => record.length > 0);
   const commits: ParsedCheckoutCommit[] = [];
   for (const record of records) {
-    const lines = record.split("\n");
-    const fields = (lines[0] ?? "").split(COMMIT_FIELD_SEPARATOR);
-    if (fields.length < 5) {
+    const [header, rawBody] = record.split(COMMIT_BODY_SEPARATOR, 2);
+    const lines = (rawBody ?? "").split("\n");
+    const fields = (header ?? "").split(COMMIT_FIELD_SEPARATOR);
+    if (fields.length < 7) {
       continue;
     }
     const sha = (fields[0] ?? "").trim();
@@ -2397,8 +2425,10 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
       sha,
       shortSha: (fields[1] ?? "").trim(),
       authorName: fields[2] ?? "",
-      authorDate: (fields[3] ?? "").trim(),
-      subject: fields[4] ?? "",
+      authorEmail: fields[3] ?? "",
+      authorDate: (fields[4] ?? "").trim(),
+      subject: fields[5] ?? "",
+      message: [fields[5] ?? "", (fields[6] ?? "").trim()].filter(Boolean).join("\n\n"),
       files,
     });
   }
@@ -2530,7 +2560,9 @@ export async function listCheckoutCommits({
     sha: record.sha,
     shortSha: record.shortSha,
     subject: record.subject,
+    message: record.message,
     authorName: record.authorName,
+    authorEmail: record.authorEmail,
     authorDate: record.authorDate,
     isOnRemote: !unpushedShas.has(record.sha),
     isOnBase: !workspaceShas.has(record.sha),
@@ -3247,15 +3279,17 @@ async function resolveCheckoutDiffRefs(
     return { baseRef: "HEAD", includeUntracked: true };
   }
   const { storedBaseRef, resolvedBaseRef } = await resolveBaseRefForCwd(cwd, context);
-  const baseRef = resolveOperationBaseRef({
-    storedBaseRef,
-    resolvedBaseRef,
-    requestedBaseRef: compare.baseRef,
-  });
+  // An explicit comparison is a read-only inspection choice and may intentionally differ from
+  // the workspace's stored base branch. The stored-base compatibility check is for mutating
+  // operations such as merge, not for viewing a diff.
+  const requestedBaseRef = compare.baseRef?.trim();
+  const baseRef = requestedBaseRef
+    ? requestedBaseRef
+    : resolveOperationBaseRef({ storedBaseRef, resolvedBaseRef });
   if (!baseRef) {
     return null;
   }
-  const bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef);
+  const bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef, context);
   return {
     baseRef: (await tryResolveMergeBase(cwd, bestBaseRef)) ?? bestBaseRef,
     targetRef: "HEAD",

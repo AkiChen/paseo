@@ -1,5 +1,9 @@
 import { useMemo } from "react";
-import type { CheckoutCommitFile, ParsedDiffFile } from "@getpaseo/protocol/messages";
+import type {
+  CheckoutCommit,
+  CheckoutCommitFile,
+  ParsedDiffFile,
+} from "@getpaseo/protocol/messages";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useFetchQueries } from "@/data/query";
 import { commitFileDiffQueryOptions } from "./commit-file-diff-query";
@@ -20,6 +24,7 @@ export interface CommitDiffFilesContext {
 
 export interface CommitDiffFilesResult {
   files: ParsedDiffFile[];
+  commit: (CheckoutCommit & { message?: string; authorEmail?: string }) | null;
   isLoading: boolean;
   error: Error | null;
   capabilityMissing: boolean;
@@ -70,6 +75,11 @@ export function useCommitDiffFiles(ctx: CommitDiffFilesContext): CommitDiffFiles
     }
     return commitsData.commits.find((commit) => commit.sha === sha)?.files ?? [];
   }, [commitsData, sha]);
+  const commit = useMemo(
+    () =>
+      sha && commitsData ? (commitsData.commits.find((entry) => entry.sha === sha) ?? null) : null,
+    [commitsData, sha],
+  );
 
   const fileDiffsEnabled =
     queryEnabled &&
@@ -110,9 +120,10 @@ export function useCommitDiffFiles(ctx: CommitDiffFilesContext): CommitDiffFiles
     }
     return {
       files,
+      commit,
       isLoading: commitsLoading || fileDiffResults.some((r) => r.isLoading),
       error: commitsError ?? firstFileError,
       capabilityMissing,
     };
-  }, [capabilityMissing, commitFiles, commitsError, commitsLoading, fileDiffResults]);
+  }, [capabilityMissing, commit, commitFiles, commitsError, commitsLoading, fileDiffResults]);
 }

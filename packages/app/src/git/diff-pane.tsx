@@ -55,8 +55,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  useDropdownMenuClose,
+  type MenuPageDefinition,
 } from "@/components/ui/dropdown-menu";
+import { MenuTextField } from "@/components/ui/menu";
 import * as Clipboard from "expo-clipboard";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
@@ -285,25 +289,46 @@ export function DiffLayoutToggle({
 }
 
 interface DiffModeMenuProps {
+  baseRef?: string;
   diffMode: "uncommitted" | "base";
   committedDescription?: string;
   testIDPrefix?: string;
+  onSelectBaseRef: (baseRef: string) => void;
   onSelectUncommitted: () => void;
   onSelectBase: () => void;
 }
 
 export function DiffModeMenu({
+  baseRef,
   diffMode,
   committedDescription,
   testIDPrefix = "changes-diff",
+  onSelectBaseRef,
   onSelectUncommitted,
   onSelectBase,
 }: DiffModeMenuProps) {
   const { t } = useTranslation();
   const uncommittedLabel = t("workspace.git.diff.uncommitted");
   const committedLabel = t("workspace.git.diff.committed");
+  const pages = useMemo<MenuPageDefinition[]>(
+    () => [
+      {
+        id: "base-ref",
+        title: t("workspace.git.diff.compareBase"),
+        hoverIntent: false,
+        content: (
+          <DiffBaseRefPage
+            baseRef={baseRef}
+            testIDPrefix={testIDPrefix}
+            onApply={onSelectBaseRef}
+          />
+        ),
+      },
+    ],
+    [baseRef, onSelectBaseRef, t, testIDPrefix],
+  );
   return (
-    <DropdownMenu>
+    <DropdownMenu compactMode="sheet">
       <DropdownMenuTrigger
         testID={`${testIDPrefix}-status-trigger`}
         style={toolbarLabelTriggerStyle}
@@ -324,7 +349,13 @@ export function DiffModeMenu({
           );
         }}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" width={260} testID={`${testIDPrefix}-status-menu`}>
+      <DropdownMenuContent
+        align="start"
+        width={260}
+        pages={pages}
+        sheetTitle={t("workspace.git.diff.diffMode")}
+        testID={`${testIDPrefix}-status-menu`}
+      >
         <DropdownMenuItem
           testID={`${testIDPrefix}-mode-uncommitted`}
           selected={diffMode === "uncommitted"}
@@ -341,8 +372,53 @@ export function DiffModeMenu({
         >
           {committedLabel}
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuSubTrigger id="base-ref" value={baseRef} testID={`${testIDPrefix}-base-ref`}>
+          {t("workspace.git.diff.compareBase")}
+        </DropdownMenuSubTrigger>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function DiffBaseRefPage({
+  baseRef,
+  testIDPrefix,
+  onApply,
+}: {
+  baseRef?: string;
+  testIDPrefix: string;
+  onApply: (baseRef: string) => void;
+}) {
+  const { t } = useTranslation();
+  const closeMenu = useDropdownMenuClose();
+  const [draft, setDraft] = useState(baseRef ?? "");
+  const apply = useCallback(() => {
+    onApply(draft);
+    closeMenu();
+  }, [closeMenu, draft, onApply]);
+  const reset = useCallback(() => {
+    onApply("");
+    closeMenu();
+  }, [closeMenu, onApply]);
+  return (
+    <>
+      <MenuTextField
+        initialValue={baseRef}
+        onChangeText={setDraft}
+        onSubmitEditing={apply}
+        placeholder={t("workspace.git.diff.compareBasePlaceholder")}
+        accessibilityLabel={t("workspace.git.diff.compareBaseInput")}
+        autoFocus
+        testID={`${testIDPrefix}-base-ref-input`}
+      />
+      <DropdownMenuItem testID={`${testIDPrefix}-base-ref-apply`} onSelect={apply}>
+        {t("workspace.git.diff.applyBase")}
+      </DropdownMenuItem>
+      <DropdownMenuItem testID={`${testIDPrefix}-base-ref-reset`} onSelect={reset}>
+        {t("workspace.git.diff.useDefaultBase")}
+      </DropdownMenuItem>
+    </>
   );
 }
 
@@ -472,10 +548,12 @@ interface ChangesRepositoryToolbarModel {
 }
 
 interface ChangesComparisonToolbarModel {
+  baseRef?: string;
   committedDescription?: string;
   diffMode: "uncommitted" | "base";
   mode: ChangesToolbarMode;
   selectedDiffStat: { additions: number; deletions: number } | null;
+  onSelectBaseRef: (baseRef: string) => void;
   onSelectBase: () => void;
   onSelectUncommitted: () => void;
 }
@@ -488,6 +566,7 @@ interface ChangesHeaderProps {
 }
 
 interface BuildChangesHeaderModelInput {
+  baseRef?: string;
   branchName: string | null;
   committedDescription?: string;
   compact: boolean;
@@ -496,6 +575,7 @@ interface BuildChangesHeaderModelInput {
   gitActions: GitActions;
   mode: ChangesToolbarMode;
   onOpenPullRequest: () => void;
+  onSelectBaseRef: (baseRef: string) => void;
   onSelectBase: () => void;
   onSelectUncommitted: () => void;
   pullRequest: PrHint | null;
@@ -520,10 +600,12 @@ function buildChangesHeaderModel(input: BuildChangesHeaderModelInput): {
       workspaceId: input.workspaceId,
     },
     comparison: {
+      baseRef: input.baseRef,
       committedDescription: input.committedDescription,
       diffMode: input.diffMode,
       mode: input.mode,
       selectedDiffStat: input.selectedDiffStat,
+      onSelectBaseRef: input.onSelectBaseRef,
       onSelectBase: input.onSelectBase,
       onSelectUncommitted: input.onSelectUncommitted,
     },
@@ -723,8 +805,10 @@ function ChangesComparisonToolbar({
     <ChangesToolbarRow compact={compact} sidebarSurface={sidebarSurface} testID="changes-header">
       <ChangesToolbarLeading>
         <DiffModeMenu
+          baseRef={model.baseRef}
           diffMode={model.diffMode}
           committedDescription={model.committedDescription}
+          onSelectBaseRef={model.onSelectBaseRef}
           onSelectUncommitted={model.onSelectUncommitted}
           onSelectBase={model.onSelectBase}
         />
@@ -1646,6 +1730,7 @@ export function ChangesSurface({
     diffMode,
     selectUncommitted: handleSelectUncommitted,
     selectBase: handleSelectBase,
+    selectBaseRef: handleSelectBaseRef,
     files,
     diffPayloadError,
     diffTooLarge,
@@ -1965,6 +2050,7 @@ export function ChangesSurface({
   const changesHeaderModel = useMemo(
     () =>
       buildChangesHeaderModel({
+        baseRef,
         branchName: currentBranchName,
         committedDescription: committedDiffDescription,
         compact: isMobile,
@@ -1973,6 +2059,7 @@ export function ChangesSurface({
         gitActions,
         mode: toolbarMode,
         onOpenPullRequest: handleOpenPullRequest,
+        onSelectBaseRef: handleSelectBaseRef,
         onSelectBase: handleSelectBase,
         onSelectUncommitted: handleSelectUncommitted,
         pullRequest: selectPrHintFromStatus(pullRequestStatus, forge),
@@ -1981,12 +2068,14 @@ export function ChangesSurface({
         workspaceId,
       }),
     [
+      baseRef,
       committedDiffDescription,
       currentBranchName,
       cwd,
       diffMode,
       gitActions,
       handleOpenPullRequest,
+      handleSelectBaseRef,
       handleSelectBase,
       handleSelectUncommitted,
       isMobile,

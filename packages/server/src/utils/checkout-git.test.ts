@@ -3588,7 +3588,7 @@ const x = 1;
     expect(baseDiff.diff).not.toContain("file.txt");
   });
 
-  it("names both refs when a requested base ref does not match the stored one", async () => {
+  it("accepts a commit SHA that differs from the stored base ref", async () => {
     const worktree = await createLegacyWorktreeForTest({
       branchName: "mismatch-feature",
       cwd: repoDir,
@@ -3597,9 +3597,23 @@ const x = 1;
       paseoHome,
     });
 
-    await expect(
-      getCheckoutDiff(worktree.worktreePath, { mode: "base", baseRef: "other" }, { paseoHome }),
-    ).rejects.toThrow("Base ref mismatch: stored refs/heads/main, requested other");
+    writeFileSync(join(worktree.worktreePath, "feature.txt"), "feature\n");
+    execFileSync("git", ["add", "feature.txt"], { cwd: worktree.worktreePath });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "feature commit"], {
+      cwd: worktree.worktreePath,
+    });
+    const parentSha = execFileSync("git", ["rev-parse", "HEAD^"], {
+      cwd: worktree.worktreePath,
+    })
+      .toString()
+      .trim();
+
+    const diff = await getCheckoutDiff(
+      worktree.worktreePath,
+      { mode: "base", baseRef: parentSha },
+      { paseoHome },
+    );
+    expect(diff.diff).toContain("feature.txt");
   });
 
   it("excludes dirty working tree changes from Paseo worktree base diffs", async () => {
