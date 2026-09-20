@@ -117,6 +117,8 @@ export function DiffSurface(props: DiffSurfaceProps) {
       measurement,
       props.palette,
       t,
+      props.mode.fullContextShown,
+      props.mode.onExpandContext,
     ] as const;
     const previous = reusableModelRef.current;
     const canReuse = previous?.dependencies.every(
@@ -136,7 +138,10 @@ export function DiffSurface(props: DiffSurfaceProps) {
       labels: {
         binary: t("workspace.git.diff.binaryFile"),
         tooLarge: t("workspace.git.diff.tooLarge"),
+        expandContext: t("diffViewer.expandContext"),
       },
+      canExpandContext:
+        !props.mode.fullContextShown && typeof props.mode.onExpandContext === "function",
       materializationWindow: diffMaterializationWindow(fileWindowTop, viewport.height),
       reuseFrom,
     });
@@ -153,6 +158,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     props.displayPreferences.wrapLines,
     props.files,
     props.palette,
+    props.mode,
     reviewActions,
     t,
     typography,
@@ -438,7 +444,12 @@ function NativeFileBody({
   mode: DiffSurfaceProps["mode"];
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
 }) {
-  const touchRef = useRef<{ x: number; y: number; startedAt: number; moved: boolean } | null>(null);
+  const touchRef = useRef<{
+    x: number;
+    y: number;
+    startedAt: number;
+    moved: boolean;
+  } | null>(null);
   const reviewActions = mode.reviewActions;
   const touchStart = useCallback((event: GestureResponderEvent) => {
     touchRef.current = {
@@ -461,7 +472,7 @@ function NativeFileBody({
     (event: GestureResponderEvent) => {
       const touch = touchRef.current;
       touchRef.current = null;
-      if (!touch || touch.moved || Date.now() - touch.startedAt > 500 || !reviewActions) return;
+      if (!touch || touch.moved || Date.now() - touch.startedAt > 500) return;
       const hit = hitTestDiffBodyPoint({
         model,
         file,
@@ -469,9 +480,16 @@ function NativeFileBody({
         locationY: event.nativeEvent.locationY,
         horizontalOffset: horizontalOffsetForPath(horizontalOffsets.value, file.path),
       });
-      if (hit?.kind === "cell" && hit.target) reviewActions.onStartComment(hit.target);
+      if (hit?.kind !== "cell") return;
+      const row = model.rows[hit.position.rowIndex];
+      const cell = row?.kind === "line" ? row.cells[hit.position.cellIndex] : null;
+      if (cell?.type === "header" && !mode.fullContextShown) {
+        mode.onExpandContext?.();
+        return;
+      }
+      if (hit.target) reviewActions?.onStartComment(hit.target);
     },
-    [file, horizontalOffsets, model, reviewActions],
+    [file, horizontalOffsets, mode, model, reviewActions],
   );
   return (
     <View

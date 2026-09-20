@@ -1745,6 +1745,7 @@ export const zhCN: TranslationResources = {
   },
   diffViewer: {
     empty: "没有可显示的变更",
+    expandContext: "点击展开隐藏行",
   },
   serviceUrl: {
     title: "打开服务 URL",

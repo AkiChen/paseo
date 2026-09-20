@@ -1766,6 +1766,7 @@ export const ar: TranslationResources = {
   },
   diffViewer: {
     empty: "لا توجد تغييرات للعرض",
+    expandContext: "انقر لإظهار الأسطر المخفية",
   },
   serviceUrl: {
     title: "افتح الخدمة URL",

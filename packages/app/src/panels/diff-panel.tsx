@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { FileDiff, GitCommitHorizontal } from "lucide-react-native";
@@ -24,6 +24,7 @@ import { usePaneContext } from "@/panels/pane-context";
 import { definePanel, type PanelDescriptor, type PanelPresentation } from "@/panels/panel-registry";
 import { useAddFileToChat } from "@/panels/use-add-file-to-chat";
 import { useWorkspaceDirectory } from "@/stores/session-store-hooks";
+import { useCheckoutCommitsQuery } from "@/git/use-commits-query";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { defaultChangesState, changesStateSchema } from "@/panels/changes/state";
 import { usePanelState } from "@/panels/use-panel-state";
@@ -162,12 +163,14 @@ function CommitDiffPanel() {
   const cwd = useWorkspaceDirectory(serverId, workspaceId);
   const isActive = useRetainedPanelActive();
   const panelPreferences = useDiffPanelPreferences();
+  const [showFullContext, setShowFullContext] = useState(false);
   invariant(target.kind === "commit_diff", "CommitDiffPanel requires commit_diff target");
   const { files, commit, isLoading, error, capabilityMissing } = useCommitDiffFiles({
     serverId,
     cwd: cwd ?? "",
     sha: target.sha,
     enabled: Boolean(cwd),
+    contextLines: showFullContext ? 100000 : undefined,
   });
   const reviewDraftKey = useMemo(
     () =>
@@ -196,7 +199,15 @@ function CommitDiffPanel() {
     attachment: reviewAttachment,
     enabled: Boolean(cwd) && isActive,
   });
-  const mode = useMemo(() => ({ kind: "commit" as const, reviewActions }), [reviewActions]);
+  const mode = useMemo(
+    () => ({
+      kind: "commit" as const,
+      reviewActions,
+      fullContextShown: showFullContext,
+      onExpandContext: () => setShowFullContext(true),
+    }),
+    [reviewActions, showFullContext],
+  );
 
   let body: ReactNode;
   if (!cwd) {
@@ -262,10 +273,22 @@ const changesTreePresentation = {
 
 function useCommitDiffPanelDescriptor(
   target: Extract<WorkspaceTabTarget, { kind: "commit_diff" }>,
+  context: { serverId: string; workspaceId: string; tabId: string },
 ): PanelDescriptor {
   const { t } = useTranslation();
+  const cwd = useWorkspaceDirectory(context.serverId, context.workspaceId);
+  const commitsQuery = useCheckoutCommitsQuery({
+    serverId: context.serverId,
+    cwd: cwd ?? "",
+    enabled: Boolean(cwd),
+  });
+  const commit =
+    commitsQuery.status === "loaded"
+      ? commitsQuery.data.commits.find((entry) => entry.sha === target.sha)
+      : undefined;
   return {
-    label: target.sha.slice(0, 7),
+    // Keep the tab compact; the commit panel shows the full message.
+    label: commit?.subject ?? target.sha.slice(0, 7),
     subtitle: t("panels.diff.commitSubtitle"),
     tooltip: target.sha,
     titleState: "ready",

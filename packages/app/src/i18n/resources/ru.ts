@@ -1796,6 +1796,7 @@ export const ru: TranslationResources = {
   },
   diffViewer: {
     empty: "Нет изменений для отображения",
+    expandContext: "Нажмите, чтобы показать скрытые строки",
   },
   serviceUrl: {
     title: "Открыть URL сервиса",

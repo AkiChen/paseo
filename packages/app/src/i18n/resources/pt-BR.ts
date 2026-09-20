@@ -1798,6 +1798,7 @@ export const ptBR: TranslationResources = {
   },
   diffViewer: {
     empty: "Nenhuma alteração para exibir",
+    expandContext: "Clique para mostrar as linhas ocultas",
   },
   serviceUrl: {
     title: "Abrir URL do serviço",

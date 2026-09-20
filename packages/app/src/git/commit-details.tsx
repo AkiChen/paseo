@@ -45,8 +45,8 @@ export function CommitDetails({ commit }: { commit: CommitWithDetails }) {
         <View style={[styles.chevron, !collapsed && styles.chevronExpanded]}>
           <ThemedChevron size={14} uniProps={chevronColorMapping} />
         </View>
-        <Text style={styles.subject} numberOfLines={1}>
-          {commit.subject}
+        <Text style={styles.subject} selectable>
+          {resolveCommitMessage(commit)}
         </Text>
         <Text dataSet={CODE_SURFACE_DATASET} style={styles.shortSha} selectable>
           {commit.shortSha}

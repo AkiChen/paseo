@@ -1783,6 +1783,7 @@ export const ja: TranslationResources = {
   },
   diffViewer: {
     empty: "表示する変更がありません",
+    expandContext: "クリックして非表示の行を表示",
   },
   serviceUrl: {
     title: "サービスURLを開く",

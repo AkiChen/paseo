@@ -750,6 +750,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         ? { baseRef: options.baseRef }
         : {}),
       ...(options.ignoreWhitespace === true ? { ignoreWhitespace: true } : {}),
+      ...(options.contextLines !== undefined ? { contextLines: options.contextLines } : {}),
       ...(options.includeStructured === true ? { includeStructured: true } : {}),
     };
   }
@@ -763,6 +764,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       options.mode,
       options.mode === "base" ? (options.baseRef ?? null) : null,
       options.ignoreWhitespace === true,
+      options.contextLines ?? null,
       options.includeStructured === true,
     ]);
   }

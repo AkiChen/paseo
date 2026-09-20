@@ -14,6 +14,8 @@ interface DiffDocumentBaseProps {
 
 export interface WorkingDiffMode {
   kind: "working";
+  fullContextShown?: boolean;
+  onExpandContext?: () => void;
   reviewActions?: InlineReviewActions;
   onFilePress?: (path: string) => void;
   focusPath?: string;
@@ -40,7 +42,15 @@ export type DiffDocumentProps = DiffDocumentBaseProps &
           onChange: (paths: string[]) => void;
         };
       }
-    | { mode: { kind: "commit"; reviewActions?: InlineReviewActions }; collapseState?: never }
+    | {
+        mode: {
+          kind: "commit";
+          reviewActions?: InlineReviewActions;
+          fullContextShown?: boolean;
+          onExpandContext?: () => void;
+        };
+        collapseState?: never;
+      }
   );
 
 export interface DiffTypography {
@@ -179,7 +189,8 @@ export interface BuildDiffDocumentModelInput {
   measureText: TextMeasurer;
   palette: DiffPalette;
   reviewActions?: InlineReviewActions;
-  labels: { binary: string; tooLarge: string };
+  labels: { binary: string; tooLarge: string; expandContext?: string };
+  canExpandContext?: boolean;
   materializationWindow?: { top: number; height: number };
   /** A geometry-compatible model whose unchanged file measurements may be reused. */
   reuseFrom?: readonly DiffDocumentModel[];

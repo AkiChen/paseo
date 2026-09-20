@@ -2106,6 +2106,7 @@ const CheckoutDiffCompareSchema = z.object({
   mode: z.enum(["uncommitted", "base"]),
   baseRef: z.string().optional(),
   ignoreWhitespace: z.boolean().optional(),
+  contextLines: z.number().int().min(0).max(100000).optional(),
 });
 
 export const CheckoutStatusRequestSchema = z.object({
@@ -2245,6 +2246,7 @@ export const CheckoutCommitFileDiffRequestSchema = z.object({
   cwd: z.string(),
   sha: z.string(),
   path: z.string(),
+  contextLines: z.number().int().min(0).max(100000).optional(),
   requestId: z.string(),
 });
 

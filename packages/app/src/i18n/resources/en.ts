@@ -1777,6 +1777,7 @@ export const en = {
   },
   diffViewer: {
     empty: "No changes to display",
+    expandContext: "Click to show hidden lines",
   },
   serviceUrl: {
     title: "Open service URL",

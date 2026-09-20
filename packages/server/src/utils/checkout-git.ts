@@ -617,7 +617,11 @@ async function tryResolveMergeBase(cwd: string, baseRef: string): Promise<string
   }
 }
 
-type FileStat = { additions: number; deletions: number; isBinary: boolean } | null;
+type FileStat = {
+  additions: number;
+  deletions: number;
+  isBinary: boolean;
+} | null;
 
 function normalizeNumstatPath(pathField: string): string {
   const braceRenameMatch = pathField.match(/^(.*)\{(.*) => (.*)\}(.*)$/);
@@ -634,8 +638,17 @@ function normalizeNumstatPath(pathField: string): string {
   return pathField;
 }
 
-function buildGitDiffArgs(args: { ignoreWhitespace?: boolean; extra: string[] }): string[] {
-  return ["diff", ...(args.ignoreWhitespace ? ["-w"] : []), ...args.extra];
+function buildGitDiffArgs(args: {
+  ignoreWhitespace?: boolean;
+  contextLines?: number;
+  extra: string[];
+}): string[] {
+  return [
+    "diff",
+    ...(args.ignoreWhitespace ? ["-w"] : []),
+    ...(args.contextLines !== undefined ? [`--unified=${args.contextLines}`] : []),
+    ...args.extra,
+  ];
 }
 
 const TRACKED_DIFF_NUMSTAT_MAX_BYTES = 2 * 1024 * 1024; // 2MB
@@ -712,10 +725,12 @@ async function getTrackedDiffTextForPath(input: {
   refsForDiff: CheckoutDiffRefs;
   path: string;
   ignoreWhitespace: boolean;
+  contextLines?: number;
 }): Promise<{ path: string; text: string; truncated: boolean }> {
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace: input.ignoreWhitespace,
+      contextLines: input.contextLines,
       extra: [...getCheckoutDiffRefArgs(input.refsForDiff), "--", input.path],
     }),
     {
@@ -829,6 +844,7 @@ export interface CheckoutDiffCompare {
   mode: "uncommitted" | "base";
   baseRef?: string;
   ignoreWhitespace?: boolean;
+  contextLines?: number;
   includeStructured?: boolean;
 }
 
@@ -2183,6 +2199,7 @@ async function getUntrackedDiffText(
   cwd: string,
   change: CheckoutFileChange,
   ignoreWhitespace = false,
+  contextLines?: number,
 ): Promise<{ text: string; truncated: boolean; stat: FileStat }> {
   try {
     const inspected = await inspectUntrackedFile(cwd, change.path);
@@ -2196,6 +2213,7 @@ async function getUntrackedDiffText(
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace,
+      contextLines,
       extra: ["--no-index", "/dev/null", "--", change.path],
     }),
     {
@@ -2588,13 +2606,23 @@ export async function getCommitFileDiff({
   cwd,
   sha,
   path,
+  contextLines,
 }: {
   cwd: string;
   sha: string;
   path: string;
+  contextLines?: number;
 }): Promise<ParsedDiffFile | null> {
   const { stdout } = await runGitCommand(
-    ["show", sha, "--format=", "--diff-merges=first-parent", "--", path],
+    [
+      "show",
+      sha,
+      "--format=",
+      "--diff-merges=first-parent",
+      ...(contextLines !== undefined ? [`--unified=${contextLines}`] : []),
+      "--",
+      path,
+    ],
     {
       cwd,
       envOverlay: READ_ONLY_GIT_ENV,
@@ -3120,14 +3148,21 @@ interface ProcessUntrackedChangeInput {
   cwd: string;
   change: CheckoutFileChange;
   ignoreWhitespace: boolean;
+  contextLines?: number;
   includeStructured: boolean;
   structured: StructuredDiffAccumulator;
   appendDiff: (text: string) => void;
 }
 
 async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promise<boolean> {
-  const { cwd, change, ignoreWhitespace, includeStructured, structured, appendDiff } = input;
-  const { text, truncated, stat } = await getUntrackedDiffText(cwd, change, ignoreWhitespace);
+  const { cwd, change, ignoreWhitespace, contextLines, includeStructured, structured, appendDiff } =
+    input;
+  const { text, truncated, stat } = await getUntrackedDiffText(
+    cwd,
+    change,
+    ignoreWhitespace,
+    contextLines,
+  );
 
   if (!includeStructured) {
     if (stat?.isBinary) {
@@ -3194,6 +3229,7 @@ interface ProcessTrackedChangesInput {
   refsForDiff: CheckoutDiffRefs;
   trackedChanges: CheckoutFileChange[];
   ignoreWhitespace: boolean;
+  contextLines?: number;
   appendDiff: (text: string) => void;
 }
 
@@ -3206,7 +3242,7 @@ interface ProcessTrackedChangesResult {
 async function processTrackedChanges(
   input: ProcessTrackedChangesInput,
 ): Promise<ProcessTrackedChangesResult> {
-  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, appendDiff } = input;
+  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, contextLines, appendDiff } = input;
   const trackedNumstatByPath =
     trackedChanges.length > 0
       ? await getTrackedNumstatByPath(cwd, refsForDiff, ignoreWhitespace)
@@ -3237,6 +3273,7 @@ async function processTrackedChanges(
           refsForDiff,
           path,
           ignoreWhitespace,
+          contextLines,
         }),
       ),
     );
@@ -3310,6 +3347,7 @@ export async function getCheckoutDiff(
   }
 
   const ignoreWhitespace = compare.ignoreWhitespace === true;
+  const contextLines = compare.contextLines;
   let effectiveRefsForDiff = refsForDiff;
   let changes: CheckoutFileChange[];
   try {
@@ -3352,6 +3390,7 @@ export async function getCheckoutDiff(
     refsForDiff: effectiveRefsForDiff,
     trackedChanges,
     ignoreWhitespace,
+    contextLines,
     appendDiff,
   });
 
@@ -3398,6 +3437,7 @@ export async function getCheckoutDiff(
       cwd,
       change,
       ignoreWhitespace,
+      contextLines,
       includeStructured: compare.includeStructured === true,
       structured,
       appendDiff,

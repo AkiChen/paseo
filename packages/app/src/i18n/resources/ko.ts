@@ -1776,6 +1776,7 @@ export const ko: TranslationResources = {
   },
   diffViewer: {
     empty: "표시할 변경 사항이 없습니다",
+    expandContext: "숨겨진 줄을 표시하려면 클릭",
   },
   serviceUrl: {
     title: "서비스 URL 열기",

@@ -1812,6 +1812,7 @@ export const es: TranslationResources = {
   },
   diffViewer: {
     empty: "No hay cambios para mostrar",
+    expandContext: "Haz clic para mostrar las líneas ocultas",
   },
   serviceUrl: {
     title: "Servicio abiertoURL",

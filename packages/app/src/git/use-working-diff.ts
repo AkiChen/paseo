@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   buildWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
@@ -29,6 +29,7 @@ export function useWorkingDiff({
   enabled,
   queryScope,
 }: UseWorkingDiffOptions) {
+  const [showFullContext, setShowFullContext] = useState(false);
   const {
     status,
     isLoading: isStatusLoading,
@@ -58,6 +59,8 @@ export function useWorkingDiff({
     isDirty: hasUncommittedChanges,
     defaultBaseRef,
   });
+  useEffect(() => setShowFullContext(false), [baseRef, cwd, diffMode, ignoreWhitespace, serverId]);
+  const expandFullContext = useCallback(() => setShowFullContext(true), []);
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
   const selectBase = useCallback(() => selectComparison("base"), [selectComparison]);
   const selectBaseRef = useCallback(
@@ -79,6 +82,7 @@ export function useWorkingDiff({
     mode: diffMode,
     baseRef,
     ignoreWhitespace,
+    contextLines: showFullContext ? 100000 : undefined,
     enabled: enabled && isGit,
     queryScope,
   });
@@ -121,6 +125,8 @@ export function useWorkingDiff({
     isDiffLoading,
     reviewActions,
     reviewAttachment,
+    showFullContext,
+    expandFullContext,
   };
 }
 

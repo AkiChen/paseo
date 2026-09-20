@@ -638,6 +638,32 @@ describe("checkout git utilities", () => {
     expect(hiddenDiff.structured).toEqual([]);
   });
 
+  it("expands diff context when requested", async () => {
+    const original =
+      Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join("\n") + "\n";
+    writeFileSync(join(repoDir, "file.txt"), original);
+    execFileSync("git", ["add", "file.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "context"], {
+      cwd: repoDir,
+    });
+    const changed = original.replace("line 16", "changed");
+    writeFileSync(join(repoDir, "file.txt"), changed);
+
+    const collapsed = await getCheckoutDiff(repoDir, {
+      mode: "uncommitted",
+      includeStructured: true,
+    });
+    const expanded = await getCheckoutDiff(repoDir, {
+      mode: "uncommitted",
+      includeStructured: true,
+      contextLines: 100000,
+    });
+    const collapsedLines = collapsed.structured?.[0]?.hunks[0]?.lines ?? [];
+    const expandedLines = expanded.structured?.[0]?.hunks[0]?.lines ?? [];
+    expect(collapsedLines.length).toBeLessThan(expandedLines.length);
+    expect(expandedLines.some((line) => line.content.includes("line 1"))).toBe(true);
+  });
+
   it("preserves removed-line syntax highlighting with structured diffs", async () => {
     const originalContent = `/*
 comment line 1
@@ -3871,7 +3897,11 @@ describe("discardChanges", () => {
 
       expect(readTextFile(join(repoDir, "file.txt"))).toBe("hello\n");
       expect(existsSync(join(repoDir, "renamed.txt"))).toBe(false);
-      expect(execFileSync("git", ["status", "--porcelain"], { cwd: repoDir }).toString()).toBe("");
+      expect(
+        execFileSync("git", ["status", "--porcelain"], {
+          cwd: repoDir,
+        }).toString(),
+      ).toBe("");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -3889,7 +3919,11 @@ describe("discardChanges", () => {
       await discardChanges(repoDir, ["new.txt"]);
 
       expect(existsSync(join(repoDir, "new.txt"))).toBe(false);
-      expect(execFileSync("git", ["status", "--porcelain"], { cwd: repoDir }).toString()).toBe("");
+      expect(
+        execFileSync("git", ["status", "--porcelain"], {
+          cwd: repoDir,
+        }).toString(),
+      ).toBe("");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -3913,9 +3947,11 @@ describe("discardChanges", () => {
       expect(readTextFile(join(repoDir, "nested", "tracked.txt"))).toBe("original\n");
       expect(existsSync(join(repoDir, "nested", "untracked.txt"))).toBe(false);
       expect(readFileSync(join(repoDir, "outside.txt"), "utf8")).toBe("keep\n");
-      expect(execFileSync("git", ["status", "--porcelain"], { cwd: repoDir }).toString()).toBe(
-        "?? outside.txt\n",
-      );
+      expect(
+        execFileSync("git", ["status", "--porcelain"], {
+          cwd: repoDir,
+        }).toString(),
+      ).toBe("?? outside.txt\n");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

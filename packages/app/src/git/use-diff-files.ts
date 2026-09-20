@@ -20,6 +20,7 @@ export interface CommitDiffFilesContext {
   cwd: string;
   sha: string;
   enabled?: boolean;
+  contextLines?: number;
 }
 
 export interface CommitDiffFilesResult {
@@ -62,7 +63,7 @@ export function resolveCommitDiffFiles(
 }
 
 export function useCommitDiffFiles(ctx: CommitDiffFilesContext): CommitDiffFilesResult {
-  const { serverId, cwd, sha, enabled = true } = ctx;
+  const { serverId, cwd, sha, enabled = true, contextLines } = ctx;
   const retainedPanelActive = useRetainedPanelActive();
   const queryEnabled = enabled && retainedPanelActive;
   const client = useHostRuntimeClient(serverId);
@@ -95,6 +96,7 @@ export function useCommitDiffFiles(ctx: CommitDiffFilesContext): CommitDiffFiles
         cwd,
         sha,
         path: file.path,
+        contextLines,
         client,
         enabled: fileDiffsEnabled,
       }),

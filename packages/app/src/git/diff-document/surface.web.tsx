@@ -69,6 +69,24 @@ function emptyStickyHeaderCanvasSlot(): StickyHeaderCanvasSlot {
   };
 }
 
+function tryExpandContext(input: {
+  wasClick: boolean;
+  hit: DiffHit | null;
+  model: ReturnType<typeof buildDiffDocumentModel> | null;
+  mode: DiffSurfaceProps["mode"];
+}): boolean {
+  if (!input.wasClick || input.hit?.kind !== "cell") {
+    return false;
+  }
+  const row = input.model?.rows[input.hit.position.rowIndex];
+  const cell = row?.kind === "line" ? row.cells[input.hit.position.cellIndex] : null;
+  if (cell?.type !== "header" || input.mode.fullContextShown || !input.mode.onExpandContext) {
+    return false;
+  }
+  input.mode.onExpandContext();
+  return true;
+}
+
 export function DiffSurface(props: DiffSurfaceProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -117,8 +135,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const hasHoveredAffordanceRef = useRef(false);
   const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_STACK;
   useLayoutEffect(() => {
-    const stats = (window as typeof window & { __PASEO_DIFF_REACT_STATS__?: { commits: number } })
-      .__PASEO_DIFF_REACT_STATS__;
+    const stats = (
+      window as typeof window & {
+        __PASEO_DIFF_REACT_STATS__?: { commits: number };
+      }
+    ).__PASEO_DIFF_REACT_STATS__;
     if (stats) stats.commits += 1;
   });
   const desiredTypography = useMemo<DiffTypography>(
@@ -180,7 +201,10 @@ export function DiffSurface(props: DiffSurfaceProps) {
       labels: {
         binary: t("workspace.git.diff.binaryFile"),
         tooLarge: t("workspace.git.diff.tooLarge"),
+        expandContext: t("diffViewer.expandContext"),
       },
+      canExpandContext:
+        !props.mode.fullContextShown && typeof props.mode.onExpandContext === "function",
       materializationWindow: diffMaterializationWindow(fileWindowTop, viewport.height),
     });
     return next;
@@ -191,6 +215,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     props.displayPreferences.layout,
     props.displayPreferences.wrapLines,
     props.files,
+    props.mode,
     props.palette,
     reviewActions,
     t,
@@ -679,6 +704,17 @@ export function DiffSurface(props: DiffSurfaceProps) {
             alreadyDragging: drag.moved,
           })
         : false;
+      if (
+        tryExpandContext({
+          wasClick: Boolean(drag && !moved),
+          hit,
+          model: modelRef.current,
+          mode: props.mode,
+        })
+      ) {
+        setSelection(null);
+        return;
+      }
       if (drag && !moved && drag.dismissSelectionOnClick) {
         setSelection(null);
         return;
@@ -695,7 +731,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
         reviewActions.onStartComment(hit.target);
       }
     },
-    [pointHit, reviewActions, setSelection],
+    [pointHit, props.mode, reviewActions, setSelection],
   );
   const cancelPointer = useCallback(() => {
     dragRef.current = null;

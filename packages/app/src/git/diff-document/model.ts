@@ -238,7 +238,12 @@ function appendNewFileRows(candidate: {
   }
 
   const lines = geometryLines(
-    lineSources(candidate.file, candidate.input.layout, false),
+    lineSources(
+      candidate.file,
+      candidate.input.layout,
+      false,
+      candidate.input.canExpandContext ? candidate.input.labels.expandContext : undefined,
+    ),
     candidate.input,
   );
   const fileBottom =
@@ -360,11 +365,12 @@ function lineSources(
   file: BuildDiffDocumentModelInput["files"][number],
   layout: "unified" | "split",
   includeTokens: boolean,
+  expandContextLabel?: string,
 ): Array<[CellSource] | [CellSource | null, CellSource | null]> {
   if (layout === "split") {
     return buildSplitDiffRows(file).map((row) => {
       if (row.kind === "header") {
-        return [headerSource(row.content, row.hunkIndex, row.lineIndex)];
+        return [headerSource(row.content, row.hunkIndex, row.lineIndex, expandContextLabel)];
       }
       return [cellSource(row.left, includeTokens), cellSource(row.right, includeTokens)];
     });
@@ -372,7 +378,10 @@ function lineSources(
   return buildUnifiedDiffLines(file).map((entry) => [
     {
       type: entry.line.type,
-      content: entry.line.content,
+      content:
+        entry.line.type === "header" && expandContextLabel
+          ? `${entry.line.content}  ·  ${expandContextLabel}`
+          : entry.line.content,
       lineNumber: entry.lineNumber,
       reviewTarget: entry.reviewTarget,
       tokenText: includeTokens ? compactHighlightTokens(entry.line.tokens ?? []) : [],
@@ -385,10 +394,15 @@ function lineSources(
   ]);
 }
 
-function headerSource(content: string, hunkIndex: number, lineIndex: number): CellSource {
+function headerSource(
+  content: string,
+  hunkIndex: number,
+  lineIndex: number,
+  expandContextLabel?: string,
+): CellSource {
   return {
     type: "header",
-    content,
+    content: expandContextLabel ? `${content}  ·  ${expandContextLabel}` : content,
     lineNumber: null,
     reviewTarget: null,
     tokenText: [],

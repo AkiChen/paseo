@@ -1737,6 +1737,8 @@ export function ChangesSurface({
     isDiffLoading,
     reviewActions,
     reviewAttachment,
+    showFullContext,
+    expandFullContext,
   } = useWorkingDiff({
     serverId,
     workspaceId: workspaceId ?? undefined,
@@ -1883,6 +1885,8 @@ export function ChangesSurface({
   const workingMode = useMemo(
     () => ({
       kind: "working" as const,
+      fullContextShown: showFullContext,
+      onExpandContext: expandFullContext,
       reviewActions,
       focusPath: documentFocusRequest?.path,
       focusRequestId: documentFocusRequest?.revision,
@@ -1900,6 +1904,8 @@ export function ChangesSurface({
     }),
     [
       reviewActions,
+      showFullContext,
+      expandFullContext,
       documentFocusRequest?.path,
       documentFocusRequest?.revision,
       serverId,
