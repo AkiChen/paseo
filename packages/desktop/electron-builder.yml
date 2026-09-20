@@ -1,4 +1,9 @@
 npmRebuild: false
+# The legacy winCodeSign archive contains macOS symlinks and cannot be extracted
+# on Windows machines without the Create symbolic links privilege. The current
+# platform-specific toolset downloads only the Windows tools needed by this build.
+toolsets:
+  winCodeSign: "1.1.0"
 appId: sh.paseo.desktop
 productName: Paseo
 executableName: Paseo
@@ -74,6 +79,10 @@ appImage:
   # version stays discoverable via the release tag and the in-app version.
   artifactName: "Paseo-${arch}.${ext}"
 win:
+  # Directory builds are unsigned local test clients. Avoid downloading the
+  # legacy winCodeSign archive, which contains macOS symlinks that require
+  # elevated Windows link privileges to extract.
+  signAndEditExecutable: false
   artifactName: "Paseo-Setup-${version}-${arch}.${ext}"
   icon: assets/icon.ico
   extraResources:
