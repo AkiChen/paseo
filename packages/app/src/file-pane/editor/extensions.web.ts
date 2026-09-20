@@ -1,6 +1,8 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
   bracketMatching,
+  foldGutter,
+  foldKeymap,
   defaultHighlightStyle,
   indentOnInput,
   syntaxHighlighting,
@@ -31,6 +33,7 @@ export interface EditorVisualTheme {
 export function editorBaseExtensions(onSave: () => void) {
   return [
     lineNumbers(),
+    foldGutter(),
     history(),
     drawSelection(),
     indentOnInput(),
@@ -42,6 +45,7 @@ export function editorBaseExtensions(onSave: () => void) {
       indentWithTab,
       ...defaultKeymap,
       ...historyKeymap,
+      ...foldKeymap,
       ...searchKeymap,
     ]),
   ];

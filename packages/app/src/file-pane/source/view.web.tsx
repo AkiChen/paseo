@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { foldGutter, foldKeymap } from "@codemirror/language";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { getLanguageForFile } from "@getpaseo/highlight";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { EditorVisualTheme } from "../editor/extensions.web";
@@ -73,6 +74,9 @@ function ReadonlyCodeMirror({
         extensions: [
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
+          lineNumbers(),
+          foldGutter(),
+          keymap.of(foldKeymap),
           languageCompartment.of(
             languageFor({ filename: values.filename, presentation: values.presentation }),
           ),
