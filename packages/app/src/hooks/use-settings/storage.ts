@@ -23,6 +23,12 @@ import {
 import { z } from "zod";
 import { APP_SETTINGS_KEY, LEGACY_SETTINGS_KEY } from "./keys";
 import { migrateAppSettings } from "./migrations";
+import { DEFAULT_TERMINAL_THEME, isTerminalThemeId, type TerminalThemeId } from "@/terminal/themes";
+import {
+  DEFAULT_TERMINAL_CURSOR_STYLE,
+  isTerminalCursorStyle,
+  type TerminalCursorStyle,
+} from "@/terminal/cursor-style";
 
 export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
@@ -62,6 +68,9 @@ export const MAX_CONTENT_FONT_SIZE = 21;
 export const DEFAULT_CODE_FONT_SIZE = 12; // == FONT_SIZE.code
 export const MIN_CODE_FONT_SIZE = 9;
 export const MAX_CODE_FONT_SIZE = 22; // line-height 1.5×22=33 stays safe
+export const DEFAULT_TERMINAL_FONT_SIZE = 13;
+export const MIN_TERMINAL_FONT_SIZE = 9;
+export const MAX_TERMINAL_FONT_SIZE = 30;
 export const MAX_FONT_FAMILY_LENGTH = 200;
 
 export interface AppSettings {
@@ -72,6 +81,11 @@ export interface AppSettings {
   sendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
   terminalScrollbackLines: number;
+  terminalTheme: TerminalThemeId;
+  terminalCursorStyle: TerminalCursorStyle;
+  terminalFontFamily: string; // "" = platform default terminal font
+  terminalFontSize: number; // clamped px, default 13
+  isTerminalCloseConfirmationEnabled: boolean;
   useLegacyTerminalRenderer: boolean;
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
@@ -126,6 +140,11 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sendBehavior: "steer",
   serviceUrlBehavior: "ask",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
+  terminalTheme: DEFAULT_TERMINAL_THEME,
+  terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+  terminalFontFamily: "",
+  terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+  isTerminalCloseConfirmationEnabled: true,
   useLegacyTerminalRenderer: false,
   uiFontFamily: "",
   monoFontFamily: "",
@@ -204,6 +223,16 @@ const StoredAppSettingsSchema = z
       MIN_TERMINAL_SCROLLBACK_LINES,
       MAX_TERMINAL_SCROLLBACK_LINES,
     ).catch(DEFAULT_TERMINAL_SCROLLBACK_LINES),
+    terminalTheme: z.string().refine(isTerminalThemeId).catch(DEFAULT_TERMINAL_THEME),
+    terminalCursorStyle: z
+      .string()
+      .refine(isTerminalCursorStyle)
+      .catch(DEFAULT_TERMINAL_CURSOR_STYLE),
+    terminalFontFamily: sanitizedFontFamily().catch(""),
+    terminalFontSize: clampedNumber(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE).catch(
+      DEFAULT_TERMINAL_FONT_SIZE,
+    ),
+    isTerminalCloseConfirmationEnabled: z.boolean().catch(true),
     useLegacyTerminalRenderer: z.boolean().catch(false),
     uiFontFamily: sanitizedFontFamily().catch(""),
     monoFontFamily: sanitizedFontFamily().catch(""),
@@ -364,9 +393,11 @@ export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<Ap
  * Reads whichever of the settings blobs exists, without migrating. `needsWrite` covers the reads
  * that produce settings the stored blob does not already spell out.
  */
-async function readAppSettings(
-  deps: SettingsDeps,
-): Promise<{ settings: AppSettings; needsWrite: boolean; stored: StoredAppSettings }> {
+async function readAppSettings(deps: SettingsDeps): Promise<{
+  settings: AppSettings;
+  needsWrite: boolean;
+  stored: StoredAppSettings;
+}> {
   const stored = await readSettingsObject(deps.storage, APP_SETTINGS_KEY);
   if (stored) {
     return {

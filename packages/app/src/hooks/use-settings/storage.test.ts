@@ -6,6 +6,9 @@ import {
   DEFAULT_APP_SETTINGS,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
   DEFAULT_CONTENT_FONT_SIZE,
   DEFAULT_UI_BASE_FONT_SIZE,
   defaultUiBaseFontSize,
@@ -169,6 +172,22 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.language).toBe("system");
   });
 
+  it("loads and clamps terminal font settings", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          terminalFontFamily: "  Cascadia Mono  ",
+          terminalFontSize: 999,
+        }),
+      }),
+    });
+    const result = await loadAppSettingsFromStorage(deps);
+    expect(result.terminalFontFamily).toBe("Cascadia Mono");
+    expect(result.terminalFontSize).toBe(MAX_TERMINAL_FONT_SIZE);
+    expect(DEFAULT_CLIENT_SETTINGS.terminalFontSize).toBe(DEFAULT_TERMINAL_FONT_SIZE);
+    expect(DEFAULT_CLIENT_SETTINGS.terminalFontSize).toBeGreaterThanOrEqual(MIN_TERMINAL_FONT_SIZE);
+  });
+
   it("defaults workspace title source to title when storage is empty", async () => {
     const deps = makeDeps();
 
@@ -286,6 +305,34 @@ describe("loadAppSettingsFromStorage", () => {
     const result = await loadAppSettingsFromStorage(deps);
 
     expect(result.useLegacyTerminalRenderer).toBe(true);
+  });
+
+  it("loads terminal appearance and close confirmation preferences", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          terminalTheme: "dracula",
+          isTerminalCloseConfirmationEnabled: false,
+        }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.terminalTheme).toBe("dracula");
+    expect(result.isTerminalCloseConfirmationEnabled).toBe(false);
+  });
+
+  it("falls back to the Paseo terminal theme for an unknown theme", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ terminalTheme: "missing" }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.terminalTheme).toBe("app");
   });
 
   it("loads configured terminal scrollback lines from app settings", async () => {

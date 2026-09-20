@@ -2156,6 +2156,32 @@ export const en = {
         description: "Lines kept in the built-in terminal buffer",
         accessibilityLabel: "Terminal scrollback lines",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Terminal theme",
+        description: "Color scheme used by built-in terminals",
+        accessibilityLabel: "Select terminal theme ({{value}})",
+      },
+      terminalCursor: {
+        label: "Terminal cursor",
+        description: "Shape of the cursor in built-in terminals",
+        options: { block: "Block", bar: "Bar", underline: "Underline" },
+      },
+      terminalCloseConfirmation: {
+        label: "Confirm before closing terminals",
+        description: "Ask before stopping a terminal from its tab",
+        accessibilityLabel: "Confirm before closing terminals",
+      },
       autoExpandReasoning: {
         label: "Always expand reasoning",
         description: "Show agent thinking and chain-of-thought blocks fully expanded by default",

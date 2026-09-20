@@ -2067,6 +2067,32 @@ export const ja: TranslationResources = {
         description: "組み込みターミナルバッファに保持する行数",
         accessibilityLabel: "ターミナルスクロールバック行数",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "ターミナルテーマ",
+        description: "内蔵ターミナルで使用する配色",
+        accessibilityLabel: "ターミナルテーマを選択（{{value}}）",
+      },
+      terminalCursor: {
+        label: "ターミナルカーソル",
+        description: "内蔵ターミナルのカーソル形状",
+        options: { block: "ブロック", bar: "バー", underline: "下線" },
+      },
+      terminalCloseConfirmation: {
+        label: "ターミナルを閉じる前に確認",
+        description: "タブからターミナルを停止する前に確認する",
+        accessibilityLabel: "ターミナルを閉じる前に確認",
+      },
       autoExpandReasoning: {
         label: "常に思考プロセスを展開",
         description: "デフォルトでAIのエージェント思考・推論ブロックを完全に展開して表示します",

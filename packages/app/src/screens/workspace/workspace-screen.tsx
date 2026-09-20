@@ -1855,6 +1855,9 @@ function WorkspaceScreenContent({
   );
   const openInSidePane = useSettings((settings) => settings.openInSidePane);
   const pullRequestOpenLocation = useSettings((settings) => settings.pullRequestOpenLocation);
+  const isTerminalCloseConfirmationEnabled = useSettings(
+    (settings) => settings.isTerminalCloseConfirmationEnabled,
+  );
   const focusWorkspaceTab = useWorkspaceLayoutStore((state) => state.focusTab);
   const selectWorkspaceTabInPane = useWorkspaceLayoutStore((state) => state.selectTabInPane);
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
@@ -2507,15 +2510,17 @@ function WorkspaceScreenContent({
     async (input: { tabId: string; terminalId: string }) => {
       const { tabId, terminalId } = input;
       await closeTab(tabId, async () => {
-        const confirmed = await confirmDialog({
-          title: t("workspace.tabs.confirmations.closeTerminalTitle"),
-          message: t("workspace.tabs.confirmations.closeTerminalMessage"),
-          confirmLabel: t("workspace.tabs.confirmations.close"),
-          cancelLabel: t("workspace.tabs.confirmations.cancel"),
-          destructive: true,
-        });
-        if (!confirmed) {
-          return;
+        if (isTerminalCloseConfirmationEnabled) {
+          const confirmed = await confirmDialog({
+            title: t("workspace.tabs.confirmations.closeTerminalTitle"),
+            message: t("workspace.tabs.confirmations.closeTerminalMessage"),
+            confirmLabel: t("workspace.tabs.confirmations.close"),
+            cancelLabel: t("workspace.tabs.confirmations.cancel"),
+            destructive: true,
+          });
+          if (!confirmed) {
+            return;
+          }
         }
 
         removeTerminalFromCache(terminalId);
@@ -2534,6 +2539,7 @@ function WorkspaceScreenContent({
       closeTab,
       closeWorkspaceTabWithCleanup,
       invalidateTerminals,
+      isTerminalCloseConfirmationEnabled,
       killTerminalAsync,
       persistenceKey,
       removeTerminalFromCache,

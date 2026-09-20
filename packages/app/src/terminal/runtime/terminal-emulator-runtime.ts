@@ -29,6 +29,7 @@ import {
   type TerminalLocalFileLinkTarget,
 } from "../local-links/terminal-local-link-provider";
 import { resolveTerminalFontFamily, resolveTerminalFontSize } from "./terminal-font";
+import type { TerminalCursorStyle } from "../cursor-style";
 
 export type TerminalOutputData = Uint8Array;
 
@@ -37,6 +38,7 @@ export interface TerminalEmulatorRuntimeMountInput {
   host: HTMLDivElement;
   initialSnapshot: TerminalState | null;
   scrollback: number;
+  cursorStyle?: TerminalCursorStyle;
   theme: ITheme;
   fontFamily?: string;
   fontSize?: number;
@@ -231,7 +233,7 @@ export class TerminalEmulatorRuntime {
       allowProposedApi: true,
       convertEol: false,
       cursorBlink: true,
-      cursorStyle: "bar",
+      cursorStyle: input.cursorStyle ?? "bar",
       fontFamily: resolveTerminalFontFamily(input.fontFamily),
       fontSize: resolveTerminalFontSize(input.fontSize),
       lineHeight: 1.0,
@@ -705,6 +707,12 @@ export class TerminalEmulatorRuntime {
       return;
     }
 
+    this.refreshVisibleRows();
+  }
+
+  setCursorStyle(input: { style: TerminalCursorStyle }): void {
+    if (!this.terminal) return;
+    this.terminal.options.cursorStyle = input.style;
     this.refreshVisibleRows();
   }
 

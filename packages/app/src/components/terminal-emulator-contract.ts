@@ -10,6 +10,7 @@ import type {
 import type { TerminalClipboardWriter } from "../terminal/native-renderer/terminal-selection";
 import type { PendingTerminalModifiers } from "../utils/terminal-keys";
 import type { TerminalRendererReadyChange } from "../utils/terminal-renderer-readiness";
+import type { TerminalCursorStyle } from "../terminal/cursor-style";
 
 export interface TerminalEmulatorHandle {
   writeOutput: (data: TerminalOutputData) => void;
@@ -31,6 +32,7 @@ export interface TerminalEmulatorProps {
   testId?: string;
   xtermTheme?: ITheme;
   scrollbackLines: number;
+  cursorStyle: TerminalCursorStyle;
   fontFamily?: string;
   fontSize?: number;
   keyboardInset?: number;

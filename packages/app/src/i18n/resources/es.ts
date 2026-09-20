@@ -2099,6 +2099,32 @@ export const es: TranslationResources = {
         description: "Líneas mantenidas en el búfer de terminal incorporado",
         accessibilityLabel: "Líneas del historial de terminal",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Tema del terminal",
+        description: "Esquema de colores de los terminales integrados",
+        accessibilityLabel: "Seleccionar tema del terminal ({{value}})",
+      },
+      terminalCursor: {
+        label: "Cursor del terminal",
+        description: "Forma del cursor en los terminales integrados",
+        options: { block: "Bloque", bar: "Barra", underline: "Subrayado" },
+      },
+      terminalCloseConfirmation: {
+        label: "Confirmar antes de cerrar terminales",
+        description: "Preguntar antes de detener un terminal desde su pestaña",
+        accessibilityLabel: "Confirmar antes de cerrar terminales",
+      },
       autoExpandReasoning: {
         label: "Siempre expandir razonamiento",
         description:

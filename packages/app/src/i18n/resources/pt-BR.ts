@@ -2083,6 +2083,32 @@ export const ptBR: TranslationResources = {
         description: "Linhas mantidas no buffer do terminal integrado",
         accessibilityLabel: "Linhas do scrollback do terminal",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Tema do terminal",
+        description: "Esquema de cores dos terminais integrados",
+        accessibilityLabel: "Selecionar tema do terminal ({{value}})",
+      },
+      terminalCursor: {
+        label: "Cursor do terminal",
+        description: "Formato do cursor nos terminais integrados",
+        options: { block: "Bloco", bar: "Barra", underline: "Sublinhado" },
+      },
+      terminalCloseConfirmation: {
+        label: "Confirmar antes de fechar terminais",
+        description: "Perguntar antes de encerrar um terminal pela aba",
+        accessibilityLabel: "Confirmar antes de fechar terminais",
+      },
       autoExpandReasoning: {
         label: "Sempre expandir raciocínio",
         description:

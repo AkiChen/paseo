@@ -78,6 +78,7 @@ import {
   type OpenFileDisposition,
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
+import { resolveTerminalTheme } from "@/terminal/themes";
 
 interface TerminalPaneProps {
   serverId: string;
@@ -214,11 +215,14 @@ export function TerminalPane({
   const isAppActivelyVisible = useAppActivelyVisible();
   const { theme } = useUnistyles();
   const { settings } = useAppSettings();
-  const xtermTheme = useMemo(() => toXtermTheme(theme.colors.terminal), [theme]);
+  const xtermTheme = useMemo(
+    () => resolveTerminalTheme(settings.terminalTheme, toXtermTheme(theme.colors.terminal)),
+    [settings.terminalTheme, theme],
+  );
   const terminalFontFamily = useMemo(() => {
-    const trimmed = settings.monoFontFamily.trim();
+    const trimmed = settings.terminalFontFamily.trim();
     return trimmed.length > 0 ? trimmed : undefined;
-  }, [settings.monoFontFamily]);
+  }, [settings.terminalFontFamily]);
   const isMobile = useIsCompactFormFactor();
   const mobileView = usePanelStore((state) => state.mobilePanel.target);
   const showMobileAgentList = usePanelStore((state) => state.showMobileAgentList);
@@ -1051,8 +1055,9 @@ export function TerminalPane({
             testId="terminal-surface"
             xtermTheme={xtermTheme}
             scrollbackLines={settings.terminalScrollbackLines}
+            cursorStyle={settings.terminalCursorStyle}
             fontFamily={terminalFontFamily}
-            fontSize={settings.codeFontSize}
+            fontSize={settings.terminalFontSize}
             keyboardInset={keyboardInset}
             isKeyboardVisible={isKeyboardVisible}
             swipeGesturesEnabled={swipeGesturesEnabled}

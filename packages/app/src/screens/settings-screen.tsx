@@ -56,6 +56,10 @@ import {
   useAppSettings,
   useSettings,
   parseTerminalScrollbackLines,
+  parseClampedFontSize,
+  sanitizeFontFamily,
+  MIN_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
   type AppSettings,
   type SendBehavior,
   type ServiceUrlBehavior,
@@ -136,6 +140,12 @@ import {
 import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isNative, isWeb } from "@/constants/platform";
+import {
+  TERMINAL_THEME_OPTIONS,
+  terminalThemeLabel,
+  type TerminalThemeId,
+} from "@/terminal/themes";
+import { TERMINAL_CURSOR_STYLES, type TerminalCursorStyle } from "@/terminal/cursor-style";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -283,10 +293,16 @@ const SERVICE_URL_BEHAVIOR_VALUES: ServiceUrlBehavior[] = ["ask", "in-app", "ext
 interface GeneralSectionProps {
   settings: AppSettings;
   isDesktopApp: boolean;
+  appVersionText: string;
   handleSendBehaviorChange: (behavior: SendBehavior) => void;
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
+  handleTerminalThemeChange: (theme: TerminalThemeId) => void;
+  handleTerminalCursorStyleChange: (style: TerminalCursorStyle) => void;
+  handleTerminalFontFamilyChange: (family: string) => void;
+  handleTerminalFontSizeChange: (size: number) => void;
+  handleTerminalCloseConfirmationChange: (enabled: boolean) => void;
 }
 
 interface ServiceUrlBehaviorMenuItemProps {
@@ -301,6 +317,20 @@ interface SendBehaviorMenuItemProps {
   label: string;
   selected: boolean;
   onChange: (value: SendBehavior) => void;
+}
+
+interface TerminalThemeMenuItemProps {
+  value: TerminalThemeId;
+  label: string;
+  selected: boolean;
+  onChange: (value: TerminalThemeId) => void;
+}
+
+interface TerminalCursorStyleMenuItemProps {
+  value: TerminalCursorStyle;
+  label: string;
+  selected: boolean;
+  onChange: (value: TerminalCursorStyle) => void;
 }
 
 function SendBehaviorMenuItem({ value, label, selected, onChange }: SendBehaviorMenuItemProps) {
@@ -323,6 +353,31 @@ function ServiceUrlBehaviorMenuItem({
   const handleSelect = useCallback(() => {
     onChange(value);
   }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function TerminalThemeMenuItem({ value, label, selected, onChange }: TerminalThemeMenuItemProps) {
+  const handleSelect = useCallback(() => {
+    onChange(value);
+  }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function TerminalCursorStyleMenuItem({
+  value,
+  label,
+  selected,
+  onChange,
+}: TerminalCursorStyleMenuItemProps) {
+  const handleSelect = useCallback(() => onChange(value), [onChange, value]);
   return (
     <DropdownMenuItem selected={selected} onSelect={handleSelect}>
       {label}
@@ -357,10 +412,16 @@ function LanguageMenuItem({ value, activeLocale, selected, onChange }: LanguageM
 function GeneralSection({
   settings,
   isDesktopApp,
+  appVersionText,
   handleSendBehaviorChange,
   handleServiceUrlBehaviorChange,
   handleLanguageChange,
   handleTerminalScrollbackLinesChange,
+  handleTerminalThemeChange,
+  handleTerminalCursorStyleChange,
+  handleTerminalFontFamilyChange,
+  handleTerminalFontSizeChange,
+  handleTerminalCloseConfirmationChange,
 }: GeneralSectionProps) {
   const { t, i18n } = useTranslation();
   const activeLocale = getActiveLocale(i18n.language);
@@ -382,9 +443,19 @@ function GeneralSection({
   const [terminalScrollbackValue, setTerminalScrollbackValue] = useState(
     String(settings.terminalScrollbackLines),
   );
+  const [terminalFontFamilyValue, setTerminalFontFamilyValue] = useState(
+    settings.terminalFontFamily,
+  );
+  const [terminalFontSizeValue, setTerminalFontSizeValue] = useState(
+    String(settings.terminalFontSize),
+  );
 
   const handleTerminalScrollbackChangeText = useCallback((value: string) => {
     setTerminalScrollbackValue(value.replace(/[^\d]/g, ""));
+  }, []);
+
+  const handleTerminalFontSizeChangeText = useCallback((value: string) => {
+    setTerminalFontSizeValue(value.replace(/[^\d]/g, ""));
   }, []);
 
   const commitTerminalScrollback = useCallback(() => {
@@ -404,10 +475,38 @@ function GeneralSection({
     setTerminalScrollbackValue(String(settings.terminalScrollbackLines));
   }, [settings.terminalScrollbackLines]);
 
+  useEffect(() => {
+    setTerminalFontFamilyValue(settings.terminalFontFamily);
+    setTerminalFontSizeValue(String(settings.terminalFontSize));
+  }, [settings.terminalFontFamily, settings.terminalFontSize]);
+
+  const commitTerminalFontFamily = useCallback(() => {
+    const nextValue = sanitizeFontFamily(terminalFontFamilyValue) ?? settings.terminalFontFamily;
+    setTerminalFontFamilyValue(nextValue);
+    if (nextValue !== settings.terminalFontFamily) handleTerminalFontFamilyChange(nextValue);
+  }, [handleTerminalFontFamilyChange, settings.terminalFontFamily, terminalFontFamilyValue]);
+
+  const commitTerminalFontSize = useCallback(() => {
+    const parsed = parseClampedFontSize(terminalFontSizeValue, {
+      min: MIN_TERMINAL_FONT_SIZE,
+      max: MAX_TERMINAL_FONT_SIZE,
+    });
+    const nextValue = parsed ?? settings.terminalFontSize;
+    setTerminalFontSizeValue(String(nextValue));
+    if (nextValue !== settings.terminalFontSize) handleTerminalFontSizeChange(nextValue);
+  }, [handleTerminalFontSizeChange, settings.terminalFontSize, terminalFontSizeValue]);
+
   return (
     <SettingsSection title={t("settings.general.title")}>
       <View style={settingsStyles.card}>
         <View style={settingsStyles.row}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>{t("settings.about.appVersion")}</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.about.thisDevice")}</Text>
+          </View>
+          <Text style={styles.aboutValue}>{appVersionText}</Text>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>{t("settings.general.defaultSend.label")}</Text>
             <Text style={settingsStyles.rowHint}>{t(sendBehaviorDescriptionKey)}</Text>
@@ -415,7 +514,9 @@ function GeneralSection({
           <DropdownMenu>
             <DropdownTrigger
               accessibilityRole="button"
-              accessibilityLabel={`${t("settings.general.defaultSend.label")}: ${selectedSendBehaviorLabel}`}
+              accessibilityLabel={`${t(
+                "settings.general.defaultSend.label",
+              )}: ${selectedSendBehaviorLabel}`}
               style={themeTriggerStyle}
             >
               <Text style={styles.themeTriggerText}>{selectedSendBehaviorLabel}</Text>
@@ -432,6 +533,121 @@ function GeneralSection({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>{t("settings.general.terminalTheme.label")}</Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.terminalTheme.description")}
+            </Text>
+          </View>
+          <DropdownMenu>
+            <DropdownTrigger
+              accessibilityRole="button"
+              accessibilityLabel={t("settings.general.terminalTheme.accessibilityLabel", {
+                value: terminalThemeLabel(settings.terminalTheme),
+              })}
+              style={themeTriggerStyle}
+            >
+              <Text style={styles.themeTriggerText}>
+                {terminalThemeLabel(settings.terminalTheme)}
+              </Text>
+            </DropdownTrigger>
+            <DropdownMenuContent side="bottom" align="end" width={220}>
+              {TERMINAL_THEME_OPTIONS.map((option) => (
+                <TerminalThemeMenuItem
+                  key={option.id}
+                  value={option.id}
+                  label={option.label}
+                  selected={settings.terminalTheme === option.id}
+                  onChange={handleTerminalThemeChange}
+                />
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>
+              {t("settings.general.terminalFontFamily.label")}
+            </Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.terminalFontFamily.description")}
+            </Text>
+          </View>
+          <TextInput
+            initialValue={terminalFontFamilyValue}
+            onChangeText={setTerminalFontFamilyValue}
+            onBlur={commitTerminalFontFamily}
+            onSubmitEditing={commitTerminalFontFamily}
+            style={styles.terminalFontFamilyInput}
+            accessibilityLabel={t("settings.general.terminalFontFamily.accessibilityLabel")}
+            placeholder={t("settings.general.terminalFontFamily.placeholder")}
+          />
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>
+              {t("settings.general.terminalFontSize.label")}
+            </Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.terminalFontSize.description")}
+            </Text>
+          </View>
+          <TextInput
+            initialValue={terminalFontSizeValue}
+            onChangeText={handleTerminalFontSizeChangeText}
+            onBlur={commitTerminalFontSize}
+            onSubmitEditing={commitTerminalFontSize}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            selectTextOnFocus
+            style={styles.terminalScrollbackInput}
+            accessibilityLabel={t("settings.general.terminalFontSize.accessibilityLabel")}
+          />
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>
+              {t("settings.general.terminalCursor.label")}
+            </Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.terminalCursor.description")}
+            </Text>
+          </View>
+          <DropdownMenu>
+            <DropdownTrigger accessibilityRole="button" style={themeTriggerStyle}>
+              <Text style={styles.themeTriggerText}>
+                {t(`settings.general.terminalCursor.options.${settings.terminalCursorStyle}`)}
+              </Text>
+            </DropdownTrigger>
+            <DropdownMenuContent side="bottom" align="end" width={160}>
+              {TERMINAL_CURSOR_STYLES.map((value) => (
+                <TerminalCursorStyleMenuItem
+                  key={value}
+                  value={value}
+                  label={t(`settings.general.terminalCursor.options.${value}`)}
+                  selected={settings.terminalCursorStyle === value}
+                  onChange={handleTerminalCursorStyleChange}
+                />
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </View>
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>
+              {t("settings.general.terminalCloseConfirmation.label")}
+            </Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.terminalCloseConfirmation.description")}
+            </Text>
+          </View>
+          <Switch
+            value={settings.isTerminalCloseConfirmationEnabled}
+            onValueChange={handleTerminalCloseConfirmationChange}
+            accessibilityLabel={t("settings.general.terminalCloseConfirmation.accessibilityLabel")}
+          />
         </View>
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
@@ -1293,6 +1509,37 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleTerminalThemeChange = useCallback(
+    (terminalTheme: TerminalThemeId) => {
+      void updateSettings({ terminalTheme });
+    },
+    [updateSettings],
+  );
+
+  const handleTerminalCursorStyleChange = useCallback(
+    (terminalCursorStyle: TerminalCursorStyle) => {
+      void updateSettings({ terminalCursorStyle });
+    },
+    [updateSettings],
+  );
+
+  const handleTerminalFontFamilyChange = useCallback(
+    (terminalFontFamily: string) => void updateSettings({ terminalFontFamily }),
+    [updateSettings],
+  );
+
+  const handleTerminalFontSizeChange = useCallback(
+    (terminalFontSize: number) => void updateSettings({ terminalFontSize }),
+    [updateSettings],
+  );
+
+  const handleTerminalCloseConfirmationChange = useCallback(
+    (isTerminalCloseConfirmationEnabled: boolean) => {
+      void updateSettings({ isTerminalCloseConfirmationEnabled });
+    },
+    [updateSettings],
+  );
+
   const handleUseLegacyTerminalRendererChange = useCallback(
     (useLegacyTerminalRenderer: boolean) => {
       void updateSettings({ useLegacyTerminalRenderer });
@@ -1527,10 +1774,16 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                 <GeneralSection
                   settings={settings}
                   isDesktopApp={isDesktopApp}
+                  appVersionText={appVersionText}
                   handleSendBehaviorChange={handleSendBehaviorChange}
                   handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
                   handleLanguageChange={handleLanguageChange}
                   handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
+                  handleTerminalThemeChange={handleTerminalThemeChange}
+                  handleTerminalCursorStyleChange={handleTerminalCursorStyleChange}
+                  handleTerminalFontFamilyChange={handleTerminalFontFamilyChange}
+                  handleTerminalFontSizeChange={handleTerminalFontSizeChange}
+                  handleTerminalCloseConfirmationChange={handleTerminalCloseConfirmationChange}
                 />
                 {isDesktopApp ? <BrowserDataSection /> : null}
               </>
@@ -1770,6 +2023,18 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     textAlign: "right",
+  },
+  terminalFontFamilyInput: {
+    width: 180,
+    minHeight: 36,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface2,
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
   },
   placeholder: {
     flex: 1,

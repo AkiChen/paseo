@@ -28,6 +28,7 @@ import { terminalEmulatorWebViewHtml } from "../terminal/webview/terminal-emulat
 import type { PendingTerminalModifiers } from "../utils/terminal-keys";
 import { openExternalUrl } from "../utils/open-external-url";
 import type { TerminalEmulatorHandle, TerminalEmulatorProps } from "./terminal-emulator-contract";
+import type { TerminalCursorStyle } from "../terminal/cursor-style";
 import { shouldHandleTerminalBridgeMessage } from "./terminal-webview-message-routing";
 import { shouldResetForMissingRendererReady } from "./terminal-webview-readiness";
 
@@ -37,6 +38,7 @@ type BridgeInboundMessage =
       streamKey: string;
       initialSnapshot: TerminalState | null;
       scrollbackLines: number;
+      cursorStyle: TerminalCursorStyle;
       theme: ITheme;
       fontFamily?: string;
       fontSize?: number;
@@ -53,6 +55,7 @@ type BridgeInboundMessage =
   | { type: "resize"; streamKey: string; forceClaim: boolean; shouldClaim?: boolean }
   | { type: "setTheme"; streamKey: string; theme: ITheme }
   | { type: "setScrollback"; streamKey: string; lines: number }
+  | { type: "setCursorStyle"; streamKey: string; style: TerminalCursorStyle }
   | { type: "setFont"; streamKey: string; fontFamily?: string; fontSize?: number }
   | { type: "setPendingModifiers"; streamKey: string; pendingModifiers: PendingTerminalModifiers }
   | { type: "setSwipeGesturesEnabled"; streamKey: string; enabled: boolean }
@@ -127,6 +130,7 @@ function createMountMessage(input: {
   streamKey: string;
   initialSnapshot: TerminalState | null;
   scrollbackLines: number;
+  cursorStyle: TerminalCursorStyle;
   theme: ITheme;
   fontFamily?: string;
   fontSize?: number;
@@ -138,6 +142,7 @@ function createMountMessage(input: {
     streamKey: input.streamKey,
     initialSnapshot: input.initialSnapshot,
     scrollbackLines: input.scrollbackLines,
+    cursorStyle: input.cursorStyle,
     theme: input.theme,
     fontFamily: input.fontFamily,
     fontSize: input.fontSize,
@@ -156,6 +161,7 @@ export default function WebViewTerminalEmulator({
     cursor: "#e6e6e6",
   },
   scrollbackLines,
+  cursorStyle,
   fontFamily,
   fontSize,
   swipeGesturesEnabled = false,
@@ -192,6 +198,7 @@ export default function WebViewTerminalEmulator({
     streamKey,
     initialSnapshot,
     scrollbackLines,
+    cursorStyle,
     theme: xtermTheme,
     fontFamily,
     fontSize,
@@ -202,6 +209,7 @@ export default function WebViewTerminalEmulator({
     streamKey,
     initialSnapshot,
     scrollbackLines,
+    cursorStyle,
     theme: xtermTheme,
     fontFamily,
     fontSize,
@@ -389,6 +397,11 @@ export default function WebViewTerminalEmulator({
     if (!mountRequestedStreamKeyRef.current) return;
     sendToWebView({ type: "setScrollback", streamKey, lines: scrollbackLines });
   }, [scrollbackLines, sendToWebView, streamKey]);
+
+  useEffect(() => {
+    if (!mountRequestedStreamKeyRef.current) return;
+    sendToWebView({ type: "setCursorStyle", streamKey, style: cursorStyle });
+  }, [cursorStyle, sendToWebView, streamKey]);
 
   useEffect(() => {
     if (!mountRequestedStreamKeyRef.current) return;

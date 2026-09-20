@@ -2061,6 +2061,32 @@ export const ko: TranslationResources = {
         description: "내장 터미널 버퍼에 보관되는 줄 수",
         accessibilityLabel: "터미널 스크롤백 줄 수",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "터미널 테마",
+        description: "내장 터미널에서 사용할 색 구성표",
+        accessibilityLabel: "터미널 테마 선택({{value}})",
+      },
+      terminalCursor: {
+        label: "터미널 커서",
+        description: "내장 터미널의 커서 모양",
+        options: { block: "블록", bar: "막대", underline: "밑줄" },
+      },
+      terminalCloseConfirmation: {
+        label: "터미널을 닫기 전에 확인",
+        description: "탭에서 터미널을 중지하기 전에 확인",
+        accessibilityLabel: "터미널을 닫기 전에 확인",
+      },
       autoExpandReasoning: {
         label: "추론 항상 펼치기",
         description: "에이전트의 사고 및 추론 블록을 기본적으로 모두 펼쳐 표시합니다.",

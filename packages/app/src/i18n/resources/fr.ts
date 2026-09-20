@@ -2103,6 +2103,32 @@ export const fr: TranslationResources = {
         description: "Lignes conservées dans le tampon du terminal intégré",
         accessibilityLabel: "Lignes de défilementTerminal",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Thème du terminal",
+        description: "Jeu de couleurs des terminaux intégrés",
+        accessibilityLabel: "Sélectionner le thème du terminal ({{value}})",
+      },
+      terminalCursor: {
+        label: "Curseur du terminal",
+        description: "Forme du curseur dans les terminaux integres",
+        options: { block: "Bloc", bar: "Barre", underline: "Souligne" },
+      },
+      terminalCloseConfirmation: {
+        label: "Confirmer avant de fermer les terminaux",
+        description: "Demander avant d’arrêter un terminal depuis son onglet",
+        accessibilityLabel: "Confirmer avant de fermer les terminaux",
+      },
       autoExpandReasoning: {
         label: "Toujours afficher le raisonnement",
         description: "Afficher le raisonnement de l'agent entièrement développé par défaut",

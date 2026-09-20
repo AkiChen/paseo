@@ -23,6 +23,7 @@ import {
   TerminalEmulatorRuntime,
   type TerminalOutputData,
 } from "../terminal/runtime/terminal-emulator-runtime";
+import type { TerminalCursorStyle } from "../terminal/cursor-style";
 import { encodeTerminalPaste } from "../terminal/runtime/terminal-paste";
 import type {
   TerminalLocalFileLinkSource,
@@ -103,6 +104,7 @@ interface TerminalEmulatorProps {
   testId?: string;
   xtermTheme?: ITheme;
   scrollbackLines: number;
+  cursorStyle: TerminalCursorStyle;
   fontFamily?: string;
   fontSize?: number;
   keyboardInset?: number;
@@ -166,6 +168,7 @@ export default function TerminalEmulator({
     cursor: "#e6e6e6",
   },
   scrollbackLines,
+  cursorStyle,
   fontFamily,
   fontSize,
   swipeGesturesEnabled = false,
@@ -192,7 +195,9 @@ export default function TerminalEmulator({
   const fontFamilyRef = useRef(fontFamily);
   const fontSizeRef = useRef(fontSize);
   const scrollbackLinesRef = useRef(scrollbackLines);
+  const cursorStyleRef = useRef(cursorStyle);
   scrollbackLinesRef.current = scrollbackLines;
+  cursorStyleRef.current = cursorStyle;
   fontFamilyRef.current = fontFamily;
   fontSizeRef.current = fontSize;
   const themeKey = useMemo(() => buildXtermThemeKey(xtermTheme), [xtermTheme]);
@@ -322,6 +327,10 @@ export default function TerminalEmulator({
   useEffect(() => {
     runtimeRef.current?.setScrollback({ lines: scrollbackLines });
   }, [scrollbackLines]);
+
+  useEffect(() => {
+    runtimeRef.current?.setCursorStyle({ style: cursorStyle });
+  }, [cursorStyle]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -460,6 +469,7 @@ export default function TerminalEmulator({
       host,
       initialSnapshot: initialSnapshotRef.current,
       scrollback: scrollbackLinesRef.current,
+      cursorStyle: cursorStyleRef.current,
       theme: mountedThemeRef.current,
       fontFamily: fontFamilyRef.current,
       fontSize: fontSizeRef.current,

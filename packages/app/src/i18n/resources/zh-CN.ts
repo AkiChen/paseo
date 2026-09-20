@@ -2026,6 +2026,32 @@ export const zhCN: TranslationResources = {
         description: "内置终端缓冲区保留的行数",
         accessibilityLabel: "终端回滚行数",
       },
+      terminalFontFamily: {
+        label: "终端字体",
+        description: "终端标签页使用的字体",
+        accessibilityLabel: "终端字体",
+        placeholder: "默认终端字体",
+      },
+      terminalFontSize: {
+        label: "终端字号",
+        description: "终端标签页使用的字号",
+        accessibilityLabel: "终端字号",
+      },
+      terminalTheme: {
+        label: "终端主题",
+        description: "内置终端使用的配色方案",
+        accessibilityLabel: "选择终端主题（{{value}}）",
+      },
+      terminalCursor: {
+        label: "终端光标",
+        description: "内置终端中光标的形状",
+        options: { block: "方块", bar: "竖线", underline: "下划线" },
+      },
+      terminalCloseConfirmation: {
+        label: "关闭终端前确认",
+        description: "从标签页停止终端前显示确认窗口",
+        accessibilityLabel: "关闭终端前确认",
+      },
       autoExpandReasoning: {
         label: "始终展开推理过程",
         description: "默认情况下完全展开 AI 的思考和推理过程",

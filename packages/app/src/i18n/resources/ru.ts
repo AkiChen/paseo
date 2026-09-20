@@ -2083,6 +2083,32 @@ export const ru: TranslationResources = {
         description: "Количество строк, сохраняемых во встроенном буфере терминала",
         accessibilityLabel: "Количество строк в буфере прокрутки терминала",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Тема терминала",
+        description: "Цветовая схема встроенных терминалов",
+        accessibilityLabel: "Выбрать тему терминала ({{value}})",
+      },
+      terminalCursor: {
+        label: "Курсор терминала",
+        description: "Форма курсора во встроенных терминалах",
+        options: { block: "Блок", bar: "Черта", underline: "Подчеркивание" },
+      },
+      terminalCloseConfirmation: {
+        label: "Подтверждать закрытие терминалов",
+        description: "Спрашивать перед остановкой терминала из вкладки",
+        accessibilityLabel: "Подтверждать закрытие терминалов",
+      },
       autoExpandReasoning: {
         label: "Всегда разворачивать размышления",
         description:
