@@ -69,6 +69,20 @@ describe("desktop packaging", () => {
     expect(config).toContain('winCodeSign: "1.1.0"');
   });
 
+  // Expo inlines EXPO_PUBLIC_* values during the Babel transform, and the inlined
+  // value is not part of Metro's cache key. A warm cache keeps the first value it
+  // saw, so the custom.4 and custom.5 directories both shipped a renderer that
+  // reported 0.8.0-custom.3 while app.asar said otherwise. --clear is what lets
+  // the injected version, daemon endpoint, and dev build label reach the bundle.
+  it("clears the Metro cache before exporting the renderer", () => {
+    const script = readFileSync(
+      join(packageRoot, "..", "..", "scripts", "build-windows-x64.ps1"),
+      "utf8",
+    );
+
+    expect(script).toContain('"expo", "export", "--platform", "web", "--clear"');
+  });
+
   it("uses an Electron runtime whose Squirrel handoff explicitly wakes ShipIt", () => {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       devDependencies?: Record<string, string>;

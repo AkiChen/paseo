@@ -91,11 +91,33 @@ try {
 
   $env:PASEO_WEB_PLATFORM = "electron"
   $env:EXPO_PUBLIC_PASEO_VERSION = $Version
+
+  # Expo inlines EXPO_PUBLIC_* values during the Babel transform, and the inlined
+  # value is not part of Metro's cache key. A warm cache keeps the first value it
+  # saw, which is how the custom.4 and custom.5 directories shipped a renderer
+  # that still reported 0.8.0-custom.3. LOCAL_DAEMON and the dev build label are
+  # inlined the same way, so a stale cache can also bake an old daemon endpoint
+  # into a release build. --clear costs one cold transform per build.
   Invoke-BuildStep `
     -Label "Export Electron renderer" `
     -WorkingDirectory $appRoot `
     -Command $npxCommand `
-    -Arguments @("expo", "export", "--platform", "web")
+    -Arguments @("expo", "export", "--platform", "web", "--clear")
+
+  # The renderer reports this version in the UI, so a version that never reached
+  # the bundle is a silent failure worth stopping for.
+  $rendererBundleDirectory = Join-Path $appRoot "dist\_expo\static\js\web"
+  $rendererBundles = @(Get-ChildItem -LiteralPath $rendererBundleDirectory -Filter "index-*.js")
+  $bundleReportsVersion = $false
+  foreach ($rendererBundle in $rendererBundles) {
+    if ([IO.File]::ReadAllText($rendererBundle.FullName).Contains($Version)) {
+      $bundleReportsVersion = $true
+      break
+    }
+  }
+  if (-not $bundleReportsVersion) {
+    throw "The exported renderer does not report version $Version."
+  }
 
   Invoke-BuildStep `
     -Label "Build bundled server and CLI" `
