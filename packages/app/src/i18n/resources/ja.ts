@@ -214,8 +214,6 @@ export const ja: TranslationResources = {
         one: "サブエージェント {{count}} 件",
         other: "サブエージェント {{count}} 件",
       },
-      replies: { one: "返信 {{count}} 件", other: "返信 {{count}} 件" },
-      separator: "・",
     },
     permission: {
       plan: "プラン",
@@ -2119,7 +2117,7 @@ export const ja: TranslationResources = {
       },
       turnProcessFolding: {
         label: "ターンの過程",
-        description: "終了したターンの思考とツール呼び出しを折りたたみます",
+        description: "終了した DeepSeek Harness のターンの思考とツール呼び出しを折りたたみます",
         accessibilityLabel: "ターンの過程の表示を選択（{{value}}）",
         options: {
           compact: "コンパクト",

@@ -211,8 +211,6 @@ export const ko: TranslationResources = {
       thought: "잠시 생각함",
       toolCalls: { one: "도구 호출 {{count}}회", other: "도구 호출 {{count}}회" },
       subAgents: { one: "서브에이전트 {{count}}개", other: "서브에이전트 {{count}}개" },
-      replies: { one: "답장 {{count}}개", other: "답장 {{count}}개" },
-      separator: " · ",
     },
     permission: {
       plan: "계획",
@@ -2110,7 +2108,7 @@ export const ko: TranslationResources = {
       },
       turnProcessFolding: {
         label: "턴 과정",
-        description: "끝난 턴의 사고와 도구 호출을 접습니다",
+        description: "끝난 DeepSeek Harness 턴의 사고와 도구 호출을 접습니다",
         accessibilityLabel: "턴 과정 표시 선택({{value}})",
         options: {
           compact: "간략",

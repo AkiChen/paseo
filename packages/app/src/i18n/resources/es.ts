@@ -214,8 +214,6 @@ export const es: TranslationResources = {
         other: "{{count}} llamadas a herramientas",
       },
       subAgents: { one: "{{count}} subagente", other: "{{count}} subagentes" },
-      replies: { one: "{{count}} respuesta", other: "{{count}} respuestas" },
-      separator: " · ",
     },
     permission: {
       plan: "Plan",
@@ -2152,7 +2150,8 @@ export const es: TranslationResources = {
       },
       turnProcessFolding: {
         label: "Proceso del turno",
-        description: "Contrae el razonamiento y las llamadas a herramientas de un turno terminado",
+        description:
+          "Contrae el razonamiento y las llamadas a herramientas de un turno terminado de DeepSeek Harness",
         accessibilityLabel: "Seleccionar la visualización del proceso del turno ({{value}})",
         options: {
           compact: "Compacta",

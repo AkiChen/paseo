@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import type { StreamItem, ToolCallItem } from "@/types/stream";
-import { foldTurnProcesses, turnProcessFoldHostId } from "./model";
+import { canFoldTurnProcess, foldTurnProcesses, turnProcessFoldHostId } from "./model";
 
 const timestamp = new Date(0);
 
@@ -40,6 +40,7 @@ function toolCall(
 function fold(
   items: StreamItem[],
   options: {
+    provider?: string | undefined;
     activeTurnId?: string | null;
     expandedFoldIds?: ReadonlySet<string>;
     toolCallsIn?: (item: ToolCallItem) => readonly ToolCallItem[];
@@ -47,11 +48,21 @@ function fold(
 ) {
   return foldTurnProcesses({
     items,
+    provider: "provider" in options ? options.provider : "dsh",
     activeTurnId: options.activeTurnId ?? null,
     expandedFoldIds: options.expandedFoldIds ?? new Set<string>(),
     ...(options.toolCallsIn ? { toolCallsIn: options.toolCallsIn } : {}),
   });
 }
+
+describe("canFoldTurnProcess", () => {
+  it("folds only the agents that produce a wall of process rows", () => {
+    expect(canFoldTurnProcess("dsh")).toBe(true);
+    expect(canFoldTurnProcess("claude")).toBe(false);
+    expect(canFoldTurnProcess("codex")).toBe(false);
+    expect(canFoldTurnProcess(undefined)).toBe(false);
+  });
+});
 
 describe("foldTurnProcesses", () => {
   it("replaces a finished turn's process rows with one control row", () => {
@@ -69,7 +80,46 @@ describe("foldTurnProcesses", () => {
     ).toEqual(["t1", "c1"]);
   });
 
-  it("counts tool calls, replies, and subagent delegations", () => {
+  it("leaves every provider that is not folded alone", () => {
+    const items = [
+      thought("t1", "turn-1"),
+      toolCall("c1", "turn-1"),
+      assistant("a1", "turn-1", "Here is the answer."),
+    ];
+
+    const result = fold(items, { provider: "claude" });
+
+    expect(result.items).toBe(items);
+    expect(result.foldsByHostId.size).toBe(0);
+  });
+
+  // A reply is written content the reader keeps: it is never a member, and it
+  // ends the block of process rows in front of the answer.
+  it("keeps every reply visible", () => {
+    const items = [
+      thought("t1", "turn-1"),
+      toolCall("c1", "turn-1"),
+      assistant("a1", "turn-1", "Interim note."),
+      thought("t2", "turn-1"),
+      toolCall("c2", "turn-1"),
+      assistant("a2", "turn-1", "Here is the answer."),
+    ];
+
+    const result = fold(items);
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      "t1",
+      "c1",
+      "a1",
+      turnProcessFoldHostId("t2"),
+      "a2",
+    ]);
+    expect(
+      result.foldsByHostId.get(turnProcessFoldHostId("t2"))?.members.map((item) => item.id),
+    ).toEqual(["t2", "c2"]);
+  });
+
+  it("counts tool calls and subagent delegations", () => {
     const items = [
       thought("t1", "turn-1"),
       assistant("a1", "turn-1", "Starting."),
@@ -80,9 +130,13 @@ describe("foldTurnProcesses", () => {
     ];
 
     const result = fold(items);
-    const counts = result.foldsByHostId.get(turnProcessFoldHostId("t1"))?.counts;
+    const hostId = turnProcessFoldHostId("c1");
+    const foldEntry = result.foldsByHostId.get(hostId);
 
-    expect(counts).toEqual({ toolCalls: 2, replies: 1, subAgents: 1 });
+    expect(foldEntry?.counts).toEqual({ toolCalls: 2, subAgents: 1 });
+    // The interim reply is not a member, so the run in front of the answer
+    // starts after it.
+    expect(foldEntry?.members.map((item) => item.id)).toEqual(["c1", "c2", "c3"]);
   });
 
   it("counts the calls behind a grouped row", () => {
@@ -98,7 +152,6 @@ describe("foldTurnProcesses", () => {
 
     expect(result.foldsByHostId.get(turnProcessFoldHostId("t1"))?.counts).toEqual({
       toolCalls: 1,
-      replies: 0,
       subAgents: 1,
     });
   });

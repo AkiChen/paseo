@@ -211,8 +211,6 @@ export const zhCN: TranslationResources = {
       thought: "已思考",
       toolCalls: { one: "{{count}} 次工具调用", other: "{{count}} 次工具调用" },
       subAgents: { one: "{{count}} 个子代理", other: "{{count}} 个子代理" },
-      replies: { one: "{{count}} 条回复", other: "{{count}} 条回复" },
-      separator: " · ",
     },
     permission: {
       plan: "Plan",
@@ -2075,7 +2073,7 @@ export const zhCN: TranslationResources = {
       },
       turnProcessFolding: {
         label: "轮次过程",
-        description: "轮次结束后收起思考与工具调用",
+        description: "折叠 DeepSeek Harness 轮次结束后的思考与工具调用",
         accessibilityLabel: "选择轮次过程显示方式（{{value}}）",
         options: {
           compact: "紧凑",

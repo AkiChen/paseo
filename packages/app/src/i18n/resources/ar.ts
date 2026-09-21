@@ -211,8 +211,6 @@ export const ar: TranslationResources = {
       thought: "فكّر لبعض الوقت",
       toolCalls: { one: "{{count}} استدعاء أداة", other: "{{count}} استدعاءات أدوات" },
       subAgents: { one: "{{count}} وكيل فرعي", other: "{{count}} وكلاء فرعيون" },
-      replies: { one: "{{count}} رد", other: "{{count}} ردود" },
-      separator: " · ",
     },
     permission: {
       plan: "يخطط",
@@ -2099,7 +2097,7 @@ export const ar: TranslationResources = {
       },
       turnProcessFolding: {
         label: "سير الدور",
-        description: "يطوي تفكير الدور المنتهي واستدعاءات الأدوات",
+        description: "يطوي تفكير دور DeepSeek Harness المنتهي واستدعاءات الأدوات",
         accessibilityLabel: "اختر عرض سير الدور ({{value}})",
         options: {
           compact: "مضغوط",

@@ -214,8 +214,6 @@ export const ru: TranslationResources = {
         other: "{{count}} вызовов инструментов",
       },
       subAgents: { one: "{{count}} субагент", other: "{{count}} субагентов" },
-      replies: { one: "{{count}} ответ", other: "{{count}} ответов" },
-      separator: " · ",
     },
     permission: {
       plan: "План",
@@ -2136,7 +2134,8 @@ export const ru: TranslationResources = {
       },
       turnProcessFolding: {
         label: "Процесс хода",
-        description: "Сворачивает рассуждения и вызовы инструментов завершённого хода",
+        description:
+          "Сворачивает рассуждения и вызовы инструментов завершённого хода DeepSeek Harness",
         accessibilityLabel: "Выбрать отображение процесса хода ({{value}})",
         options: {
           compact: "Компактно",

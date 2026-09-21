@@ -6,49 +6,31 @@ function pluralKey(count: number): "one" | "other" {
 }
 
 /**
- * What the control reports: the tool calls or subagent delegations the turn ran,
- * and the replies it wrote before the answer. A turn that only thought shows the
- * thought label, matching the client this is ported from. Tool calls and
+ * What the control reports: the tool calls or subagent delegations the turned
+ * hid. A turn that only thought shows the thought label. Tool calls and
  * subagents are mutually exclusive because a delegation already accounts for the
  * work inside it.
  */
 export function buildTurnProcessLabel(t: TFunction, counts: TurnProcessCounts): string {
-  const parts: string[] = [];
   if (counts.subAgents > 0) {
-    parts.push(
-      t(`agentStream.turnProcess.subAgents.${pluralKey(counts.subAgents)}`, {
-        count: counts.subAgents,
-      }),
-    );
-  } else if (counts.toolCalls > 0) {
-    parts.push(
-      t(`agentStream.turnProcess.toolCalls.${pluralKey(counts.toolCalls)}`, {
-        count: counts.toolCalls,
-      }),
-    );
+    return t(`agentStream.turnProcess.subAgents.${pluralKey(counts.subAgents)}`, {
+      count: counts.subAgents,
+    });
   }
-  if (counts.replies > 0) {
-    parts.push(
-      t(`agentStream.turnProcess.replies.${pluralKey(counts.replies)}`, {
-        count: counts.replies,
-      }),
-    );
+  if (counts.toolCalls > 0) {
+    return t(`agentStream.turnProcess.toolCalls.${pluralKey(counts.toolCalls)}`, {
+      count: counts.toolCalls,
+    });
   }
-  if (parts.length === 0) {
-    return t("agentStream.turnProcess.thought");
-  }
-  const [only] = parts;
-  if (only !== undefined && parts.length === 1) {
-    return only;
-  }
-  return parts.join(t("agentStream.turnProcess.separator"));
+  return t("agentStream.turnProcess.thought");
 }
 
 /**
- * Folds a finished turn's process rows — reasoning, tool calls, and the earlier
- * assistant messages — behind one control row, the way the DSH web client does.
- * The turn's final answer stays visible, and a turn that is still running is
- * never folded.
+ * Folds a finished turn's process rows — reasoning and tool calls — behind one
+ * control row. Replies are never folded: an assistant row is a written answer or
+ * a note the reader is meant to keep, and it also ends the run of process rows
+ * it interrupts. The turn's final answer stays visible, and a turn that is still
+ * running is never folded.
  *
  * The fold replaces the members with a host row in the list when it is
  * collapsed, and puts the members back as their own rows when it is expanded, so
@@ -56,7 +38,6 @@ export function buildTurnProcessLabel(t: TFunction, counts: TurnProcessCounts): 
  */
 export interface TurnProcessCounts {
   toolCalls: number;
-  replies: number;
   subAgents: number;
 }
 
@@ -68,12 +49,19 @@ export interface TurnProcessFold {
   counts: TurnProcessCounts;
 }
 
+/**
+ * Only agents that produce a wall of reasoning and tool rows between their
+ * answers get a fold. Providers whose transcript reads fine unfolded keep every
+ * row they wrote.
+ */
+const FOLDING_PROVIDERS = new Set(["dsh"]);
+
+export function canFoldTurnProcess(provider: string | undefined): boolean {
+  return provider !== undefined && FOLDING_PROVIDERS.has(provider);
+}
+
 /** Rows the control owns. Anything else in the turn stays where the reader saw it. */
-const PROCESS_ROW_KINDS = new Set<StreamItem["kind"]>([
-  "thought",
-  "tool_call",
-  "assistant_message",
-]);
+const PROCESS_ROW_KINDS = new Set<StreamItem["kind"]>(["thought", "tool_call"]);
 
 export function isTurnProcessRow(item: StreamItem): boolean {
   return PROCESS_ROW_KINDS.has(item.kind);
@@ -81,6 +69,7 @@ export function isTurnProcessRow(item: StreamItem): boolean {
 
 export interface FoldTurnProcessesInput {
   items: StreamItem[];
+  provider: string | undefined;
   activeTurnId: string | null;
   expandedFoldIds: ReadonlySet<string>;
   /**
@@ -103,6 +92,9 @@ export function turnProcessFoldHostId(memberId: string): string {
 
 export function foldTurnProcesses(input: FoldTurnProcessesInput): FoldTurnProcessesResult {
   const foldsByHostId = new Map<string, TurnProcessFold>();
+  if (!canFoldTurnProcess(input.provider)) {
+    return { items: input.items, foldsByHostId };
+  }
   const output: StreamItem[] = [];
   let folded = false;
   let index = 0;
@@ -207,14 +199,8 @@ function countProcessRows(
   members: readonly StreamItem[],
   toolCallsIn?: (item: ToolCallItem) => readonly ToolCallItem[],
 ): TurnProcessCounts {
-  const counts: TurnProcessCounts = { toolCalls: 0, replies: 0, subAgents: 0 };
+  const counts: TurnProcessCounts = { toolCalls: 0, subAgents: 0 };
   for (const item of members) {
-    if (item.kind === "assistant_message") {
-      if (item.text.trim().length > 0) {
-        counts.replies += 1;
-      }
-      continue;
-    }
     if (item.kind !== "tool_call") {
       continue;
     }

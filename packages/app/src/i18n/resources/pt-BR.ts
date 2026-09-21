@@ -214,8 +214,6 @@ export const ptBR: TranslationResources = {
         other: "{{count}} chamadas de ferramentas",
       },
       subAgents: { one: "{{count}} subagente", other: "{{count}} subagentes" },
-      replies: { one: "{{count}} resposta", other: "{{count}} respostas" },
-      separator: " · ",
     },
     permission: {
       plan: "Plano",
@@ -2136,7 +2134,8 @@ export const ptBR: TranslationResources = {
       },
       turnProcessFolding: {
         label: "Processo do turno",
-        description: "Recolhe o raciocínio e as chamadas de ferramentas de um turno concluído",
+        description:
+          "Recolhe o raciocínio e as chamadas de ferramentas de um turno concluído do DeepSeek Harness",
         accessibilityLabel: "Selecionar a exibição do processo do turno ({{value}})",
         options: {
           compact: "Compacta",

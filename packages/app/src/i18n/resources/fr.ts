@@ -213,8 +213,6 @@ export const fr: TranslationResources = {
       thought: "A réfléchi un moment",
       toolCalls: { one: "{{count}} appel d’outil", other: "{{count}} appels d’outils" },
       subAgents: { one: "{{count}} sous-agent", other: "{{count}} sous-agents" },
-      replies: { one: "{{count}} réponse", other: "{{count}} réponses" },
-      separator: " · ",
     },
     permission: {
       plan: "Plan",
@@ -2152,7 +2150,8 @@ export const fr: TranslationResources = {
       },
       turnProcessFolding: {
         label: "Processus du tour",
-        description: "Replie la réflexion et les appels d’outils d’un tour terminé",
+        description:
+          "Replie la réflexion et les appels d’outils d’un tour DeepSeek Harness terminé",
         accessibilityLabel: "Sélectionner l’affichage du processus du tour ({{value}})",
         options: {
           compact: "Compact",

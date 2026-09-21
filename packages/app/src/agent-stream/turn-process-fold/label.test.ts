@@ -17,7 +17,7 @@ describe("buildTurnProcessLabel", () => {
   it("says the turn thought when it ran nothing countable", () => {
     const { t, calls } = recordingT();
 
-    expect(buildTurnProcessLabel(t, { toolCalls: 0, replies: 0, subAgents: 0 })).toBe(
+    expect(buildTurnProcessLabel(t, { toolCalls: 0, subAgents: 0 })).toBe(
       "agentStream.turnProcess.thought",
     );
     expect(calls.map((call) => call.key)).toEqual(["agentStream.turnProcess.thought"]);
@@ -26,29 +26,23 @@ describe("buildTurnProcessLabel", () => {
   it("counts a single tool call in the singular", () => {
     const { t, calls } = recordingT();
 
-    buildTurnProcessLabel(t, { toolCalls: 1, replies: 0, subAgents: 0 });
+    buildTurnProcessLabel(t, { toolCalls: 1, subAgents: 0 });
 
     expect(calls).toEqual([{ key: "agentStream.turnProcess.toolCalls.one", count: 1 }]);
   });
 
-  it("joins the work and the replies", () => {
+  it("counts several tool calls in the plural", () => {
     const { t, calls } = recordingT();
 
-    const label = buildTurnProcessLabel(t, { toolCalls: 4, replies: 1, subAgents: 0 });
+    buildTurnProcessLabel(t, { toolCalls: 4, subAgents: 0 });
 
-    expect(calls.map((call) => call.key)).toEqual([
-      "agentStream.turnProcess.toolCalls.other",
-      "agentStream.turnProcess.replies.one",
-      "agentStream.turnProcess.separator",
-    ]);
-    expect(label).toContain("agentStream.turnProcess.toolCalls.other");
-    expect(label).toContain("agentStream.turnProcess.replies.one");
+    expect(calls).toEqual([{ key: "agentStream.turnProcess.toolCalls.other", count: 4 }]);
   });
 
   it("prefers subagent delegations over tool calls", () => {
     const { t, calls } = recordingT();
 
-    buildTurnProcessLabel(t, { toolCalls: 5, replies: 0, subAgents: 2 });
+    buildTurnProcessLabel(t, { toolCalls: 5, subAgents: 2 });
 
     expect(calls.map((call) => call.key)).toEqual(["agentStream.turnProcess.subAgents.other"]);
     expect(calls[0]?.count).toBe(2);

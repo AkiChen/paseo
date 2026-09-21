@@ -66,7 +66,11 @@ import {
   projectToolCallDetailLevel,
 } from "@/tool-calls/detail-level/projection";
 import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
-import { foldTurnProcesses, type TurnProcessFold } from "./turn-process-fold/model";
+import {
+  canFoldTurnProcess,
+  foldTurnProcesses,
+  type TurnProcessFold,
+} from "./turn-process-fold/model";
 import { TurnProcessFoldView } from "./turn-process-fold/view";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
@@ -567,7 +571,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
     const foldedTurnProcesses = useMemo(() => {
-      if (turnProcessFolding === "standard") {
+      if (turnProcessFolding === "standard" || !canFoldTurnProcess(context.provider)) {
         return {
           tail: projectedToolCalls.tail,
           head: projectedToolCalls.head,
@@ -578,24 +582,21 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       const toolCallsIn = (item: ToolCallItem) =>
         projectedToolCalls.groupsByHostId.get(item.id)?.run.calls ?? [item];
       const activeTurnId = isTurnActive ? effectiveTurnPresentation.turnId : null;
-      const tail = foldTurnProcesses({
-        items: projectedToolCalls.tail,
+      const foldInput = {
+        provider: context.provider,
         activeTurnId,
         expandedFoldIds: expandedTurnProcessFoldIds,
         toolCallsIn,
-      });
-      const head = foldTurnProcesses({
-        items: projectedToolCalls.head,
-        activeTurnId,
-        expandedFoldIds: expandedTurnProcessFoldIds,
-        toolCallsIn,
-      });
+      };
+      const tail = foldTurnProcesses({ items: projectedToolCalls.tail, ...foldInput });
+      const head = foldTurnProcesses({ items: projectedToolCalls.head, ...foldInput });
       return {
         tail: tail.items,
         head: head.items,
         foldsByHostId: new Map([...tail.foldsByHostId, ...head.foldsByHostId]),
       };
     }, [
+      context.provider,
       effectiveTurnPresentation.turnId,
       expandedTurnProcessFoldIds,
       isTurnActive,
