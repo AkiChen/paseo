@@ -152,7 +152,14 @@ try {
     throw "The packaged directory is incomplete."
   }
 
-  Copy-Item -LiteralPath $unpackedDirectory -Destination $outputDirectory -Recurse
+  # Copy-Item fails once the packaged tree plus the output path passes MAX_PATH:
+# the renderer carries assets under `assets/__node_modules/@react-navigation/...`
+# whose depth is fixed, so a long build-number pushes the copy over the limit and
+# the whole build dies at the last step. robocopy handles long paths itself.
+  & robocopy $unpackedDirectory $outputDirectory /E /NFL /NDL /NJH /NJS /NP | Out-Null
+  if ($LASTEXITCODE -ge 8) {
+    throw "Failed to copy the packaged directory (robocopy exit code $LASTEXITCODE)."
+  }
 
   $commit = (& git -C $repoRoot rev-parse HEAD).Trim()
   $dirty = [bool](& git -C $repoRoot status --porcelain)
