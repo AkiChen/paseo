@@ -44,7 +44,7 @@ import {
 import { GenericACPAgentClient } from "./generic-acp-agent.js";
 import { parseKiroExtensionCommands } from "./kiro-acp-agent.js";
 import { transformPiModels } from "./pi/agent.js";
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
+import type { AgentStreamEvent, AgentTimelineItem } from "../agent-sdk-types.js";
 import type {
   AgentCapabilityFlags,
   AgentPersistenceHandle,
@@ -3294,6 +3294,147 @@ async function startTerminal(
   vi.restoreAllMocks();
   return terminal.terminalId;
 }
+
+describe("ACPAgentSession unclassified tool calls", () => {
+  // DSH reports every tool as `kind: "other"` with the wire tool name in `title`
+  // and the arguments in `rawInput`. The detail has to come from that evidence:
+  // otherwise the call renders as "Other bash" and every overview summary counts
+  // it as an unknown tool.
+  async function toolCallItem(input: {
+    title: string;
+    kind?: string;
+    rawInput?: unknown;
+  }): Promise<Extract<AgentTimelineItem, { type: "tool_call" }>> {
+    const session = createSession();
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await session.sessionUpdate({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-1",
+        title: input.title,
+        kind: input.kind ?? "other",
+        status: "in_progress",
+        rawInput: input.rawInput,
+      } as SessionUpdate,
+    });
+
+    const item = events
+      .map((event) => (event.type === "timeline" ? event.item : null))
+      .find((candidate): candidate is Extract<AgentTimelineItem, { type: "tool_call" }> =>
+        Boolean(candidate && candidate.type === "tool_call"),
+      );
+    if (!item) {
+      throw new Error("expected a tool_call timeline item");
+    }
+    return item;
+  }
+
+  test("classifies a shell call the agent reported as other", async () => {
+    const item = await toolCallItem({ title: "bash", rawInput: { command: "npm run build" } });
+
+    expect(item.name).toBe("bash");
+    expect(item.detail).toEqual(
+      expect.objectContaining({ type: "shell", command: "npm run build" }),
+    );
+  });
+
+  test("classifies a namespaced shell call", async () => {
+    const item = await toolCallItem({
+      title: "dsh__pwsh",
+      rawInput: { command: "Get-ChildItem" },
+    });
+
+    expect(item.detail).toEqual(
+      expect.objectContaining({ type: "shell", command: "Get-ChildItem" }),
+    );
+  });
+
+  test("classifies a read call from its file_path argument", async () => {
+    const item = await toolCallItem({ title: "read", rawInput: { file_path: "src/app.ts" } });
+
+    expect(item.detail).toEqual(expect.objectContaining({ type: "read", filePath: "src/app.ts" }));
+  });
+
+  test("classifies a write call from its file_path and content arguments", async () => {
+    const item = await toolCallItem({
+      title: "write",
+      rawInput: { file_path: "src/app.ts", content: "export {};\n" },
+    });
+
+    expect(item.detail).toEqual(
+      expect.objectContaining({
+        type: "write",
+        filePath: "src/app.ts",
+        content: "export {};\n",
+      }),
+    );
+  });
+
+  test("classifies a str_replace_editor call as an edit", async () => {
+    const item = await toolCallItem({
+      title: "str_replace_editor",
+      rawInput: {
+        command: "str_replace",
+        path: "src/app.ts",
+        old_str: "const a = 1;",
+        new_str: "const a = 2;",
+      },
+    });
+
+    expect(item.detail).toEqual(
+      expect.objectContaining({
+        type: "edit",
+        filePath: "src/app.ts",
+        oldString: "const a = 1;",
+        newString: "const a = 2;",
+      }),
+    );
+  });
+
+  test("classifies a grep call as a search", async () => {
+    const item = await toolCallItem({ title: "grep", rawInput: { pattern: "buildWindowsX64" } });
+
+    expect(item.detail).toEqual(
+      expect.objectContaining({ type: "search", query: "buildWindowsX64" }),
+    );
+  });
+
+  test("classifies a fetch call from its url argument", async () => {
+    const item = await toolCallItem({
+      title: "web_fetch",
+      rawInput: { url: "https://example.com/docs" },
+    });
+
+    expect(item.detail).toEqual(
+      expect.objectContaining({ type: "fetch", url: "https://example.com/docs" }),
+    );
+  });
+
+  test("falls back to the generic detail when the title and arguments say nothing", async () => {
+    const item = await toolCallItem({
+      title: "mystery_tool",
+      rawInput: { frobnicate: true },
+    });
+
+    expect(item.name).toBe("mystery_tool");
+    expect(item.detail.type).toBe("unknown");
+  });
+
+  test("keeps the ACP kind as the name when the agent classified the call", async () => {
+    const item = await toolCallItem({
+      title: "Run the test suite",
+      kind: "execute",
+      rawInput: { command: "npm test" },
+    });
+
+    expect(item.name).toBe("execute");
+    expect(item.detail).toEqual(expect.objectContaining({ type: "shell", command: "npm test" }));
+  });
+});
 
 describe("ACPAgentSession close() tree-kill", () => {
   afterEach(() => {

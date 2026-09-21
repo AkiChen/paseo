@@ -3507,6 +3507,16 @@ function mapPlanToTimeline(plan: Plan): AgentTimelineItem {
   };
 }
 
+function resolveTimelineToolName(snapshot: ACPToolSnapshot): string {
+  // "other" is ACP's unclassified bucket rather than a tool identity, so the
+  // title is the only name an agent that reports everything as "other" gives us.
+  const kind = snapshot.kind;
+  if (kind === undefined || kind === null || kind === "other") {
+    return snapshot.title;
+  }
+  return kind;
+}
+
 function mapToolSnapshotToTimeline(
   snapshot: ACPToolSnapshot,
   terminals: Map<string, TerminalEntry>,
@@ -3516,7 +3526,7 @@ function mapToolSnapshotToTimeline(
   const base = {
     type: "tool_call" as const,
     callId: snapshot.toolCallId,
-    name: snapshot.kind ?? snapshot.title,
+    name: resolveTimelineToolName(snapshot),
     detail,
     metadata: {
       kind: snapshot.kind ?? undefined,
@@ -3608,15 +3618,124 @@ function mapToolDetail(
         text: context.textContent ?? stringifyUnknown(snapshot.rawInput),
       };
     default:
-      return buildDefaultToolDetail(context);
+      return inferUnclassifiedToolDetail(context) ?? buildDefaultToolDetail(context);
   }
+}
+
+type UnclassifiedToolCategory = "shell" | "read" | "write" | "edit" | "search" | "fetch";
+
+/**
+ * `kind: "other"` is ACP's bucket for anything an agent does not classify, not a
+ * tool identity. Agents such as DSH report the wire tool name in `title` and the
+ * arguments in `rawInput`, so the canonical detail is still recoverable. Without
+ * this every one of their calls renders as "Other <title>" and the overview
+ * summary counts them all as unknown tools.
+ */
+const TOOL_CATEGORY_BY_WIRE_NAME: Record<string, UnclassifiedToolCategory> = {
+  bash: "shell",
+  bash_persistent: "shell",
+  pwsh: "shell",
+  pwsh_persistent: "shell",
+  shell: "shell",
+  sh: "shell",
+  zsh: "shell",
+  terminal: "shell",
+  terminal_send: "shell",
+  exec: "shell",
+  execute: "shell",
+  command: "shell",
+  run_command: "shell",
+  read: "read",
+  read_file: "read",
+  read_image: "read",
+  view: "read",
+  cat: "read",
+  write: "write",
+  write_file: "write",
+  create_file: "write",
+  edit: "edit",
+  edit_file: "edit",
+  apply_patch: "edit",
+  str_replace: "edit",
+  str_replace_editor: "edit",
+  patch: "edit",
+  grep: "search",
+  glob: "search",
+  search: "search",
+  find: "search",
+  ripgrep: "search",
+  rg: "search",
+  web_search: "search",
+  fetch: "fetch",
+  web_fetch: "fetch",
+};
+
+function normalizeWireToolName(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  const withoutNamespace = trimmed.includes("__")
+    ? trimmed.slice(trimmed.lastIndexOf("__") + 2)
+    : trimmed;
+  return withoutNamespace.replace(/-/g, "_");
+}
+
+function resolveUnclassifiedToolCategory(
+  context: MapToolDetailContext,
+): UnclassifiedToolCategory | null {
+  const byName = TOOL_CATEGORY_BY_WIRE_NAME[normalizeWireToolName(context.snapshot.title)];
+  if (byName) {
+    return byName;
+  }
+  // An unknown title still leaves argument shapes that only one category uses.
+  const { rawInput } = context;
+  if (readString(rawInput, ["command"])) return "shell";
+  if (readString(rawInput, ["url"])) return "fetch";
+  if (readString(rawInput, ["old_string", "old_str", "oldString", "oldText"])) return "edit";
+  if (readString(rawInput, ["pattern", "query"])) return "search";
+  return null;
+}
+
+function inferUnclassifiedToolDetail(context: MapToolDetailContext): ToolCallDetail | null {
+  switch (resolveUnclassifiedToolCategory(context)) {
+    case "shell":
+      return buildShellToolDetail(context);
+    case "read":
+      return buildReadToolDetail(context);
+    case "write":
+      return buildWriteToolDetail(context);
+    case "edit":
+      return buildEditToolDetail(context);
+    case "search":
+      return buildSearchAcpToolDetail(context);
+    case "fetch":
+      return buildFetchToolDetail(context);
+    default:
+      return null;
+  }
+}
+
+function buildWriteToolDetail(context: MapToolDetailContext): ToolCallDetail {
+  const { snapshot, firstLocation, textContent, rawInput, rawOutput } = context;
+  return {
+    type: "write",
+    filePath:
+      firstLocation ??
+      readString(rawInput, ["path", "filePath", "file", "file_path"]) ??
+      snapshot.title,
+    content:
+      textContent ??
+      readString(rawInput, ["content", "text"]) ??
+      readString(rawOutput, ["content", "text"]),
+  };
 }
 
 function buildReadToolDetail(context: MapToolDetailContext): ToolCallDetail {
   const { snapshot, firstLocation, textContent, rawInput, rawOutput } = context;
   return {
     type: "read",
-    filePath: firstLocation ?? readString(rawInput, ["path", "filePath", "file"]) ?? snapshot.title,
+    filePath:
+      firstLocation ??
+      readString(rawInput, ["path", "filePath", "file", "file_path"]) ??
+      snapshot.title,
     content: textContent ?? readString(rawOutput, ["content", "text"]),
     offset: readNumber(rawInput, ["offset", "line"]),
     limit: readNumber(rawInput, ["limit"]),
@@ -3627,12 +3746,18 @@ function buildEditToolDetail(context: MapToolDetailContext): ToolCallDetail {
   const { snapshot, firstLocation, textContent, diffContent, rawInput } = context;
   return {
     type: "edit",
-    filePath: firstLocation ?? readString(rawInput, ["path", "filePath", "file"]) ?? snapshot.title,
-    oldString: diffContent?.oldText ?? readString(rawInput, ["oldText", "oldString"]),
+    filePath:
+      firstLocation ??
+      readString(rawInput, ["path", "filePath", "file", "file_path"]) ??
+      snapshot.title,
+    oldString:
+      diffContent?.oldText ??
+      readString(rawInput, ["oldText", "oldString", "old_str", "old_string"]),
     newString:
       snapshot.kind === "delete"
         ? ""
-        : (diffContent?.newText ?? readString(rawInput, ["newText", "newString"])),
+        : (diffContent?.newText ??
+          readString(rawInput, ["newText", "newString", "new_str", "new_string"])),
     unifiedDiff: textContent ?? undefined,
   };
 }
