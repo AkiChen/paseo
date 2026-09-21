@@ -12,6 +12,17 @@ export function resolveCommitMessage(commit: CommitWithDetails): string {
   return commit.message?.trim() || commit.subject;
 }
 
+/**
+ * The header line. A commit message is a subject plus a body, and the body
+ * belongs to the expanded panel: rendering the whole message in the header made
+ * a folded commit details block as tall as the message it was hiding.
+ */
+export function resolveCommitSubject(commit: CommitWithDetails): string {
+  const [firstLine] = resolveCommitMessage(commit).split("\n");
+  const subject = firstLine?.trim();
+  return subject && subject.length > 0 ? subject : commit.shortSha;
+}
+
 export function CommitDetails({ commit }: { commit: CommitWithDetails }) {
   const { t, i18n } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
@@ -45,8 +56,8 @@ export function CommitDetails({ commit }: { commit: CommitWithDetails }) {
         <View style={[styles.chevron, !collapsed && styles.chevronExpanded]}>
           <ThemedChevron size={14} uniProps={chevronColorMapping} />
         </View>
-        <Text style={styles.subject} selectable>
-          {resolveCommitMessage(commit)}
+        <Text style={styles.subject} numberOfLines={1} selectable testID="commit-details-subject">
+          {resolveCommitSubject(commit)}
         </Text>
         <Text dataSet={CODE_SURFACE_DATASET} style={styles.shortSha} selectable>
           {commit.shortSha}
