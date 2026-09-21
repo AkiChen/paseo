@@ -209,6 +209,13 @@ export const fr: TranslationResources = {
     scrollToBottom: "Faire défiler vers le bas",
     historyLoadFailed: "Impossible de charger l’historique de l’agent",
     messageCapped: "Ce message a été tronqué ({{bytes}} octets).",
+    turnProcess: {
+      thought: "A réfléchi un moment",
+      toolCalls: { one: "{{count}} appel d’outil", other: "{{count}} appels d’outils" },
+      subAgents: { one: "{{count}} sous-agent", other: "{{count}} sous-agents" },
+      replies: { one: "{{count}} réponse", other: "{{count}} réponses" },
+      separator: " · ",
+    },
     permission: {
       plan: "Plan",
       required: "Autorisation requise",
@@ -2141,6 +2148,15 @@ export const fr: TranslationResources = {
         options: {
           overview: "Résumé",
           detailed: "Détails complets",
+        },
+      },
+      turnProcessFolding: {
+        label: "Processus du tour",
+        description: "Replie la réflexion et les appels d’outils d’un tour terminé",
+        accessibilityLabel: "Sélectionner l’affichage du processus du tour ({{value}})",
+        options: {
+          compact: "Compact",
+          standard: "Standard",
         },
       },
       language: {

@@ -329,6 +329,81 @@ function ToolCallDetailRow({ value, onChange }: ToolCallDetailRowProps) {
   );
 }
 
+const TURN_PROCESS_FOLDING_LEVELS: readonly AppSettings["turnProcessFolding"][] = [
+  "compact",
+  "standard",
+];
+
+function getTurnProcessFoldingLabel(
+  t: TFunction,
+  value: AppSettings["turnProcessFolding"],
+): string {
+  return t(`settings.general.turnProcessFolding.options.${value}`);
+}
+
+interface TurnProcessFoldingRowProps {
+  value: AppSettings["turnProcessFolding"];
+  onChange: (value: AppSettings["turnProcessFolding"]) => void;
+}
+
+interface TurnProcessFoldingMenuItemProps {
+  value: AppSettings["turnProcessFolding"];
+  selected: boolean;
+  onChange: (value: AppSettings["turnProcessFolding"]) => void;
+}
+
+function TurnProcessFoldingMenuItem({
+  value,
+  selected,
+  onChange,
+}: TurnProcessFoldingMenuItemProps) {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(() => onChange(value), [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {getTurnProcessFoldingLabel(t, value)}
+    </DropdownMenuItem>
+  );
+}
+
+function TurnProcessFoldingRow({ value, onChange }: TurnProcessFoldingRowProps) {
+  const { t } = useTranslation();
+  const selectedLabel = getTurnProcessFoldingLabel(t, value);
+  return (
+    <View style={settingsStyles.row}>
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>
+          {t("settings.general.turnProcessFolding.label")}
+        </Text>
+        <Text style={settingsStyles.rowHint}>
+          {t("settings.general.turnProcessFolding.description")}
+        </Text>
+      </View>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          style={dropdownTriggerStyle}
+          accessibilityLabel={t("settings.general.turnProcessFolding.accessibilityLabel", {
+            value: selectedLabel,
+          })}
+        >
+          <Text style={styles.triggerText}>{selectedLabel}</Text>
+          <ThemedChevronDown size={ICON_SIZE.sm} uniProps={mutedColorMapping} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="bottom" align="end" width={200}>
+          {TURN_PROCESS_FOLDING_LEVELS.map((option) => (
+            <TurnProcessFoldingMenuItem
+              key={option}
+              value={option}
+              selected={value === option}
+              onChange={onChange}
+            />
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Fonts: family text fields + numeric size fields (commit on blur/submit)
 // ---------------------------------------------------------------------------
@@ -570,6 +645,13 @@ export function AppearanceSection() {
     [updateSettings],
   );
 
+  const handleTurnProcessFoldingChange = useCallback(
+    (turnProcessFolding: AppSettings["turnProcessFolding"]) => {
+      void updateSettings({ turnProcessFolding });
+    },
+    [updateSettings],
+  );
+
   const handleChatOutlineChange = useCallback(
     (chatOutlineEnabled: boolean) => {
       void updateSettings({ chatOutlineEnabled });
@@ -689,6 +771,10 @@ export function AppearanceSection() {
           <ToolCallDetailRow
             value={settings.toolCallDetailLevel}
             onChange={handleToolCallDetailLevelChange}
+          />
+          <TurnProcessFoldingRow
+            value={settings.turnProcessFolding}
+            onChange={handleTurnProcessFoldingChange}
           />
           {!isNative ? (
             <ChatOutlineRow

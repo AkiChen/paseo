@@ -204,6 +204,13 @@ export const en = {
     scrollToBottom: "Scroll to bottom",
     historyLoadFailed: "Couldn't load agent history",
     messageCapped: "This message was capped ({{bytes}} bytes).",
+    turnProcess: {
+      thought: "Thought for a while",
+      toolCalls: { one: "{{count}} tool call", other: "{{count}} tool calls" },
+      subAgents: { one: "{{count}} subagent", other: "{{count}} subagents" },
+      replies: { one: "{{count}} reply", other: "{{count}} replies" },
+      separator: " · ",
+    },
     permission: {
       plan: "Plan",
       required: "Permission Required",
@@ -2194,6 +2201,15 @@ export const en = {
         options: {
           overview: "Summary",
           detailed: "Full detail",
+        },
+      },
+      turnProcessFolding: {
+        label: "Turn process",
+        description: "Collapse a finished turn's thinking and tool calls",
+        accessibilityLabel: "Select turn process display ({{value}})",
+        options: {
+          compact: "Compact",
+          standard: "Standard",
         },
       },
       language: {

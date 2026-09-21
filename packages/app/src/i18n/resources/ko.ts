@@ -207,6 +207,13 @@ export const ko: TranslationResources = {
     scrollToBottom: "맨 아래로 스크롤",
     historyLoadFailed: "에이전트 기록을 로드할 수 없습니다.",
     messageCapped: "이 메시지는 길이 제한으로 잘렸습니다({{bytes}}바이트).",
+    turnProcess: {
+      thought: "잠시 생각함",
+      toolCalls: { one: "도구 호출 {{count}}회", other: "도구 호출 {{count}}회" },
+      subAgents: { one: "서브에이전트 {{count}}개", other: "서브에이전트 {{count}}개" },
+      replies: { one: "답장 {{count}}개", other: "답장 {{count}}개" },
+      separator: " · ",
+    },
     permission: {
       plan: "계획",
       required: "권한 필요",
@@ -2099,6 +2106,15 @@ export const ko: TranslationResources = {
         options: {
           overview: "요약",
           detailed: "전체 세부정보",
+        },
+      },
+      turnProcessFolding: {
+        label: "턴 과정",
+        description: "끝난 턴의 사고와 도구 호출을 접습니다",
+        accessibilityLabel: "턴 과정 표시 선택({{value}})",
+        options: {
+          compact: "간략",
+          standard: "표준",
         },
       },
       language: {

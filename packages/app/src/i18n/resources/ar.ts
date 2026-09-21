@@ -207,6 +207,13 @@ export const ar: TranslationResources = {
     scrollToBottom: "قم بالتمرير إلى الأسفل",
     historyLoadFailed: "تعذر تحميل سجل الوكيل",
     messageCapped: "تم اقتطاع هذه الرسالة ({{bytes}} بايت).",
+    turnProcess: {
+      thought: "فكّر لبعض الوقت",
+      toolCalls: { one: "{{count}} استدعاء أداة", other: "{{count}} استدعاءات أدوات" },
+      subAgents: { one: "{{count}} وكيل فرعي", other: "{{count}} وكلاء فرعيون" },
+      replies: { one: "{{count}} رد", other: "{{count}} ردود" },
+      separator: " · ",
+    },
     permission: {
       plan: "يخطط",
       required: "الإذن مطلوب",
@@ -2088,6 +2095,15 @@ export const ar: TranslationResources = {
         options: {
           overview: "ملخص",
           detailed: "التفاصيل الكاملة",
+        },
+      },
+      turnProcessFolding: {
+        label: "سير الدور",
+        description: "يطوي تفكير الدور المنتهي واستدعاءات الأدوات",
+        accessibilityLabel: "اختر عرض سير الدور ({{value}})",
+        options: {
+          compact: "مضغوط",
+          standard: "قياسي",
         },
       },
       language: {

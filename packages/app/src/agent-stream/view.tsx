@@ -40,7 +40,7 @@ import {
   type InlinePathTarget,
 } from "@/components/message";
 import { PlanCard } from "@/components/plan-card";
-import type { StreamItem } from "@/types/stream";
+import type { StreamItem, ToolCallItem } from "@/types/stream";
 import type { PendingMessageSubmission } from "@/composer/submission/model";
 import type { TurnPresentation } from "@/timeline/turn-liveness";
 import type { PendingPermission } from "@/types/shared";
@@ -66,6 +66,8 @@ import {
   projectToolCallDetailLevel,
 } from "@/tool-calls/detail-level/projection";
 import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
+import { foldTurnProcesses, type TurnProcessFold } from "./turn-process-fold/model";
+import { TurnProcessFoldView } from "./turn-process-fold/view";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
@@ -311,6 +313,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 ];
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
+const EMPTY_TURN_PROCESS_FOLDS: ReadonlyMap<string, TurnProcessFold> = new Map();
 
 function useRetainedValue<T>(value: T, active: boolean): T {
   const retainedRef = useRef(value);
@@ -351,6 +354,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const { t } = useTranslation();
     const autoExpandReasoning = useSettings((settings) => settings.autoExpandReasoning);
     const toolCallDetailLevel = useSettings((settings) => settings.toolCallDetailLevel);
+    const turnProcessFolding = useSettings((settings) => settings.turnProcessFolding);
     const chatOutlineEnabled = useSettings((settings) => settings.chatOutlineEnabled);
     const viewportRef = useRef<StreamViewportHandle | null>(null);
     const pendingClientMessageIds = useMemo(
@@ -371,6 +375,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       new Set(),
     );
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
+      new Set(),
+    );
+    const [expandedTurnProcessFoldIds, setExpandedTurnProcessFoldIds] = useState<Set<string>>(
       new Set(),
     );
 
@@ -559,12 +566,50 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         toolCallDetailLevel,
       ],
     );
+    const foldedTurnProcesses = useMemo(() => {
+      if (turnProcessFolding === "standard") {
+        return {
+          tail: projectedToolCalls.tail,
+          head: projectedToolCalls.head,
+          foldsByHostId: EMPTY_TURN_PROCESS_FOLDS,
+        };
+      }
+      // A grouped row hides its calls, so the fold counts read through the group.
+      const toolCallsIn = (item: ToolCallItem) =>
+        projectedToolCalls.groupsByHostId.get(item.id)?.run.calls ?? [item];
+      const activeTurnId = isTurnActive ? effectiveTurnPresentation.turnId : null;
+      const tail = foldTurnProcesses({
+        items: projectedToolCalls.tail,
+        activeTurnId,
+        expandedFoldIds: expandedTurnProcessFoldIds,
+        toolCallsIn,
+      });
+      const head = foldTurnProcesses({
+        items: projectedToolCalls.head,
+        activeTurnId,
+        expandedFoldIds: expandedTurnProcessFoldIds,
+        toolCallsIn,
+      });
+      return {
+        tail: tail.items,
+        head: head.items,
+        foldsByHostId: new Map([...tail.foldsByHostId, ...head.foldsByHostId]),
+      };
+    }, [
+      effectiveTurnPresentation.turnId,
+      expandedTurnProcessFoldIds,
+      isTurnActive,
+      projectedToolCalls.groupsByHostId,
+      projectedToolCalls.head,
+      projectedToolCalls.tail,
+      turnProcessFolding,
+    ]);
     const projectedPlugins = useMemo(
       () => ({
-        tail: projectPluginTimelineItems(projectedToolCalls.tail, transformTimelineItem),
-        head: projectPluginTimelineItems(projectedToolCalls.head, transformTimelineItem),
+        tail: projectPluginTimelineItems(foldedTurnProcesses.tail, transformTimelineItem),
+        head: projectPluginTimelineItems(foldedTurnProcesses.head, transformTimelineItem),
       }),
-      [projectedToolCalls.head, projectedToolCalls.tail, transformTimelineItem],
+      [foldedTurnProcesses.head, foldedTurnProcesses.tail, transformTimelineItem],
     );
     const {
       start: historyWindowStart,
@@ -691,6 +736,18 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           next.add(groupId);
         } else {
           next.delete(groupId);
+        }
+        return next;
+      });
+    }, []);
+
+    const setTurnProcessFoldExpanded = useCallback((foldId: string, expanded: boolean) => {
+      setExpandedTurnProcessFoldIds((previous) => {
+        const next = new Set(previous);
+        if (expanded) {
+          next.add(foldId);
+        } else {
+          next.delete(foldId);
         }
         return next;
       });
@@ -825,6 +882,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const getToolCallGroup = useStableEvent((hostId: string) =>
       projectedToolCalls.groupsByHostId.get(hostId),
     );
+    const getTurnProcessFold = useStableEvent((hostId: string) =>
+      foldedTurnProcesses.foldsByHostId.get(hostId),
+    );
     const renderToolCallItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "tool_call" }>) => {
         const group = getToolCallGroup(item.id);
@@ -864,6 +924,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
         const item = layoutItem.item;
+        const fold = getTurnProcessFold(item.id);
+        if (fold) {
+          return (
+            <TurnProcessFoldView
+              fold={fold}
+              expanded={expandedTurnProcessFoldIds.has(fold.host.id)}
+              onToggle={setTurnProcessFoldExpanded}
+            />
+          );
+        }
         switch (item.kind) {
           case "user_message":
             return renderUserMessageItem(layoutItem, item);
@@ -903,11 +973,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [
         agentId,
+        expandedTurnProcessFoldIds,
+        getTurnProcessFold,
         renderUserMessageItem,
         renderAssistantMessageItem,
         renderThoughtItem,
         renderToolCallItem,
         resolvedServerId,
+        setTurnProcessFoldExpanded,
       ],
     );
 
@@ -1081,10 +1154,18 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
-        displayStateById: expandedToolCallGroupIds,
+        displayStateById: {
+          has: (id: string) =>
+            expandedToolCallGroupIds.has(id) || expandedTurnProcessFoldIds.has(id),
+        },
         globalDisplayState: isMobile,
       }),
-      [expandedToolCallGroupIds, isMobile, projectedToolCalls.historyGroupUpdatesByHostId],
+      [
+        expandedToolCallGroupIds,
+        expandedTurnProcessFoldIds,
+        isMobile,
+        projectedToolCalls.historyGroupUpdatesByHostId,
+      ],
     );
 
     return (

@@ -207,6 +207,16 @@ export const ru: TranslationResources = {
     scrollToBottom: "Прокрутить вниз",
     historyLoadFailed: "Не удалось загрузить историю агента",
     messageCapped: "Это сообщение было обрезано ({{bytes}} байт).",
+    turnProcess: {
+      thought: "Подумал немного",
+      toolCalls: {
+        one: "{{count}} вызов инструмента",
+        other: "{{count}} вызовов инструментов",
+      },
+      subAgents: { one: "{{count}} субагент", other: "{{count}} субагентов" },
+      replies: { one: "{{count}} ответ", other: "{{count}} ответов" },
+      separator: " · ",
+    },
     permission: {
       plan: "План",
       required: "Требуется разрешение",
@@ -2122,6 +2132,15 @@ export const ru: TranslationResources = {
         options: {
           overview: "Сводка",
           detailed: "Все подробности",
+        },
+      },
+      turnProcessFolding: {
+        label: "Процесс хода",
+        description: "Сворачивает рассуждения и вызовы инструментов завершённого хода",
+        accessibilityLabel: "Выбрать отображение процесса хода ({{value}})",
+        options: {
+          compact: "Компактно",
+          standard: "Стандартно",
         },
       },
       language: {

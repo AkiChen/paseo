@@ -207,6 +207,16 @@ export const es: TranslationResources = {
     scrollToBottom: "Desplazarse hacia abajo",
     historyLoadFailed: "No se pudo cargar el historial del agente",
     messageCapped: "Este mensaje fue truncado ({{bytes}} bytes).",
+    turnProcess: {
+      thought: "Pensó un rato",
+      toolCalls: {
+        one: "{{count}} llamada a herramienta",
+        other: "{{count}} llamadas a herramientas",
+      },
+      subAgents: { one: "{{count}} subagente", other: "{{count}} subagentes" },
+      replies: { one: "{{count}} respuesta", other: "{{count}} respuestas" },
+      separator: " · ",
+    },
     permission: {
       plan: "Plan",
       required: "Permiso requerido",
@@ -2138,6 +2148,15 @@ export const es: TranslationResources = {
         options: {
           overview: "Resumen",
           detailed: "Detalle completo",
+        },
+      },
+      turnProcessFolding: {
+        label: "Proceso del turno",
+        description: "Contrae el razonamiento y las llamadas a herramientas de un turno terminado",
+        accessibilityLabel: "Seleccionar la visualización del proceso del turno ({{value}})",
+        options: {
+          compact: "Compacta",
+          standard: "Estándar",
         },
       },
       language: {

@@ -207,6 +207,16 @@ export const ja: TranslationResources = {
     scrollToBottom: "下にスクロール",
     historyLoadFailed: "エージェントの履歴を読み込めませんでした",
     messageCapped: "このメッセージは上限で切り詰められました（{{bytes}}バイト）。",
+    turnProcess: {
+      thought: "しばらく考えました",
+      toolCalls: { one: "ツール呼び出し {{count}} 件", other: "ツール呼び出し {{count}} 件" },
+      subAgents: {
+        one: "サブエージェント {{count}} 件",
+        other: "サブエージェント {{count}} 件",
+      },
+      replies: { one: "返信 {{count}} 件", other: "返信 {{count}} 件" },
+      separator: "・",
+    },
     permission: {
       plan: "プラン",
       required: "権限が必要です",
@@ -2105,6 +2115,15 @@ export const ja: TranslationResources = {
         options: {
           overview: "要約",
           detailed: "すべての詳細",
+        },
+      },
+      turnProcessFolding: {
+        label: "ターンの過程",
+        description: "終了したターンの思考とツール呼び出しを折りたたみます",
+        accessibilityLabel: "ターンの過程の表示を選択（{{value}}）",
+        options: {
+          compact: "コンパクト",
+          standard: "標準",
         },
       },
       language: {

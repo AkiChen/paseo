@@ -207,6 +207,13 @@ export const zhCN: TranslationResources = {
     scrollToBottom: "滚动到底部",
     historyLoadFailed: "无法加载智能体历史记录",
     messageCapped: "此消息已被截断（{{bytes}} 字节）。",
+    turnProcess: {
+      thought: "已思考",
+      toolCalls: { one: "{{count}} 次工具调用", other: "{{count}} 次工具调用" },
+      subAgents: { one: "{{count}} 个子代理", other: "{{count}} 个子代理" },
+      replies: { one: "{{count}} 条回复", other: "{{count}} 条回复" },
+      separator: " · ",
+    },
     permission: {
       plan: "Plan",
       required: "需要权限",
@@ -2064,6 +2071,15 @@ export const zhCN: TranslationResources = {
         options: {
           overview: "摘要",
           detailed: "完整详情",
+        },
+      },
+      turnProcessFolding: {
+        label: "轮次过程",
+        description: "轮次结束后收起思考与工具调用",
+        accessibilityLabel: "选择轮次过程显示方式（{{value}}）",
+        options: {
+          compact: "紧凑",
+          standard: "标准",
         },
       },
       language: {
