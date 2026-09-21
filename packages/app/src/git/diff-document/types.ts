@@ -33,14 +33,16 @@ export interface WorkingDiffMode {
   onRevert?: (path: string, oldPath?: string) => void;
 }
 
+export interface DiffCollapseState {
+  paths: readonly string[];
+  onChange: (paths: string[]) => void;
+}
+
 export type DiffDocumentProps = DiffDocumentBaseProps &
   (
     | {
         mode: WorkingDiffMode;
-        collapseState: {
-          paths: readonly string[];
-          onChange: (paths: string[]) => void;
-        };
+        collapseState: DiffCollapseState;
       }
     | {
         mode: {
@@ -49,7 +51,7 @@ export type DiffDocumentProps = DiffDocumentBaseProps &
           fullContextShown?: boolean;
           onExpandContext?: () => void;
         };
-        collapseState?: never;
+        collapseState?: DiffCollapseState;
       }
   );
 
@@ -232,6 +234,8 @@ export type DiffSurfaceProps = DiffDocumentProps & {
   palette: DiffPalette;
   headerTypography: DiffHeaderTypography;
   collapsedFilePaths: ReadonlySet<string>;
+  /** False when the diff has no collapse state, so a header stays inert. */
+  collapsible: boolean;
   onToggleFile: (path: string) => void;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;

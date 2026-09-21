@@ -33,6 +33,7 @@ import { type ParsedDiffFile } from "@/git/use-diff-query";
 import type { ChangesState } from "@/panels/changes/state";
 import { defaultChangesState } from "@/panels/changes/state";
 import { DiffDocument, type WorkingDiffMode } from "@/git/diff-document";
+import { areAllDiffFilesCollapsed } from "@/git/diff-document/collapse";
 import { FileHeader } from "@/git/file-header";
 import {
   buildDiffTree,
@@ -1929,8 +1930,7 @@ export function ChangesSurface({
     () => computeSelectedDiffStat(files, isDiffLoading),
     [files, isDiffLoading],
   );
-  const allFilesCollapsed =
-    hasChanges && files.every((file) => collapsedFilePaths.includes(file.path));
+  const allFilesCollapsed = areAllDiffFilesCollapsed(files, collapsedFilePaths);
   const handleCollapseAllFiles = useCallback(
     () => updateCollapsedFilePaths(files.map((file) => file.path)),
     [files, updateCollapsedFilePaths],

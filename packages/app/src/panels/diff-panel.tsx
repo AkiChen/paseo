@@ -1,13 +1,26 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { FileDiff, GitCommitHorizontal } from "lucide-react-native";
+import {
+  FileDiff,
+  GitCommitHorizontal,
+  ListChevronsDownUp,
+  ListChevronsUpDown,
+  MoreHorizontal,
+} from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import invariant from "tiny-invariant";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { PaneContentToolbar } from "@/components/ui/pane-content-toolbar";
+import {
+  PaneContentToolbar,
+  paneContentToolbarIconSize,
+  ToolbarButton,
+} from "@/components/ui/pane-content-toolbar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { extraMutedIconColorMapping } from "@/components/ui/icon-button-chrome";
 import { isWeb } from "@/constants/platform";
+import { areAllDiffFilesCollapsed } from "@/git/diff-document/collapse";
 import { DiffDocument } from "@/git/diff-document";
 import { ChangesSurface, DiffLayoutToggle, resolveDiffLayout } from "@/git/diff-pane";
 import { useCommitDiffFiles } from "@/git/use-diff-files";
@@ -27,11 +40,21 @@ import { useWorkspaceDirectory } from "@/stores/session-store-hooks";
 import { useCheckoutCommitsQuery } from "@/git/use-commits-query";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { defaultChangesState, changesStateSchema } from "@/panels/changes/state";
+import { commitDiffStateSchema, defaultCommitDiffState } from "@/panels/commit-diff/state";
 import { usePanelState } from "@/panels/use-panel-state";
 import { RenderProfile } from "@/utils/render-profiler";
 
 const ThemedFileDiff = withUnistyles(FileDiff);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
+const ThemedListChevronsDownUp = withUnistyles(ListChevronsDownUp);
+const ThemedListChevronsUpDown = withUnistyles(ListChevronsUpDown);
+const ThemedMoreHorizontal = withUnistyles(MoreHorizontal);
+const COLLAPSE_ALL_FILES_ICON = (
+  <ThemedListChevronsDownUp size={14} uniProps={extraMutedIconColorMapping} />
+);
+const EXPAND_ALL_FILES_ICON = (
+  <ThemedListChevronsUpDown size={14} uniProps={extraMutedIconColorMapping} />
+);
 
 function useDiffPanelPreferences() {
   const { settings } = useAppSettings();
@@ -157,6 +180,48 @@ function ChangesPanel() {
   );
 }
 
+function CommitDiffOptionsMenu({
+  allFilesCollapsed,
+  compact,
+  onCollapseAll,
+  onExpandAll,
+}: {
+  allFilesCollapsed: boolean;
+  compact: boolean;
+  onCollapseAll: () => void;
+  onExpandAll: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <DropdownMenu>
+      <ToolbarButton
+        kind="menu"
+        label={t("workspace.git.diff.options")}
+        compact={compact}
+        testID="commit-diff-options-menu"
+      >
+        <ThemedMoreHorizontal
+          size={paneContentToolbarIconSize(compact)}
+          uniProps={extraMutedIconColorMapping}
+        />
+      </ToolbarButton>
+      <DropdownMenuContent align="end" width={240} testID="commit-diff-options-menu-content">
+        <DropdownMenuItem
+          leading={allFilesCollapsed ? EXPAND_ALL_FILES_ICON : COLLAPSE_ALL_FILES_ICON}
+          testID="commit-diff-toggle-collapse-all"
+          onSelect={allFilesCollapsed ? onExpandAll : onCollapseAll}
+        >
+          {t(
+            allFilesCollapsed
+              ? "workspace.git.diff.expandAllFiles"
+              : "workspace.git.diff.collapseAllFiles",
+          )}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function CommitDiffPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target } = usePaneContext();
@@ -164,6 +229,10 @@ function CommitDiffPanel() {
   const isActive = useRetainedPanelActive();
   const panelPreferences = useDiffPanelPreferences();
   const [showFullContext, setShowFullContext] = useState(false);
+  const [commitState, setCommitState] = usePanelState(
+    commitDiffStateSchema,
+    defaultCommitDiffState,
+  );
   invariant(target.kind === "commit_diff", "CommitDiffPanel requires commit_diff target");
   const { files, commit, isLoading, error, capabilityMissing } = useCommitDiffFiles({
     serverId,
@@ -172,6 +241,24 @@ function CommitDiffPanel() {
     enabled: Boolean(cwd),
     contextLines: showFullContext ? 100000 : undefined,
   });
+  const collapsedFilePaths = commitState.collapsedFilePaths;
+  const updateCollapsedFilePaths = useCallback(
+    (paths: string[]) => setCommitState({ ...commitState, collapsedFilePaths: paths }),
+    [commitState, setCommitState],
+  );
+  const collapseState = useMemo(
+    () => ({ paths: collapsedFilePaths, onChange: updateCollapsedFilePaths }),
+    [collapsedFilePaths, updateCollapsedFilePaths],
+  );
+  const allFilesCollapsed = areAllDiffFilesCollapsed(files, collapsedFilePaths);
+  const handleCollapseAllFiles = useCallback(
+    () => updateCollapsedFilePaths(files.map((file) => file.path)),
+    [files, updateCollapsedFilePaths],
+  );
+  const handleExpandAllFiles = useCallback(
+    () => updateCollapsedFilePaths([]),
+    [updateCollapsedFilePaths],
+  );
   const reviewDraftKey = useMemo(
     () =>
       buildReviewDraftKey({
@@ -231,6 +318,7 @@ function CommitDiffPanel() {
     body = (
       <DiffDocument
         files={files}
+        collapseState={collapseState}
         displayPreferences={panelPreferences.displayPreferences}
         mode={mode}
       />
@@ -242,6 +330,12 @@ function CommitDiffPanel() {
       {panelPreferences.canUseSplitLayout ? (
         <PaneContentToolbar style={styles.toolbar} testID="commit-diff-header">
           <View style={styles.toolbarActions} testID="commit-diff-toolbar">
+            <CommitDiffOptionsMenu
+              allFilesCollapsed={allFilesCollapsed}
+              compact={panelPreferences.isCompact}
+              onCollapseAll={handleCollapseAllFiles}
+              onExpandAll={handleExpandAllFiles}
+            />
             <DiffLayoutToggle
               layout={panelPreferences.preferences.layout}
               isMobile={panelPreferences.isCompact}

@@ -299,6 +299,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
             mode={props.mode}
             onToggleFile={props.onToggleFile}
             onSelectPath={props.onSelectPath}
+            collapsible={props.collapsible}
           />
         ))}
         {interactionFiles.map((file) => (
@@ -378,6 +379,7 @@ function NativeCanvasFileHeader({
   mode,
   onToggleFile,
   onSelectPath,
+  collapsible,
 }: {
   file: DiffFileSection;
   viewportWidth: number;
@@ -390,6 +392,7 @@ function NativeCanvasFileHeader({
   mode: DiffSurfaceProps["mode"];
   onToggleFile: DiffSurfaceProps["onToggleFile"];
   onSelectPath: DiffSurfaceProps["onSelectPath"];
+  collapsible: DiffSurfaceProps["collapsible"];
 }) {
   const [active, setActive] = useState(false);
   const picture = useMemo(
@@ -424,6 +427,7 @@ function NativeCanvasFileHeader({
         file={file}
         selectedPath={selectedPath}
         mode={mode}
+        collapsible={collapsible}
         onToggleFile={onToggleFile}
         onSelectPath={onSelectPath}
         canvasRendered

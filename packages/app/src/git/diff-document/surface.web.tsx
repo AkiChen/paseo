@@ -857,6 +857,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
                 file={file}
                 selectedPath={props.selectedPath}
                 mode={props.mode}
+                collapsible={props.collapsible}
                 onToggleFile={props.onToggleFile}
                 onSelectPath={props.onSelectPath}
                 canvasRendered
