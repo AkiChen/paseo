@@ -4374,6 +4374,96 @@ test("reloadAgentSession preserves timeline and does not force history replay", 
   expect(afterHydrate).toEqual(beforeReload);
 });
 
+test("keeps durable timeline rows when the provider replays nothing", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-durable-fallback-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const durable = new RecordingTimelineStore();
+  const agentId = "00000000-0000-4000-8000-000000000117";
+  await durable.appendCommitted(agentId, {
+    type: "assistant_message",
+    text: "stored before the restart",
+  });
+
+  // Resuming is the restart path: a stored agent comes back through
+  // `resumeAgentFromPersistence`, not through `createAgent`.
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+    durableTimelineStore: durable,
+    idFactory: () => agentId,
+  });
+  const resumed = await manager.resumeAgentFromPersistence(
+    { provider: "codex", sessionId: "durable-fallback" },
+    { cwd: workdir },
+  );
+
+  // Registering seeds the runtime rows from the durable copy.
+  expect(manager.getTimeline(resumed.id)).toEqual([
+    { type: "assistant_message", text: "stored before the restart" },
+  ]);
+
+  // An ACP session that resumed without loadSession replays nothing, and that
+  // must leave the stored rows alone instead of clearing them.
+  await manager.hydrateTimelineFromProvider(resumed.id);
+
+  expect(manager.getTimeline(resumed.id)).toEqual([
+    { type: "assistant_message", text: "stored before the restart" },
+  ]);
+});
+
+test("replaces durable timeline rows when the provider does replay", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-durable-replay-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const durable = new RecordingTimelineStore();
+  const agentId = "00000000-0000-4000-8000-000000000118";
+  await durable.appendCommitted(agentId, {
+    type: "assistant_message",
+    text: "stored before the restart",
+  });
+
+  class ReplaySession extends TestAgentSession {
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      yield {
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "assistant_message", text: "replayed by the provider" },
+      };
+    }
+  }
+
+  class ReplayClient extends TestAgentClient {
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      return new ReplaySession({ provider: "codex", cwd: config?.cwd ?? workdir });
+    }
+  }
+
+  const manager = new AgentManager({
+    clients: { codex: new ReplayClient() },
+    registry: storage,
+    logger,
+    durableTimelineStore: durable,
+    idFactory: () => agentId,
+  });
+  const resumed = await manager.resumeAgentFromPersistence(
+    { provider: "codex", sessionId: "durable-replay" },
+    { cwd: workdir },
+  );
+  expect(manager.getTimeline(resumed.id)).toHaveLength(1);
+
+  await manager.hydrateTimelineFromProvider(resumed.id);
+
+  // The provider is the authority: its transcript replaces the stored rows
+  // rather than being appended to a copy of itself.
+  expect(manager.getTimeline(resumed.id)).toEqual([
+    { type: "assistant_message", text: "replayed by the provider" },
+  ]);
+  expect(await durable.getCommittedRows(resumed.id)).toHaveLength(1);
+});
+
 test("reloadAgentSession clears provider children before rehydrating from disk", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-provider-child-reload-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

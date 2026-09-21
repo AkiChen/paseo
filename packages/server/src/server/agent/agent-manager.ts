@@ -3398,7 +3398,7 @@ export class AgentManager {
       );
 
       const now = new Date();
-      const { durableTimelineHasRows } = await this.initializeAgentTimelineForRegister({
+      await this.initializeAgentTimelineForRegister({
         agentId: resolvedAgentId,
         now,
         options,
@@ -3409,7 +3409,6 @@ export class AgentManager {
         session,
         config,
         now,
-        durableTimelineHasRows,
         options,
       });
 
@@ -3492,18 +3491,14 @@ export class AgentManager {
           updatedAt?: Date;
         }
       | undefined;
-  }): Promise<{ durableTimelineHasRows: boolean }> {
+  }): Promise<void> {
     const { agentId, now, options } = params;
-    const timelineAlreadyPrimed = this.timelineStore.has(agentId);
     const explicitTimelineSeed = buildExplicitTimelineSeedForRegister(now, options);
     const shouldSeedFromDurable =
       !explicitTimelineSeed && !this.timelineStore.has(agentId) && this.durableTimelineStore;
     const durableTimelineSeed = shouldSeedFromDurable
       ? await this.loadCommittedTimelineSeed(agentId, now)
       : null;
-    const durableTimelineHasRows =
-      timelineAlreadyPrimed ||
-      (durableTimelineSeed != null && (durableTimelineSeed.nextSeq ?? 1) > 1);
     const timelineSeed = explicitTimelineSeed ?? durableTimelineSeed;
     if (timelineSeed || !this.timelineStore.has(agentId)) {
       this.timelineStore.initialize(agentId, timelineSeed ?? { timestamp: now.toISOString() });
@@ -3511,7 +3506,6 @@ export class AgentManager {
     if (options?.timelineRows?.length) {
       this.enqueueDurableTimelineBulkInsert(agentId, options.timelineRows);
     }
-    return { durableTimelineHasRows };
   }
 
   private buildManagedAgentForRegister(params: {
@@ -3519,7 +3513,6 @@ export class AgentManager {
     session: AgentSession;
     config: AgentSessionConfig;
     now: Date;
-    durableTimelineHasRows: boolean;
     options:
       | {
           createdAt?: Date;
@@ -3536,7 +3529,7 @@ export class AgentManager {
         }
       | undefined;
   }): ActiveManagedAgent {
-    const { resolvedAgentId, session, config, now, durableTimelineHasRows, options } = params;
+    const { resolvedAgentId, session, config, now, options } = params;
     return {
       id: resolvedAgentId,
       provider: config.provider,
@@ -3566,7 +3559,10 @@ export class AgentManager {
         options?.persistence ?? session.describePersistence(),
         config.cwd,
       ),
-      historyPrimed: options?.historyPrimed ?? durableTimelineHasRows,
+      // Durable rows are a fallback, not a reason to skip provider hydration:
+      // that pass is also what rebuilds provider subagents and what lets a
+      // provider that did replay its transcript replace the stored rows.
+      historyPrimed: options?.historyPrimed ?? false,
       lastUserMessageAt: options?.lastUserMessageAt ?? null,
       lastUsage: options?.lastUsage,
       lastError: options?.lastError,
@@ -3583,8 +3579,10 @@ export class AgentManager {
     if (!this.durableTimelineStore) {
       return { timestamp: now.toISOString() };
     }
+    const rows = await this.durableTimelineStore.getCommittedRows(agentId);
     return {
-      nextSeq: (await this.durableTimelineStore.getLatestCommittedSeq(agentId)) + 1,
+      rows,
+      nextSeq: (rows.at(-1)?.seq ?? 0) + 1,
       timestamp: now.toISOString(),
     };
   }
@@ -3945,6 +3943,7 @@ export class AgentManager {
     broadcast: boolean | (() => boolean),
   ): Promise<void> {
     const deferredBroadcast = typeof broadcast === "function";
+    const collectedTimelineEvents: Extract<AgentStreamEvent, { type: "timeline" }>[] = [];
     const timelineEvents: Array<{
       event: Extract<AgentStreamEvent, { type: "timeline" }>;
       row: AgentTimelineRow;
@@ -3970,26 +3969,41 @@ export class AgentManager {
         if (event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)) {
           continue;
         }
-        const row = this.recordTimeline(
-          agent.id,
-          event.item,
-          event.timestamp ? { timestamp: event.timestamp } : undefined,
-        );
-        if (deferredBroadcast) {
-          timelineEvents.push({ event, row });
-        } else if (broadcast) {
-          this.dispatchStream(agent.id, event, {
-            seq: row.seq,
-            epoch: this.timelineStore.getEpoch(agent.id),
-            timestamp: row.timestamp,
-          });
-        }
+        collectedTimelineEvents.push(event);
       }
     } catch (error) {
       this.logger.warn({ err: error, agentId: agent.id }, "Failed to hydrate provider history");
       throw error;
     }
+
+    // A provider that replays nothing — an ACP agent that resumed without
+    // loadSession — leaves the stored rows exactly as they are. One that does
+    // replay is the authority: its transcript replaces them instead of being
+    // appended to a copy of itself.
+    if (collectedTimelineEvents.length > 0) {
+      this.agentStreamCoalescer.flushAndDiscard(agent.id);
+      await this.deleteCommittedTimeline(agent.id);
+      this.timelineStore.delete(agent.id);
+      this.timelineStore.initialize(agent.id, { timestamp: new Date().toISOString() });
+    }
     agent.historyPrimed = true;
+
+    for (const event of collectedTimelineEvents) {
+      const row = this.recordTimeline(
+        agent.id,
+        event.item,
+        event.timestamp ? { timestamp: event.timestamp } : undefined,
+      );
+      if (deferredBroadcast) {
+        timelineEvents.push({ event, row });
+      } else if (broadcast) {
+        this.dispatchStream(agent.id, event, {
+          seq: row.seq,
+          epoch: this.timelineStore.getEpoch(agent.id),
+          timestamp: row.timestamp,
+        });
+      }
+    }
 
     if (typeof broadcast !== "function" || !broadcast()) {
       return;

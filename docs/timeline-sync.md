@@ -5,12 +5,12 @@ Agent chat delivery has two paths:
 1. **Live stream** — `agent_stream` WebSocket messages for immediacy. These may be delta-shaped lifecycle updates.
 2. **Authoritative history** — `fetch_agent_timeline_request` for correctness. This always returns full projected timeline items, never lifecycle deltas.
 
-The daemon keeps canonical rows in runtime memory and persists them for the agents whose provider
-cannot replay its own transcript. Provider replay still wins where it exists: an agent that resumes
-onto durable rows skips provider hydration, and a forced hydration (rewind, explicit refresh)
-replaces them. The durable copy is one append-only file per agent under `$PASEO_HOME/timelines/`,
-because rewriting a whole transcript on every buffered update is what removed the previous
-filesystem store.
+The daemon keeps canonical rows in runtime memory and persists them under
+`$PASEO_HOME/timelines/`, one append-only file per agent. Provider replay still wins where it
+exists: a provider that replays its transcript replaces the stored rows, and a provider that
+replays nothing — an ACP agent that resumes without `loadSession` — leaves them in place. That
+fallback is the only reason the copy exists; the store it replaces rewrote a whole transcript on
+every buffered update, and that write amplification is why it left production.
 
 The invariants are:
 
