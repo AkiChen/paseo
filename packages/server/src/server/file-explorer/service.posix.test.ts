@@ -35,7 +35,7 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
     }
   });
 
-  it("rejects symlinked files that resolve outside the workspace", async () => {
+  it("names the symlink whose target resolves outside the workspace", async () => {
     const root = await createTempDir("paseo-file-explorer-");
     const outsideRoot = await createTempDir("paseo-file-explorer-outside-");
 
@@ -49,10 +49,27 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
           root,
           relativePath: "secret-link.txt",
         }),
-      ).rejects.toThrow("Access outside of workspace is not allowed");
+      ).rejects.toThrow(`Symlink target is outside the workspace: ${externalFile}`);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("names the symlink whose target does not exist instead of reporting a missing file", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await symlink("removed.txt", path.join(root, "broken-link.txt"));
+
+      await expect(
+        readExplorerFile({
+          root,
+          relativePath: "broken-link.txt",
+        }),
+      ).rejects.toThrow("Symlink target does not exist: removed.txt");
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 

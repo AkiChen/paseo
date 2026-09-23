@@ -15,8 +15,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { runGitCommand } from "../../utils/run-git-command.js";
 import {
+  classifySymlinkFailure,
   createExplorerEntry,
   deleteExplorerEntry,
+  describeSymlinkFailure,
   duplicateExplorerEntry,
   getExplorerFileVersion,
   readExplorerFile,
@@ -590,5 +592,33 @@ describe("file explorer service", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("symlink failures", () => {
+  it("names the link when it points outside the workspace", () => {
+    expect(
+      classifySymlinkFailure({ linkTarget: "../elsewhere/data.ts", escapedWorkspace: true }),
+    ).toEqual({ kind: "outside", link: "../elsewhere/data.ts" });
+  });
+
+  it("names the link when its target is gone", () => {
+    expect(classifySymlinkFailure({ linkTarget: "removed.txt", escapedWorkspace: false })).toEqual({
+      kind: "dangling",
+      link: "removed.txt",
+    });
+  });
+
+  it("leaves a path that is not a symlink to the usual workspace error", () => {
+    expect(classifySymlinkFailure({ linkTarget: null, escapedWorkspace: true })).toBeNull();
+  });
+
+  it("tells the reader which link failed and why", () => {
+    expect(describeSymlinkFailure({ kind: "outside", link: "linked/data.ts" })).toBe(
+      "Symlink target is outside the workspace: linked/data.ts",
+    );
+    expect(describeSymlinkFailure({ kind: "dangling", link: "linked/gone.ts" })).toBe(
+      "Symlink target does not exist: linked/gone.ts",
+    );
   });
 });

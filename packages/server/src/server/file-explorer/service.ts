@@ -808,19 +808,72 @@ async function resolveScopedPath({
   const requestedPath = resolvePathFromBase(workspacePath, relativePath);
   assertWithinWorkspace(workspacePath, requestedPath);
   const canonicalRoot = await fs.realpath(workspacePath);
-  try {
-    const canonicalPath = await fs.realpath(requestedPath);
-    assertWithinWorkspace(canonicalRoot, canonicalPath);
-    return { requestedPath, resolvedPath: canonicalPath };
-  } catch (error) {
-    if (isMissingEntryError(error)) return { requestedPath, resolvedPath: requestedPath };
+  const canonicalPath = await fs.realpath(requestedPath).catch((error: unknown) => {
+    if (isMissingEntryError(error)) return null;
     throw error;
+  });
+  if (canonicalPath === null) {
+    // A link whose target is gone used to fall through to a read that failed as
+    // "missing", so the reader was told the file does not exist while the path
+    // they clicked plainly does.
+    const failure = classifySymlinkFailure({
+      linkTarget: await readSymlinkTarget(requestedPath),
+      escapedWorkspace: false,
+    });
+    if (failure) throw new Error(describeSymlinkFailure(failure));
+    return { requestedPath, resolvedPath: requestedPath };
   }
+  if (!isWithinWorkspace(canonicalRoot, canonicalPath)) {
+    const failure = classifySymlinkFailure({
+      linkTarget: await readSymlinkTarget(requestedPath),
+      escapedWorkspace: true,
+    });
+    throw new Error(failure ? describeSymlinkFailure(failure) : ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+  }
+  return { requestedPath, resolvedPath: canonicalPath };
+}
+
+/**
+ * Why a path the reader can see could not be opened. A symlink inside the
+ * workspace may point elsewhere or point at nothing, and neither is "the file
+ * does not exist"; the message has to name the link so the reader can fix it.
+ */
+export interface SymlinkFailure {
+  kind: "outside" | "dangling";
+  link: string;
+}
+
+export function classifySymlinkFailure(input: {
+  linkTarget: string | null;
+  escapedWorkspace: boolean;
+}): SymlinkFailure | null {
+  if (input.linkTarget === null) {
+    return null;
+  }
+  return { kind: input.escapedWorkspace ? "outside" : "dangling", link: input.linkTarget };
+}
+
+export function describeSymlinkFailure(failure: SymlinkFailure): string {
+  return failure.kind === "outside"
+    ? `Symlink target is outside the workspace: ${failure.link}`
+    : `Symlink target does not exist: ${failure.link}`;
+}
+
+async function readSymlinkTarget(entryPath: string): Promise<string | null> {
+  const stats = await fs.lstat(entryPath).catch(() => null);
+  if (!stats?.isSymbolicLink()) {
+    return null;
+  }
+  return fs.readlink(entryPath).catch(() => null);
+}
+
+function isWithinWorkspace(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function assertWithinWorkspace(root: string, candidate: string): void {
-  const relative = path.relative(root, candidate);
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return;
+  if (isWithinWorkspace(root, candidate)) return;
   throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
 }
 
