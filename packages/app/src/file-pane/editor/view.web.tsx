@@ -7,6 +7,7 @@ import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { FileEditorModel } from "./model";
 import { editorBaseExtensions, editorTheme, type EditorVisualTheme } from "./extensions.web";
+import { setTargetLines, targetLineHighlight, targetLinesFromLocation } from "./target-line.web";
 
 interface FileEditorViewProps {
   model: FileEditorModel;
@@ -55,6 +56,7 @@ export function FileEditorView({
         extensions: [
           vimCompartment.of(values.vimEnabled ? vim() : []),
           ...editorBaseExtensions(() => void values.model.save()),
+          targetLineHighlight,
           languageCompartment.of(getLanguageForFile(values.filename)?.extension ?? []),
           wrappingCompartment.of(wrappingForFile(values.filename)),
           themeCompartment.of(editorTheme(values.theme)),
@@ -96,18 +98,22 @@ export function FileEditorView({
     });
   }, [snapshot.content]);
 
+  const { lineEnd, lineStart } = location;
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !location.lineStart) return;
-    const lineStart = Math.min(location.lineStart, view.state.doc.lines);
-    const lineEnd = Math.min(location.lineEnd ?? lineStart, view.state.doc.lines);
-    const from = view.state.doc.line(lineStart).from;
-    const to = view.state.doc.line(Math.max(lineStart, lineEnd)).to;
+    if (!view) return;
+    const range = targetLinesFromLocation(view.state, { lineEnd, lineStart });
+    if (!range) {
+      view.dispatch({ effects: setTargetLines.of(null) });
+      return;
+    }
+    const from = view.state.doc.line(range.fromLine).from;
+    const to = view.state.doc.line(range.toLine).to;
     view.dispatch({
-      selection: { anchor: from, head: lineEnd > lineStart ? to : from },
-      effects: EditorView.scrollIntoView(from, { y: "center" }),
+      selection: { anchor: from, head: range.toLine > range.fromLine ? to : from },
+      effects: [setTargetLines.of(range), EditorView.scrollIntoView(from, { y: "center" })],
     });
-  }, [location.lineEnd, location.lineStart, navigationRevision]);
+  }, [lineEnd, lineStart, navigationRevision]);
 
   useEffect(() => {
     viewRef.current?.dispatch({
