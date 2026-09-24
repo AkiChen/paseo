@@ -165,9 +165,10 @@ export async function listDirectoryEntries({
           kind,
         });
       } catch (error) {
-        // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
-        // Skip entries whose targets disappeared instead of failing the whole listing.
-        if (isMissingEntryError(error) || isOutsideWorkspaceError(error)) {
+        // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md)
+        // and links into a mount outside every allowed root. Skip those entries
+        // instead of failing the whole listing.
+        if (shouldSkipDirectoryEntry(error)) {
           return null;
         }
         throw error;
@@ -827,7 +828,7 @@ async function resolveScopedPath({
     resolvePathFromBase(workspacePath, entry),
   );
   if (!isWithinAnyRoot([workspacePath, ...allowedPaths], requestedPath)) {
-    throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+    throw new FileAccessRefusedError(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
   }
   const canonicalRoot = await fs.realpath(workspacePath);
   const canonicalAllowed = await Promise.all(
@@ -845,7 +846,7 @@ async function resolveScopedPath({
       linkTarget: await readSymlinkTarget(requestedPath),
       escapedWorkspace: false,
     });
-    if (failure) throw new Error(describeSymlinkFailure(failure));
+    if (failure) throw new FileAccessRefusedError(describeSymlinkFailure(failure));
     return { requestedPath, resolvedPath: requestedPath };
   }
   const canonicalRoots = [
@@ -857,7 +858,9 @@ async function resolveScopedPath({
       linkTarget: await readSymlinkTarget(requestedPath),
       escapedWorkspace: true,
     });
-    throw new Error(failure ? describeSymlinkFailure(failure) : ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+    throw new FileAccessRefusedError(
+      failure ? describeSymlinkFailure(failure) : ACCESS_OUTSIDE_WORKSPACE_MESSAGE,
+    );
   }
   return { requestedPath, resolvedPath: canonicalPath };
 }
@@ -934,8 +937,28 @@ function isMissingEntryError(error: unknown): boolean {
   return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
 }
 
-function isOutsideWorkspaceError(error: unknown): boolean {
-  return error instanceof Error && error.message === ACCESS_OUTSIDE_WORKSPACE_MESSAGE;
+/**
+ * A path the explorer refuses to hand out. The message is what the reader sees,
+ * so it is only for them: callers that need to react to the refusal match the
+ * type, because a message that changes its wording must not change behaviour.
+ */
+export class FileAccessRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FileAccessRefusedError";
+  }
+}
+
+export function isFileAccessRefusedError(error: unknown): boolean {
+  return error instanceof Error && error.name === "FileAccessRefusedError";
+}
+
+/**
+ * An entry a directory listing hides instead of failing the listing: a broken
+ * link, or a link whose target sits outside every allowed root.
+ */
+export function shouldSkipDirectoryEntry(error: unknown): boolean {
+  return isMissingEntryError(error) || isFileAccessRefusedError(error);
 }
 
 function normalizeRelativePath({ root, targetPath }: { root: string; targetPath: string }): string {

@@ -21,11 +21,14 @@ import {
   deleteExplorerEntry,
   describeSymlinkFailure,
   duplicateExplorerEntry,
+  FileAccessRefusedError,
   getExplorerFileVersion,
   getFileAccessRoots,
+  isFileAccessRefusedError,
   listDirectoryEntries,
   readExplorerFile,
   renameExplorerEntry,
+  shouldSkipDirectoryEntry,
   streamExplorerFile,
   writeExplorerFile,
 } from "./service.js";
@@ -702,5 +705,43 @@ describe("file access roots", () => {
       await rm(root, { recursive: true, force: true });
       await rm(allowed, { recursive: true, force: true });
     }
+  });
+});
+
+describe("shouldSkipDirectoryEntry", () => {
+  it("skips the refusals a directory listing must survive", () => {
+    expect(
+      shouldSkipDirectoryEntry(
+        new FileAccessRefusedError("Access outside of workspace is not allowed"),
+      ),
+    ).toBe(true);
+    expect(
+      shouldSkipDirectoryEntry(
+        new FileAccessRefusedError("Symlink target is outside the workspace: ../data"),
+      ),
+    ).toBe(true);
+    expect(
+      shouldSkipDirectoryEntry(
+        new FileAccessRefusedError("Symlink target does not exist: gone.txt"),
+      ),
+    ).toBe(true);
+  });
+
+  it("skips entries whose target disappeared", () => {
+    const missing = Object.assign(new Error("ENOENT: no such file or directory"), {
+      code: "ENOENT",
+    });
+    expect(shouldSkipDirectoryEntry(missing)).toBe(true);
+  });
+
+  it("still surfaces a real failure", () => {
+    expect(shouldSkipDirectoryEntry(new Error("EACCES: permission denied"))).toBe(false);
+    expect(shouldSkipDirectoryEntry("not an error")).toBe(false);
+  });
+
+  it("matches the refusal by type, not by the wording the reader sees", () => {
+    const rewording = new FileAccessRefusedError("some future message");
+    expect(isFileAccessRefusedError(rewording)).toBe(true);
+    expect(shouldSkipDirectoryEntry(rewording)).toBe(true);
   });
 });
