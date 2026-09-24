@@ -191,6 +191,13 @@ result. Normal config patches persist only the requested fields, so launch overr
 defaults never leak into the file. Startup-only fields remain compared with the daemon's launch
 snapshot so a mixed edit can apply its live subset and still name the paths that require restart.
 
+`daemon.fileAccess.allowedRoots` widens the file explorer beyond a workspace root: each entry is
+`~`-expanded and resolved against the workspace when relative, and everything inside one of those
+roots is readable and writable exactly like the workspace itself. A symlink is followed only when it
+lands inside the workspace or one of these roots. The list is empty by default, and the daemon reads
+it during reload rather than at session creation, so `paseo reload` applies an edit to sessions that
+are already open.
+
 ```
 {
   version: 1,
@@ -205,6 +212,7 @@ snapshot so a mixed edit can apply its live subset and still name the paths that
     agentProfiles: AgentProfile[],        // named agent launch bundles; omitted means none
     cors: { allowedOrigins: string[] },
     relay: { enabled: boolean, endpoint: string, publicEndpoint: string, useTls: boolean, publicUseTls: boolean }, // new homes materialize enabled: false
+    fileAccess: { allowedRoots: string[] },  // directories the file explorer reaches outside a workspace root
     auth: { password: string }    // bcrypt hash, optional
   },
   app: {

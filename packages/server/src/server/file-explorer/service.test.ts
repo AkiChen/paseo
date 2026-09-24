@@ -16,11 +16,14 @@ import { describe, expect, it } from "vitest";
 import { runGitCommand } from "../../utils/run-git-command.js";
 import {
   classifySymlinkFailure,
+  configureFileAccessRoots,
   createExplorerEntry,
   deleteExplorerEntry,
   describeSymlinkFailure,
   duplicateExplorerEntry,
   getExplorerFileVersion,
+  getFileAccessRoots,
+  listDirectoryEntries,
   readExplorerFile,
   renameExplorerEntry,
   streamExplorerFile,
@@ -620,5 +623,84 @@ describe("symlink failures", () => {
     expect(describeSymlinkFailure({ kind: "dangling", link: "linked/gone.ts" })).toBe(
       "Symlink target does not exist: linked/gone.ts",
     );
+  });
+});
+
+describe("file access roots", () => {
+  it("reaches files under a configured root without allowing its neighbours", async () => {
+    const root = await createTempDir("paseo-file-access-workspace-");
+    const allowed = await createTempDir("paseo-file-access-allowed-");
+    const neighbour = await createTempDir("paseo-file-access-neighbour-");
+    configureFileAccessRoots([allowed]);
+
+    try {
+      await writeFile(path.join(allowed, "data.txt"), "allowed\n", "utf-8");
+      await writeFile(path.join(neighbour, "other.txt"), "other\n", "utf-8");
+
+      const file = await readExplorerFile({
+        root,
+        relativePath: path.join(allowed, "data.txt"),
+      });
+      expect(file.content).toBe("allowed\n");
+
+      const listing = await listDirectoryEntries({ root, relativePath: allowed });
+      expect(listing.entries.map((entry) => entry.name)).toEqual(["data.txt"]);
+
+      await expect(
+        readExplorerFile({ root, relativePath: path.join(neighbour, "other.txt") }),
+      ).rejects.toThrow("Access outside of workspace is not allowed");
+      await expect(
+        readExplorerFile({ root, relativePath: path.join(allowed, "..", "escape.txt") }),
+      ).rejects.toThrow("Access outside of workspace is not allowed");
+    } finally {
+      configureFileAccessRoots([]);
+      await rm(root, { recursive: true, force: true });
+      await rm(allowed, { recursive: true, force: true });
+      await rm(neighbour, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a relative entry against the workspace and ignores blank ones", async () => {
+    const root = await createTempDir("paseo-file-access-workspace-");
+    const shared = `${root}-shared`;
+    await mkdir(shared, { recursive: true });
+    configureFileAccessRoots(["", "  ", `../${path.basename(shared)}`]);
+
+    try {
+      await writeFile(path.join(shared, "data.txt"), "shared\n", "utf-8");
+
+      const file = await readExplorerFile({
+        root,
+        relativePath: path.join(shared, "data.txt"),
+      });
+      expect(file.content).toBe("shared\n");
+      expect(getFileAccessRoots()).toEqual([`../${path.basename(shared)}`]);
+    } finally {
+      configureFileAccessRoots([]);
+      await rm(root, { recursive: true, force: true });
+      await rm(shared, { recursive: true, force: true });
+    }
+  });
+
+  it("closes again when the list is emptied", async () => {
+    const root = await createTempDir("paseo-file-access-workspace-");
+    const allowed = await createTempDir("paseo-file-access-allowed-");
+
+    try {
+      await writeFile(path.join(allowed, "data.txt"), "allowed\n", "utf-8");
+      configureFileAccessRoots([allowed]);
+      await expect(
+        readExplorerFile({ root, relativePath: path.join(allowed, "data.txt") }),
+      ).resolves.toMatchObject({ content: "allowed\n" });
+
+      configureFileAccessRoots([]);
+      await expect(
+        readExplorerFile({ root, relativePath: path.join(allowed, "data.txt") }),
+      ).rejects.toThrow("Access outside of workspace is not allowed");
+    } finally {
+      configureFileAccessRoots([]);
+      await rm(root, { recursive: true, force: true });
+      await rm(allowed, { recursive: true, force: true });
+    }
   });
 });

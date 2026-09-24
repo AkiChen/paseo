@@ -800,14 +800,39 @@ async function isCaseOnlyRename(
   return isSameEntry && source.requestedPath.toLowerCase() === targetPath.toLowerCase();
 }
 
+/**
+ * Directories the explorer may reach outside a workspace root, from
+ * `daemon.fileAccess.allowedRoots`. Held here rather than in every call site so
+ * the boundary has one enforcement point: a request the file explorer forgets to
+ * pass the list to is a request that silently skips the whole check.
+ */
+let configuredAllowedRoots: readonly string[] = [];
+
+export function configureFileAccessRoots(roots: readonly string[]): void {
+  configuredAllowedRoots = roots.map((root) => root.trim()).filter((root) => root.length > 0);
+}
+
+export function getFileAccessRoots(): readonly string[] {
+  return configuredAllowedRoots;
+}
+
 async function resolveScopedPath({
   root,
   relativePath = ".",
 }: ScopedPathParams): Promise<ScopedPath> {
   const workspacePath = expandUserPath(root);
   const requestedPath = resolvePathFromBase(workspacePath, relativePath);
-  assertWithinWorkspace(workspacePath, requestedPath);
+  // Relative entries are workspace-relative, `~` entries are the daemon user's.
+  const allowedPaths = configuredAllowedRoots.map((entry) =>
+    resolvePathFromBase(workspacePath, entry),
+  );
+  if (!isWithinAnyRoot([workspacePath, ...allowedPaths], requestedPath)) {
+    throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+  }
   const canonicalRoot = await fs.realpath(workspacePath);
+  const canonicalAllowed = await Promise.all(
+    allowedPaths.map(async (entry) => fs.realpath(entry).catch(() => null)),
+  );
   const canonicalPath = await fs.realpath(requestedPath).catch((error: unknown) => {
     if (isMissingEntryError(error)) return null;
     throw error;
@@ -823,7 +848,11 @@ async function resolveScopedPath({
     if (failure) throw new Error(describeSymlinkFailure(failure));
     return { requestedPath, resolvedPath: requestedPath };
   }
-  if (!isWithinWorkspace(canonicalRoot, canonicalPath)) {
+  const canonicalRoots = [
+    canonicalRoot,
+    ...canonicalAllowed.filter((entry): entry is string => entry !== null),
+  ];
+  if (!isWithinAnyRoot(canonicalRoots, canonicalPath)) {
     const failure = classifySymlinkFailure({
       linkTarget: await readSymlinkTarget(requestedPath),
       escapedWorkspace: true,
@@ -831,6 +860,10 @@ async function resolveScopedPath({
     throw new Error(failure ? describeSymlinkFailure(failure) : ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
   }
   return { requestedPath, resolvedPath: canonicalPath };
+}
+
+function isWithinAnyRoot(roots: readonly string[], candidate: string): boolean {
+  return roots.some((root) => isWithinWorkspace(root, candidate));
 }
 
 /**
@@ -870,11 +903,6 @@ async function readSymlinkTarget(entryPath: string): Promise<string | null> {
 function isWithinWorkspace(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function assertWithinWorkspace(root: string, candidate: string): void {
-  if (isWithinWorkspace(root, candidate)) return;
-  throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
 }
 
 async function openFileForRead(filePath: string): Promise<FileHandle> {

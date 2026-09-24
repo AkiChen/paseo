@@ -185,7 +185,12 @@ import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
 } from "./agent/provider-launch-config.js";
-import { loadPersistedConfig, type PersistedConfig } from "./persisted-config.js";
+import {
+  loadPersistedConfig,
+  readFileAccessRoots,
+  type PersistedConfig,
+} from "./persisted-config.js";
+import { configureFileAccessRoots } from "./file-explorer/service.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
@@ -594,6 +599,9 @@ export async function createPaseoDaemon(
           cli: config.configReload?.cli,
           relayEnabledFallback: config.configReload?.relayEnabledFallback,
         });
+        // File access roots are read from persisted config, so a `paseo reload`
+        // is what applies an edit to an already running daemon.
+        configureFileAccessRoots(readFileAccessRoots(config.paseoHome));
         return {
           mutable: createInitialMutableDaemonConfig(reloaded),
           overrideControlledPaths: reloaded.configReload?.overrideControlledPaths ?? [],
@@ -601,6 +609,7 @@ export async function createPaseoDaemon(
       },
     },
   });
+  configureFileAccessRoots(readFileAccessRoots(config.paseoHome));
   const orchestrationSkills = createOrchestrationSkills(daemonConfigStore);
   void orchestrationSkills.autoUpdate().catch((error) => {
     logger.error({ err: error }, "Failed to maintain orchestration skills at startup");
