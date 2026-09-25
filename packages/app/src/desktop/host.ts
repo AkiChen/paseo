@@ -64,6 +64,20 @@ export interface DesktopOpenerBridge {
   openUrl?: (url: string) => Promise<void>;
 }
 
+export interface DesktopAccountBalanceBridge {
+  getAccessToken?: () => Promise<string | null>;
+  setAccessToken?: (token: string) => Promise<void>;
+  removeAccessToken?: () => Promise<void>;
+  query?: (
+    endpointUrl: string,
+    token: string,
+  ) => Promise<{
+    ok: boolean;
+    status: number;
+    body: unknown;
+  }>;
+}
+
 export interface DesktopEditorTargetDescriptor {
   id: string;
   label: string;
@@ -183,6 +197,7 @@ export interface DesktopHostBridge {
   dialog?: DesktopDialogBridge;
   notification?: DesktopNotificationBridge;
   opener?: DesktopOpenerBridge;
+  accountBalance?: DesktopAccountBalanceBridge;
   editor?: DesktopEditorBridge;
   webUtils?: DesktopWebUtilsBridge;
   menu?: DesktopMenuBridge;

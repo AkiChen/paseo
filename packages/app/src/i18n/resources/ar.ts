@@ -704,6 +704,29 @@ export const ar: TranslationResources = {
         branchNameCopiedLabel: "اسم الفرع",
       },
     },
+    accountBalance: {
+      title: "Account balance",
+      endpointLabel: "رابط نقطة نهاية الرصيد",
+      setup: "Set balance",
+      querying: "Querying...",
+      helper: "Enter the Account Account access token. The balance refreshes every 5 minutes.",
+      tokenLabel: "Account access token",
+      tokenPlaceholder: "Access token",
+      tokenReplacementPlaceholder: "Enter a new token to replace the saved token",
+      saveAndQuery: "Save and query",
+      refresh: "Refresh",
+      updatedAt: "Last updated: {{value}}",
+      accessibility: {
+        setup: "Set Account access token",
+        balance: "Account balance {{balance}}",
+      },
+      errors: {
+        query: "Unable to query balance: {{detail}}",
+        queryUnknown: "Unable to query balance",
+        save: "Unable to save access token: {{detail}}",
+        saveUnknown: "Unable to save access token",
+      },
+    },
     scripts: {
       title: "البرامج النصية",
       actions: {

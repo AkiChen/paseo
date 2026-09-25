@@ -700,6 +700,30 @@ export const en = {
         branchNameCopiedLabel: "Branch name",
       },
     },
+    accountBalance: {
+      title: "Account balance",
+      endpointLabel: "Balance endpoint URL",
+      setup: "Set balance",
+      querying: "Querying...",
+      helper:
+        "Point at an endpoint that returns your balance, then paste an access token. The balance refreshes every 5 minutes.",
+      tokenLabel: "Access token",
+      tokenPlaceholder: "Access token",
+      tokenReplacementPlaceholder: "Enter a new token to replace the saved token",
+      saveAndQuery: "Save and query",
+      refresh: "Refresh",
+      updatedAt: "Last updated: {{value}}",
+      accessibility: {
+        setup: "Set access token",
+        balance: "Account balance {{balance}}",
+      },
+      errors: {
+        query: "Unable to query balance: {{detail}}",
+        queryUnknown: "Unable to query balance",
+        save: "Unable to save access token: {{detail}}",
+        saveUnknown: "Unable to save access token",
+      },
+    },
     scripts: {
       title: "Scripts",
       actions: {

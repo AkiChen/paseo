@@ -94,6 +94,13 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   opener: {
     openUrl: (url: string) => ipcRenderer.invoke("paseo:opener:openUrl", url),
   },
+  accountBalance: {
+    getAccessToken: () => ipcRenderer.invoke("paseo:account-balance:get-token"),
+    setAccessToken: (token: string) => ipcRenderer.invoke("paseo:account-balance:set-token", token),
+    removeAccessToken: () => ipcRenderer.invoke("paseo:account-balance:remove-token"),
+    query: (endpointUrl: string, token: string) =>
+      ipcRenderer.invoke("paseo:account-balance:query", endpointUrl, token),
+  },
   editor: {
     listTargets: () => ipcRenderer.invoke("paseo:editor:listTargets"),
     openTarget: (input: {
