@@ -25,6 +25,7 @@ import { DownloadTokenStore } from "./file-download/token-store.js";
 import { StructuredAgentFallbackError } from "./agent/agent-response-loop.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentManagerEvent } from "./agent/agent-manager.js";
+import type { AgentCapabilityFlags } from "./agent/agent-sdk-types.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { WorkspaceLabelError, type WorkspaceLabelService } from "./workspace-labels/index.js";
 import { createPersistedProjectRecord } from "./workspace-registry.js";
@@ -5760,4 +5761,224 @@ test("provider snapshots preserve versionless visibility while capabilities upda
     "plugin-provider",
   ]);
   expect(references.compactSnapshot!.entries[0]!.modes![0]!.icon).toBe("ShieldCheck");
+});
+
+describe("agent.fork_context.request", () => {
+  const FORK_SOURCE_AGENT_ID = "22222222-2222-4222-8222-222222222222";
+  const FORK_PROVIDER = "gemini-acp";
+
+  const BASE_CAPABILITIES: AgentCapabilityFlags = {
+    supportsStreaming: true,
+    supportsSessionPersistence: true,
+    supportsDynamicModes: true,
+    supportsMcpServers: true,
+    supportsReasoningStream: true,
+    supportsToolInvocations: true,
+  };
+
+  /**
+   * Just enough of a live agent for the fork handler: `toAgentPayload` reads the
+   * projection fields, and the provider-fork branch needs a session that can
+   * describe its persistence and fork itself.
+   */
+  function createForkSourceAgent(options: {
+    capabilities: AgentCapabilityFlags;
+    forkProviderSession?: () => Promise<string>;
+  }) {
+    const capabilities = options.capabilities;
+    return {
+      id: FORK_SOURCE_AGENT_ID,
+      provider: FORK_PROVIDER,
+      cwd: "/tmp/fork-source",
+      session: {
+        provider: FORK_PROVIDER,
+        id: "session-1",
+        capabilities,
+        describePersistence: () => ({
+          provider: FORK_PROVIDER,
+          sessionId: "session-1",
+          nativeHandle: "session-1",
+          metadata: { provider: FORK_PROVIDER, cwd: "/tmp/fork-source" },
+        }),
+        ...(options.forkProviderSession
+          ? { forkProviderSession: options.forkProviderSession }
+          : {}),
+      },
+      capabilities,
+      config: { provider: FORK_PROVIDER, cwd: "/tmp/fork-source" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      lastUserMessageAt: null,
+      lifecycle: "idle",
+      activeTurnId: null,
+      activeTurnStartedAt: null,
+      availableModes: [],
+      currentModeId: null,
+      features: [],
+      pendingPermissions: new Map(),
+      persistence: null,
+      labels: {},
+      attention: { requiresAttention: false },
+    };
+  }
+
+  test("forks with a chat-history attachment when the provider does not advertise fork", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => "unexpected-forked-session");
+    const resumeAgentFromPersistence = vi.fn();
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: false },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-unchanged",
+    });
+
+    const response = findByType(messages, "agent.fork_context.response");
+    expect(response?.payload.error).toBeNull();
+    expect(response?.payload.attachment).toMatchObject({
+      type: "text",
+      contextKind: "chat_history",
+    });
+    expect(response?.payload.attachment?.text).toContain("No chat history to display.");
+    expect(response?.payload.itemCount).toBe(0);
+    expect(response?.payload.forkedAgentId).toBeUndefined();
+    expect(forkProviderSession).not.toHaveBeenCalled();
+    expect(resumeAgentFromPersistence).not.toHaveBeenCalled();
+  });
+
+  // An old client omits `targetProvider` and cannot read a `forkedAgentId`, so the
+  // fork it asked for must keep arriving as the attachment it has always parsed.
+  test("carries the timeline as an attachment when the request names no target provider", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => "unexpected-forked-session");
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence: vi.fn(),
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      requestId: "fork-legacy-client",
+    });
+
+    const response = findByType(messages, "agent.fork_context.response");
+    expect(response?.payload.error).toBeNull();
+    expect(response?.payload.attachment).toMatchObject({
+      type: "text",
+      contextKind: "chat_history",
+    });
+    expect(response?.payload.forkedAgentId).toBeUndefined();
+    expect(forkProviderSession).not.toHaveBeenCalled();
+  });
+
+  test("carries the timeline as an attachment when the fork changes provider", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => "unexpected-forked-session");
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence: vi.fn(),
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: "codex",
+      requestId: "fork-cross-provider",
+    });
+
+    const response = findByType(messages, "agent.fork_context.response");
+    expect(response?.payload.attachment).toMatchObject({
+      type: "text",
+      contextKind: "chat_history",
+    });
+    expect(response?.payload.forkedAgentId).toBeUndefined();
+    expect(forkProviderSession).not.toHaveBeenCalled();
+  });
+
+  test("registers the provider's forked session as a new agent when the provider advertises fork", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => "session-2");
+    const resumeAgentFromPersistence = vi.fn(async () => ({ id: "forked-agent-1" }));
+    const hydrateTimelineFromProvider = vi.fn(async () => undefined);
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence,
+        hydrateTimelineFromProvider,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-provider",
+    });
+
+    const response = findByType(messages, "agent.fork_context.response");
+    expect(response?.payload).toMatchObject({
+      requestId: "fork-provider",
+      agentId: FORK_SOURCE_AGENT_ID,
+      attachment: null,
+      itemCount: 0,
+      forkedAgentId: "forked-agent-1",
+      error: null,
+    });
+    expect(resumeAgentFromPersistence).toHaveBeenCalledWith(
+      {
+        provider: FORK_PROVIDER,
+        sessionId: "session-2",
+        nativeHandle: "session-2",
+        metadata: { provider: FORK_PROVIDER, cwd: "/tmp/fork-source" },
+      },
+      undefined,
+      undefined,
+      { labels: {}, workspaceId: undefined },
+    );
+    expect(hydrateTimelineFromProvider).toHaveBeenCalledWith("forked-agent-1");
+  });
 });

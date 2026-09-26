@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useTranslation } from "react-i18next";
 import type {
   AgentForkContextOptions,
@@ -19,7 +19,7 @@ import {
 } from "@/attachments/workspace-attachments-store";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { toErrorMessage } from "@/utils/error-messages";
-import { buildNewWorkspaceRoute } from "@/utils/host-routes";
+import { buildHostAgentDetailRoute, buildNewWorkspaceRoute } from "@/utils/host-routes";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 
 /**
@@ -32,6 +32,7 @@ export type ForkAgentSource = Pick<
   AgentScreenAgent,
   | "provider"
   | "cwd"
+  | "workspaceId"
   | "currentModeId"
   | "model"
   | "thinkingOptionId"
@@ -66,11 +67,13 @@ export interface UseForkAgentInput {
   readOnly?: boolean;
 }
 
+type AgentForkContextPayload = Awaited<ReturnType<DaemonClient["buildAgentForkContext"]>>;
+
 function buildChatHistoryAttachment(input: {
   draftId: string;
   serverId: string;
   agentId: string;
-  payload: Awaited<ReturnType<DaemonClient["buildAgentForkContext"]>>;
+  payload: AgentForkContextPayload;
   missingAttachmentMessage: string;
 }): WorkspaceComposerAttachment {
   if (!input.payload.attachment) {
@@ -118,6 +121,105 @@ function buildForkDraftTabTarget(
 }
 
 /**
+ * The workspace a tab fork pins its new agent into, or `undefined` when the fork
+ * goes to a new workspace. A tab fork cannot proceed without one.
+ */
+function resolveForkTabWorkspace(input: {
+  target: AssistantForkTarget;
+  workspaceId: string | undefined;
+  missingWorkspaceMessage: string;
+}): string | undefined {
+  if (input.target !== "tab") {
+    return undefined;
+  }
+  if (!input.workspaceId) {
+    throw new Error(input.missingWorkspaceMessage);
+  }
+  return input.workspaceId;
+}
+
+/**
+ * Seed the new conversation's draft with the chat-history attachment. This is the
+ * path a fork takes whenever the provider's own session fork is not usable.
+ */
+function seedForkDraftWithAttachment(input: {
+  serverId: string;
+  agentId: string;
+  payload: AgentForkContextPayload;
+  missingAttachmentMessage: string;
+}): string {
+  const draftId = generateDraftId();
+  const attachment = buildChatHistoryAttachment({
+    draftId,
+    serverId: input.serverId,
+    agentId: input.agentId,
+    payload: input.payload,
+    missingAttachmentMessage: input.missingAttachmentMessage,
+  });
+  useWorkspaceAttachmentsStore.getState().setWorkspaceAttachments({
+    scopeKey: buildDraftWorkspaceAttachmentScopeKey(draftId),
+    attachments: [attachment],
+  });
+  return draftId;
+}
+
+/**
+ * Open an agent the daemon already created by forking the provider's session. A tab
+ * fork pins it into the workspace it was forked from; a new-workspace fork deep-links
+ * to the agent and lets the host route resolve its workspace.
+ */
+function openProviderForkedAgent(input: {
+  serverId: string;
+  forkedAgentId: string;
+  tabWorkspaceId: string | undefined;
+  agentWorkspaceId: string | undefined;
+  push: (route: Href) => void;
+}): void {
+  if (input.tabWorkspaceId) {
+    navigateToWorkspace({
+      serverId: input.serverId,
+      workspaceId: input.tabWorkspaceId,
+      target: { kind: "agent", agentId: input.forkedAgentId },
+    });
+    return;
+  }
+  input.push(
+    buildHostAgentDetailRoute(input.serverId, input.forkedAgentId, input.agentWorkspaceId),
+  );
+}
+
+/**
+ * Send a chat-history fork into its own workspace, carrying the source agent's
+ * provider configuration as the new draft's setup.
+ */
+function openForkWorkspace(input: {
+  serverId: string;
+  agent: ForkAgentSource;
+  draftId: string;
+  draftSetup: WorkspaceDraftTabSetup | undefined;
+  push: (route: Href) => void;
+}): void {
+  const sourceDirectory =
+    input.agent.projectPlacement?.checkout?.cwd?.trim() || input.agent.cwd.trim() || undefined;
+  if (input.draftSetup) {
+    useWorkspaceDraftSubmissionStore.getState().setDraftSetup({
+      draftId: input.draftId,
+      setup: input.draftSetup,
+      sourceDirectory,
+    });
+  }
+  input.push(
+    buildNewWorkspaceRoute({
+      serverId: input.serverId,
+      sourceDirectory,
+      displayName: input.agent.projectPlacement?.projectName,
+      projectId: input.agent.projectPlacement?.projectKey,
+      draftId: input.draftId,
+    }),
+  );
+}
+
+/**
  * Shared fork driver behind both turn-footer fork affordances: the completed
  * turn's footer (which supplies a boundary pinned to that turn) and the
  * in-flight turn's footer next to the progress loader (which omits the boundary
@@ -141,56 +243,57 @@ export function useForkAgent(
       if (!client) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
+      // A provider fork has already created its agent on the daemon by the time the
+      // call below returns, so the workspace a tab fork pins into is resolved first:
+      // a tab fork without one must fail before anything is forked.
+      const tabWorkspaceId = resolveForkTabWorkspace({
+        target,
+        workspaceId,
+        missingWorkspaceMessage: t("message.actions.forkMissingWorkspace"),
+      });
       const draftSetup = buildForkDraftSetup(agent);
-      const prepareForkDraft = async () => {
-        const draftId = generateDraftId();
-        const payload = await client.buildAgentForkContext(agentId, boundary);
-        const attachment = buildChatHistoryAttachment({
-          draftId,
-          serverId,
-          agentId,
-          payload,
-          missingAttachmentMessage: t("message.actions.forkFailed"),
-        });
-        useWorkspaceAttachmentsStore.getState().setWorkspaceAttachments({
-          scopeKey: buildDraftWorkspaceAttachmentScopeKey(draftId),
-          attachments: [attachment],
-        });
-        return draftId;
-      };
+      // A fork keeps the source provider by default, so `targetProvider` is the draft
+      // provider. The daemon decides whether that earns a provider session fork or the
+      // chat-history attachment.
+      const payload = await client.buildAgentForkContext(agentId, {
+        ...boundary,
+        ...(draftSetup?.provider ? { targetProvider: draftSetup.provider } : {}),
+      });
 
-      if (target === "tab") {
-        if (!workspaceId) {
-          throw new Error(t("message.actions.forkMissingWorkspace"));
-        }
-        const draftId = await prepareForkDraft();
+      if (payload.forkedAgentId) {
+        openProviderForkedAgent({
+          serverId,
+          forkedAgentId: payload.forkedAgentId,
+          tabWorkspaceId,
+          agentWorkspaceId: agent.workspaceId,
+          push: (route) => router.push(route),
+        });
+        return;
+      }
+
+      const draftId = seedForkDraftWithAttachment({
+        serverId,
+        agentId,
+        payload,
+        missingAttachmentMessage: t("message.actions.forkFailed"),
+      });
+
+      if (tabWorkspaceId) {
         navigateToWorkspace({
           serverId,
-          workspaceId,
+          workspaceId: tabWorkspaceId,
           target: buildForkDraftTabTarget(draftSetup, draftId),
         });
         return;
       }
 
-      const draftId = await prepareForkDraft();
-      const sourceDirectory =
-        agent.projectPlacement?.checkout?.cwd?.trim() || agent.cwd.trim() || undefined;
-      if (draftSetup) {
-        useWorkspaceDraftSubmissionStore.getState().setDraftSetup({
-          draftId,
-          setup: draftSetup,
-          sourceDirectory,
-        });
-      }
-      router.push(
-        buildNewWorkspaceRoute({
-          serverId,
-          sourceDirectory,
-          displayName: agent.projectPlacement?.projectName,
-          projectId: agent.projectPlacement?.projectKey,
-          draftId,
-        }),
-      );
+      openForkWorkspace({
+        serverId,
+        agent,
+        draftId,
+        draftSetup,
+        push: (route) => router.push(route),
+      });
     } catch (error) {
       toast?.error(toErrorMessage(error) || t("message.actions.forkFailed"));
     }

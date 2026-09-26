@@ -184,6 +184,8 @@ export interface AgentCapabilityFlags {
   supportsStreaming: boolean;
   supportsSessionPersistence: boolean;
   supportsSessionListing?: boolean;
+  /** The provider can fork its own session, so a same-provider fork inherits its prefix. */
+  supportsSessionFork?: boolean;
   supportsDynamicModes: boolean;
   supportsMcpServers: boolean;
   supportsNativePaseoTools?: boolean;
@@ -677,6 +679,12 @@ export interface AgentSession {
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void>;
   describePersistence(): AgentPersistenceHandle | null;
+  /**
+   * Fork the provider's own session and return the new session id. Only present when
+   * `capabilities.supportsSessionFork` is true. This session is not moved by the call: the
+   * returned id belongs to a separate session that the caller resumes on its own.
+   */
+  forkProviderSession?(): Promise<string>;
   /**
    * Resolve once every foreground turn that predates this call can no longer run or become active.
    * Calling while already idle is a successful no-op. Reject only when foreground ownership is

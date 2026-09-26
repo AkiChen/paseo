@@ -1644,7 +1644,7 @@ export class ACPAgentClient implements AgentClient {
 
 export class ACPAgentSession implements AgentSession, ACPClient {
   readonly provider: string;
-  readonly capabilities: AgentCapabilityFlags;
+  capabilities: AgentCapabilityFlags;
 
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
@@ -1755,6 +1755,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.child = spawned.child;
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+      if (this.agentCapabilities?.sessionCapabilities?.fork) {
+        this.capabilities = { ...this.capabilities, supportsSessionFork: true };
+      }
 
       const response = await this.runACPRequest(() =>
         this.connection!.newSession({
@@ -1789,6 +1792,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.child = spawned.child;
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+      if (this.agentCapabilities?.sessionCapabilities?.fork) {
+        this.capabilities = { ...this.capabilities, supportsSessionFork: true };
+      }
       this.sessionId = handle.sessionId;
       this.bootstrapThreadEventPending = true;
 
@@ -2413,6 +2419,34 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         title: this.currentTitle,
       },
     };
+  }
+
+  /**
+   * Create a sibling session from this one with `session/fork` and return the new
+   * session id. The provider hands the new session this one's prefix, which is what
+   * keeps the model cache warm for a same-provider fork.
+   *
+   * This session is untouched: `session/fork` returns a separate session id, and the
+   * caller becomes its owner by resuming it through `AgentSession.describePersistence`
+   * style metadata. The provider must be able to restore that id in a fresh process
+   * (ACP `session/load` or `session/resume`), which is the same requirement Paseo's
+   * existing resume path already places on a persisted handle.
+   */
+  async forkProviderSession(): Promise<string> {
+    if (!this.connection || !this.sessionId) {
+      throw new Error(`${this.provider} session is not initialized`);
+    }
+    if (!this.agentCapabilities?.sessionCapabilities?.fork) {
+      throw new Error(`${this.provider} does not support ACP session fork`);
+    }
+    const response = await this.runACPRequest(() =>
+      this.connection!.unstable_forkSession({
+        sessionId: this.sessionId!,
+        cwd: this.config.cwd,
+        mcpServers: this.acpMcpServers(),
+      }),
+    );
+    return response.sessionId;
   }
 
   async interrupt(): Promise<void> {

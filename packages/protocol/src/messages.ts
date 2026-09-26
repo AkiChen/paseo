@@ -1845,6 +1845,9 @@ export const AgentForkContextRequestMessageSchema = z.object({
   agentId: z.string(),
   boundaryCursor: AgentTimelineCursorSchema.optional(),
   boundaryMessageId: z.string().optional(),
+  // COMPAT(forkProviderSession): added in v0.8.0, remove optional after 2027-10-01.
+  // Omitted means "same provider as the source agent".
+  targetProvider: z.string().optional(),
   requestId: z.string(),
 });
 
@@ -4637,6 +4640,10 @@ export const AgentForkContextResponseMessageSchema = z.object({
     itemCount: z.number().int().nonnegative(),
     boundaryMessageId: z.string().nullable(),
     boundaryCursor: AgentTimelineCursorSchema.nullable().optional(),
+    // COMPAT(forkProviderSession): added in v0.8.0, remove optional after 2027-10-01.
+    // Present only when the daemon forked the provider session instead of building an
+    // attachment; older daemons omit it and the client keeps the attachment path.
+    forkedAgentId: z.string().optional(),
     error: z.string().nullable(),
   }),
 });

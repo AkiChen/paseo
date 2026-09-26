@@ -123,6 +123,7 @@ import {
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import { resolveForkStrategy } from "./agent/fork-strategy.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -7520,6 +7521,37 @@ export class Session {
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      // A provider fork is answered with an agent id and no attachment, so it is only
+      // used when the request names the target provider and that provider is the
+      // source's. A client too old to name a target cannot consume a forked agent id,
+      // and the rule reads a missing target as "cannot prove the provider stays".
+      const strategy = resolveForkStrategy({
+        sourceProvider: snapshot.provider,
+        targetProvider: msg.targetProvider,
+        providerSupportsFork: snapshot.capabilities.supportsSessionFork === true,
+      });
+
+      if (strategy === "provider-fork") {
+        const forkedAgentId = await this.forkAgentThroughProviderSession(snapshot);
+        this.emit({
+          type: "agent.fork_context.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            attachment: null,
+            itemCount: 0,
+            // A provider fork has no message boundary: it inherits the whole prefix,
+            // so reporting the requested boundary would claim a truncation that the
+            // forked session does not have.
+            boundaryCursor: null,
+            boundaryMessageId: null,
+            forkedAgentId,
+            error: null,
+          },
+        });
+        return;
+      }
+
       const agentPayload = await this.buildAgentPayload(snapshot);
       const timeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction: "tail",
@@ -7565,6 +7597,48 @@ export class Session {
         },
       });
     }
+  }
+
+  /**
+   * Ask the source agent's live provider session for a sibling session, then register
+   * that session as its own agent. The new agent keeps the source's labels and
+   * workspace: a provider fork keeps the same cwd and therefore the same workspace.
+   *
+   * The forked session lives in the source provider process. Owning it here means
+   * resuming the returned id through the provider, so the provider must be able to
+   * restore a session it just forked — the same contract `resume_agent_request`
+   * already depends on.
+   */
+  private async forkAgentThroughProviderSession(snapshot: ManagedAgent): Promise<string> {
+    const session = snapshot.session;
+    if (!session) {
+      throw new Error(`${snapshot.provider} agent is closed; cannot fork its provider session`);
+    }
+    if (!session.forkProviderSession) {
+      throw new Error(`${snapshot.provider} does not support provider session fork`);
+    }
+    const forkedSessionId = await session.forkProviderSession();
+    const sourceHandle = session.describePersistence();
+    if (!sourceHandle) {
+      throw new Error(`${snapshot.provider} session has no persistence handle to fork from`);
+    }
+
+    const forked = await this.agentManager.resumeAgentFromPersistence(
+      { ...sourceHandle, sessionId: forkedSessionId, nativeHandle: forkedSessionId },
+      undefined,
+      undefined,
+      {
+        labels: snapshot.labels,
+        workspaceId: snapshot.workspaceId,
+      },
+    );
+    await this.agentManager.hydrateTimelineFromProvider(forked.id);
+    await this.agentUpdates.forwardLiveAgent(forked);
+    this.sessionLogger.info(
+      { agentId: snapshot.id, forkedAgentId: forked.id, provider: forked.provider },
+      "Forked agent through its provider session",
+    );
+    return forked.id;
   }
 
   private async handleSendAgentMessageRequest(

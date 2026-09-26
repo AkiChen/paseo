@@ -3914,7 +3914,17 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
     handle: AgentPersistenceHandle;
     loadSession?: ReturnType<typeof vi.fn>;
     unstableResumeSession?: ReturnType<typeof vi.fn>;
+    newSession?: ReturnType<typeof vi.fn>;
+    forkSession?: ReturnType<typeof vi.fn>;
   }) {
+    const newSession =
+      args.newSession ??
+      vi.fn().mockResolvedValue({
+        sessionId: "session-1",
+        modes: null,
+        models: null,
+        configOptions: [],
+      });
     const loadSession =
       args.loadSession ??
       vi.fn().mockResolvedValue({
@@ -3931,6 +3941,14 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
         models: null,
         configOptions: [],
       });
+    const forkSession =
+      args.forkSession ??
+      vi.fn().mockResolvedValue({
+        sessionId: "session-2",
+        modes: null,
+        models: null,
+        configOptions: [],
+      });
 
     class TestSession extends ACPAgentSession {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
@@ -3938,8 +3956,10 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
           child: createProbeChildStub(),
           connection: {
             prompt: vi.fn(),
+            newSession,
             loadSession,
             unstable_resumeSession: unstableResumeSession,
+            unstable_forkSession: forkSession,
           } as unknown as ClientSideConnection,
           initialize: { agentCapabilities: args.capabilities ?? {} },
         } as SpawnedACPProcess;
@@ -3967,7 +3987,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       },
     );
 
-    return { session, loadSession, unstableResumeSession };
+    return { session, loadSession, unstableResumeSession, newSession, forkSession };
   }
 
   test("loadSession is always called with sessionId, cwd, and mcpServers even when mcpServers is empty", async () => {
@@ -4172,6 +4192,64 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       sessionId: "session-1",
       cwd: "/tmp/paseo-acp-test",
       mcpServers: [],
+    });
+  });
+
+  describe("session/fork", () => {
+    test("advertises fork on a fresh session too, not only on a resumed one", async () => {
+      const newSession = vi.fn().mockResolvedValue({
+        sessionId: "session-1",
+        modes: null,
+        models: null,
+        configOptions: [],
+      });
+      const { session, forkSession } = makeTestSession({
+        capabilities: { sessionCapabilities: { fork: {} } },
+        handle: { sessionId: "session-1", provider: "claude-acp" },
+        newSession,
+      });
+
+      await session.initializeNewSession();
+
+      expect(session.capabilities.supportsSessionFork).toBe(true);
+      await expect(session.forkProviderSession()).resolves.toBe("session-2");
+      expect(forkSession).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        cwd: "/tmp/paseo-acp-test",
+        mcpServers: [],
+      });
+    });
+
+    test("advertises fork and returns the forked session id when the provider announces session/fork", async () => {
+      const { session, forkSession } = makeTestSession({
+        capabilities: { loadSession: true, sessionCapabilities: { fork: {} } },
+        handle: { sessionId: "session-1", provider: "claude-acp" },
+      });
+
+      await session.initializeResumedSession();
+
+      expect(session.capabilities.supportsSessionFork).toBe(true);
+      await expect(session.forkProviderSession()).resolves.toBe("session-2");
+      expect(forkSession).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        cwd: "/tmp/paseo-acp-test",
+        mcpServers: [],
+      });
+    });
+
+    test("does not advertise fork and refuses to fork when the provider omits session/fork", async () => {
+      const { session, forkSession } = makeTestSession({
+        capabilities: { loadSession: true },
+        handle: { sessionId: "session-1", provider: "claude-acp" },
+      });
+
+      await session.initializeResumedSession();
+
+      expect(session.capabilities.supportsSessionFork).toBeUndefined();
+      await expect(session.forkProviderSession()).rejects.toThrow(
+        "does not support ACP session fork",
+      );
+      expect(forkSession).not.toHaveBeenCalled();
     });
   });
 });
