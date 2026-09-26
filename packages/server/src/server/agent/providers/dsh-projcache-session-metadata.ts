@@ -61,7 +61,31 @@ export function parseDshProjCache(contents: string): SessionMetadata | null {
   if (createdAt) {
     metadata.lastActivityAt = createdAt;
   }
+  const conversation = hasConversation(rows?.titleInput, rows?.title);
+  if (conversation !== undefined) {
+    metadata.hasConversation = conversation;
+  }
   return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+/**
+ * The cache counts the prompts it has seen, so a session that never recorded one
+ * is empty rather than merely untitled. An unreadable count leaves the question
+ * open, and the entry stays visible.
+ */
+function hasConversation(titleInput: unknown, title: unknown): boolean | undefined {
+  const value = asRecord(asRecord(titleInput)?.val);
+  if (!value) {
+    return undefined;
+  }
+  const count = value.count;
+  if (typeof count === "number") {
+    return count > 0;
+  }
+  if (value.first !== null && value.first !== undefined) {
+    return true;
+  }
+  return asText(title) ? true : undefined;
 }
 
 /**

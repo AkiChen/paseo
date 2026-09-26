@@ -1217,6 +1217,9 @@ export class ACPAgentClient implements AgentClient {
     // A provider that sends none of these still has them on disk when its
     // config names a store, which is what keeps the import list readable.
     const fromStore = await this.sessionMetadataReader?.(session.sessionId).catch(() => null);
+    // The store knows a session that never recorded a message, which is the same
+    // thing ACP reports through a loaded history that turns out empty.
+    if (fromStore?.hasConversation === false) return null;
     const fields = mergeSessionMetadata(
       {
         title: session.title ?? null,

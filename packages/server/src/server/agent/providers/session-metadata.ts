@@ -30,6 +30,13 @@ export interface SessionMetadata {
   firstPromptPreview?: string;
   lastPromptPreview?: string;
   lastActivityAt?: Date;
+  /**
+   * False when the store says the session never recorded a message. Providers
+   * create throwaway sessions for their own probes, and Paseo hides an empty
+   * session from the import list — this is how a store-only provider says so.
+   * Left undefined when the store cannot tell.
+   */
+  hasConversation?: boolean;
 }
 
 export interface ImportableSessionFields {

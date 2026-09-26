@@ -135,3 +135,40 @@ describe("mergeSessionMetadata", () => {
     expect(mergeSessionMetadata(fields, null)).toBe(fields);
   });
 });
+
+describe("empty session detection", () => {
+  it("reports a session that never recorded a prompt", () => {
+    const metadata = parseDshProjCache(
+      JSON.stringify({
+        record: {
+          identity: { createdAt: 1_700_000_000_000 },
+          rows: { title: { val: null }, titleInput: { val: { first: null, count: 0 } } },
+        },
+      }),
+    );
+
+    expect(metadata?.hasConversation).toBe(false);
+    expect(metadata?.title).toBeUndefined();
+  });
+
+  it("reports a session with a prompt", () => {
+    const metadata = parseDshProjCache(
+      JSON.stringify({
+        record: {
+          rows: { title: { val: "Fix the login bug" }, titleInput: { val: { count: 3 } } },
+        },
+      }),
+    );
+
+    expect(metadata?.hasConversation).toBe(true);
+    expect(metadata?.title).toBe("Fix the login bug");
+  });
+
+  it("leaves the question open when the store does not count prompts", () => {
+    const metadata = parseDshProjCache(
+      JSON.stringify({ record: { rows: { title: { val: "Titled" } } } }),
+    );
+
+    expect(metadata?.hasConversation).toBeUndefined();
+  });
+});
