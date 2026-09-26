@@ -107,6 +107,12 @@ import {
 } from "../create-agent-mode.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
+  createSessionMetadataReader,
+  mergeSessionMetadata,
+  type SessionMetadataReader,
+  type SessionMetadataSource,
+} from "./session-metadata.js";
+import {
   checkProviderLaunchAvailable,
   createProviderEnvSpec,
   resolveProviderLaunch,
@@ -439,6 +445,8 @@ interface ACPAgentClientOptions {
   ) => Promise<void>;
   capabilities?: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
+  /** Private store to read session titles and times from, when configured. */
+  sessionMetadata?: SessionMetadataSource | null;
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
@@ -903,6 +911,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
   private readonly importPromptCache = new Map<string, ACPImportPromptCacheEntry>();
+  private readonly sessionMetadataReader: SessionMetadataReader | null;
   private readonly now: () => number;
   protected readonly terminateProcess: ProcessTerminator;
 
@@ -932,6 +941,7 @@ export class ACPAgentClient implements AgentClient {
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
+    this.sessionMetadataReader = createSessionMetadataReader(options.sessionMetadata ?? null);
     this.now = options.now ?? Date.now;
   }
 
@@ -1204,13 +1214,22 @@ export class ACPAgentClient implements AgentClient {
       ? await this.loadImportPromptPreviews(probe, history, session, historyDeadline)
       : null;
     if (loadedPreviews?.hasConversation === false) return null;
+    // A provider that sends none of these still has them on disk when its
+    // config names a store, which is what keeps the import list readable.
+    const fromStore = await this.sessionMetadataReader?.(session.sessionId).catch(() => null);
+    const fields = mergeSessionMetadata(
+      {
+        title: session.title ?? null,
+        firstPromptPreview: loadedPreviews?.firstPromptPreview ?? null,
+        lastPromptPreview: loadedPreviews?.lastPromptPreview ?? null,
+        lastActivityAt: session.updatedAt ? new Date(session.updatedAt) : new Date(0),
+      },
+      fromStore ?? null,
+    );
     return {
       providerHandleId: session.sessionId,
       cwd: session.cwd,
-      title: session.title ?? null,
-      firstPromptPreview: loadedPreviews?.firstPromptPreview ?? null,
-      lastPromptPreview: loadedPreviews?.lastPromptPreview ?? null,
-      lastActivityAt: session.updatedAt ? new Date(session.updatedAt) : new Date(0),
+      ...fields,
     };
   }
 
