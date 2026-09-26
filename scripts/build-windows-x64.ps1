@@ -125,6 +125,14 @@ try {
     -Command $npmCommand `
     -Arguments @("run", "build:server:clean")
 
+  # tsc keeps the output of files that no longer exist, and electron-builder packs
+  # whatever is in dist: a renamed or removed source file leaves its compiled copy
+  # in the asar. A fresh checkout never hits this, a repeated local build does.
+  $desktopDist = Join-Path $desktopRoot "dist"
+  if (Test-Path -LiteralPath $desktopDist) {
+    Remove-Item -LiteralPath $desktopDist -Recurse -Force
+  }
+
   Invoke-BuildStep `
     -Label "Build Electron main process" `
     -WorkingDirectory $desktopRoot `
