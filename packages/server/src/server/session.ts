@@ -7532,24 +7532,35 @@ export class Session {
       });
 
       if (strategy === "provider-fork") {
-        const forkedAgentId = await this.forkAgentThroughProviderSession(snapshot);
-        this.emit({
-          type: "agent.fork_context.response",
-          payload: {
-            requestId: msg.requestId,
-            agentId: msg.agentId,
-            attachment: null,
-            itemCount: 0,
-            // A provider fork has no message boundary: it inherits the whole prefix,
-            // so reporting the requested boundary would claim a truncation that the
-            // forked session does not have.
-            boundaryCursor: null,
-            boundaryMessageId: null,
-            forkedAgentId,
-            error: null,
-          },
-        });
-        return;
+        try {
+          const forkedAgentId = await this.forkAgentThroughProviderSession(snapshot);
+          this.emit({
+            type: "agent.fork_context.response",
+            payload: {
+              requestId: msg.requestId,
+              agentId: msg.agentId,
+              attachment: null,
+              itemCount: 0,
+              // A provider fork has no message boundary: it inherits the whole prefix,
+              // so reporting the requested boundary would claim a truncation that the
+              // forked session does not have.
+              boundaryCursor: null,
+              boundaryMessageId: null,
+              forkedAgentId,
+              error: null,
+            },
+          });
+          return;
+        } catch (error) {
+          // The provider cannot fork right now — no provider session, no bridge,
+          // or a bridge that did not answer. The timeline attachment is the
+          // behavior every client already understands, so degrade to it instead
+          // of failing the fork the user asked for.
+          this.sessionLogger.warn(
+            { err: error, agentId: msg.agentId },
+            "Provider session fork failed; falling back to the timeline attachment",
+          );
+        }
       }
 
       const agentPayload = await this.buildAgentPayload(snapshot);

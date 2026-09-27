@@ -5981,4 +5981,46 @@ describe("agent.fork_context.request", () => {
     );
     expect(hydrateTimelineFromProvider).toHaveBeenCalledWith("forked-agent-1");
   });
+
+  // The bridge a provider forks through can be missing, unreachable, or too slow.
+  // The fork the user asked for must still arrive, as the attachment every client
+  // already parses.
+  test("carries the timeline as an attachment when the provider fork fails", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => {
+      throw new Error("the fork bridge did not answer");
+    });
+    const resumeAgentFromPersistence = vi.fn();
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-bridge-down",
+    });
+
+    const response = findByType(messages, "agent.fork_context.response");
+    expect(response?.payload.error).toBeNull();
+    expect(response?.payload.attachment).toMatchObject({
+      type: "text",
+      contextKind: "chat_history",
+    });
+    expect(response?.payload.forkedAgentId).toBeUndefined();
+    expect(forkProviderSession).toHaveBeenCalledTimes(1);
+    expect(resumeAgentFromPersistence).not.toHaveBeenCalled();
+  });
 });

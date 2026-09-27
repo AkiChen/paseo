@@ -7,6 +7,7 @@ import type {
   AgentFeature,
   AgentModelDefinition,
   AgentMode,
+  AgentSession,
   AgentSessionConfig,
   ProviderCatalog,
 } from "./agent-sdk-types.js";
@@ -532,6 +533,7 @@ import {
   AGENT_PROVIDER_DEFINITIONS,
   buildProviderRegistry,
   createAllClients,
+  wrapSessionProvider,
 } from "./provider-registry.js";
 import { FakeOmp } from "./providers/omp/test-utils/fake-omp.js";
 
@@ -539,6 +541,39 @@ const logger = createTestLogger();
 
 beforeEach(() => {
   mockState.reset();
+});
+
+describe("wrapSessionProvider", () => {
+  /**
+   * A derived provider's session is rebuilt field by field, so anything the
+   * wrapper does not name is lost. `forkProviderSession` is how a provider that
+   * has no ACP fork exposes its own, and dropping it silently downgraded every
+   * custom provider's fork to a timeline attachment.
+   */
+  test("forwards the provider's own fork so a custom provider can fork", async () => {
+    const forkProviderSession = vi.fn(async () => "session-child");
+    const inner = {
+      provider: "acp",
+      id: "session-1",
+      capabilities: { supportsSessionFork: true },
+      forkProviderSession,
+    } as unknown as AgentSession;
+
+    const wrapped = wrapSessionProvider("dsh", inner);
+
+    await expect(wrapped.forkProviderSession?.()).resolves.toBe("session-child");
+    expect(forkProviderSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("leaves fork undefined when the provider has none", () => {
+    const inner = {
+      provider: "acp",
+      id: "session-1",
+      capabilities: {},
+    } as unknown as AgentSession;
+
+    expect(wrapSessionProvider("dsh", inner).forkProviderSession).toBeUndefined();
+  });
 });
 
 test("builds registry with no overrides — same as built-in count", () => {
