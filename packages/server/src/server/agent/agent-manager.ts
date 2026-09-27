@@ -3065,6 +3065,40 @@ export class AgentManager {
     await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
   }
 
+  /**
+   * Give an agent the rows its provider session already carries.
+   *
+   * A provider fork hands the new session the source's prefix, and most providers
+   * replay nothing for it: an ACP agent that advertises `resume` but not
+   * `loadSession` resumes with its history intact and says nothing about it, so
+   * the new agent's timeline would open empty while the model can still see the
+   * prefix. Rows here are that prefix as Paseo already rendered it, renumbered
+   * into the new agent's own sequence.
+   */
+  async seedTimelineFromRows(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void> {
+    if (rows.length === 0) {
+      return;
+    }
+    const agent = this.requireSessionAgent(agentId);
+    const seeded = rows.map((row, index) => ({ ...row, seq: index + 1 }));
+    this.agentStreamCoalescer.flushAndDiscard(agentId);
+    await this.deleteCommittedTimeline(agentId);
+    this.timelineStore.delete(agentId);
+    this.timelineStore.initialize(agentId, {
+      rows: seeded,
+      nextSeq: seeded.length + 1,
+      timestamp: new Date().toISOString(),
+    });
+    await this.durableTimelineStore?.bulkInsert(agentId, seeded);
+    this.touchUpdatedAt(agent);
+    this.emitState(agent);
+    this.dispatch({
+      type: "timeline_replacement",
+      agentId,
+      epoch: this.timelineStore.getEpoch(agentId),
+    });
+  }
+
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
     const submittedRow = this.timelineStore

@@ -5784,6 +5784,7 @@ describe("agent.fork_context.request", () => {
   function createForkSourceAgent(options: {
     capabilities: AgentCapabilityFlags;
     forkProviderSession?: () => Promise<string>;
+    activeForegroundTurnId?: string | null;
   }) {
     const capabilities = options.capabilities;
     return {
@@ -5809,8 +5810,9 @@ describe("agent.fork_context.request", () => {
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       lastUserMessageAt: null,
-      lifecycle: "idle",
-      activeTurnId: null,
+      lifecycle: options.activeForegroundTurnId ? "running" : "idle",
+      activeTurnId: options.activeForegroundTurnId ?? null,
+      activeForegroundTurnId: options.activeForegroundTurnId ?? null,
       activeTurnStartedAt: null,
       availableModes: [],
       currentModeId: null,
@@ -5980,6 +5982,159 @@ describe("agent.fork_context.request", () => {
       { labels: {}, workspaceId: undefined },
     );
     expect(hydrateTimelineFromProvider).toHaveBeenCalledWith("forked-agent-1");
+  });
+
+  // A provider that resumed without replaying its transcript leaves the new agent's
+  // window empty while its session still carries the source's prefix, so the rows
+  // that prefix came from are handed over explicitly.
+  test("gives the forked agent the source rows its provider session inherited", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const inheritedRow = {
+      seq: 4,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      turnId: "turn-done",
+      item: {
+        type: "user_message" as const,
+        text: "earlier",
+        messageId: "m1",
+        clientMessageId: "c1",
+      },
+    };
+    const inFlightRow = {
+      seq: 5,
+      timestamp: "2026-01-01T00:00:01.000Z",
+      turnId: "turn-running",
+      item: { type: "assistant_message" as const, text: "half an answer", messageId: "m2" },
+    };
+    const seedTimelineFromRows = vi.fn(async () => undefined);
+    const forkProviderSession = vi.fn(async () => "session-2");
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+            activeForegroundTurnId: "turn-running",
+          }),
+        ),
+        // The provider replayed nothing for the forked session, which is what makes
+        // the inheritance necessary in the first place.
+        fetchTimeline: vi.fn((agentId: string) =>
+          agentId === FORK_SOURCE_AGENT_ID
+            ? { epoch: "epoch-1", rows: [inheritedRow, inFlightRow] }
+            : { epoch: "epoch-1", rows: [] },
+        ),
+        resumeAgentFromPersistence: vi.fn(async () => ({ id: "forked-agent-1" })),
+        hydrateTimelineFromProvider: vi.fn(async () => undefined),
+        seedTimelineFromRows,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-inherits-rows",
+    });
+
+    // The turn still in flight is cut out: the provider forked only completed turns,
+    // so showing it would claim context the new session does not have.
+    expect(seedTimelineFromRows).toHaveBeenCalledWith("forked-agent-1", [inheritedRow]);
+  });
+
+  test("leaves the forked agent's timeline alone when the provider replayed it", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const seedTimelineFromRows = vi.fn(async () => undefined);
+    const replayedRow = {
+      seq: 1,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      item: { type: "assistant_message" as const, text: "from the provider", messageId: "m1" },
+    };
+    const forkProviderSession = vi.fn(async () => "session-2");
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn((agentId: string) =>
+          agentId === FORK_SOURCE_AGENT_ID
+            ? { epoch: "epoch-1", rows: [] }
+            : { epoch: "epoch-2", rows: [replayedRow] },
+        ),
+        resumeAgentFromPersistence: vi.fn(async () => ({ id: "forked-agent-1" })),
+        hydrateTimelineFromProvider: vi.fn(async () => undefined),
+        seedTimelineFromRows,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-provider-replayed",
+    });
+
+    expect(seedTimelineFromRows).not.toHaveBeenCalled();
+  });
+
+  // A daemon restart reloads the source agent and gives its timeline a new epoch,
+  // so the cursor the client captured no longer resolves. The fork still carries
+  // the whole completed prefix, and the window must not open empty because of it.
+  test("inherits the completed prefix when the fork boundary is stale", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const completedRow = {
+      seq: 1,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      turnId: "turn-done",
+      item: { type: "assistant_message" as const, text: "earlier", messageId: "m1" },
+    };
+    const inFlightRow = {
+      seq: 2,
+      timestamp: "2026-01-01T00:00:01.000Z",
+      turnId: "turn-running",
+      item: { type: "assistant_message" as const, text: "half an answer", messageId: "m2" },
+    };
+    const seedTimelineFromRows = vi.fn(async () => undefined);
+    const forkProviderSession = vi.fn(async () => "session-2");
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+            activeForegroundTurnId: "turn-running",
+          }),
+        ),
+        fetchTimeline: vi.fn((agentId: string) =>
+          agentId === FORK_SOURCE_AGENT_ID
+            ? { epoch: "epoch-2", rows: [completedRow, inFlightRow] }
+            : { epoch: "epoch-2", rows: [] },
+        ),
+        resumeAgentFromPersistence: vi.fn(async () => ({ id: "forked-agent-1" })),
+        hydrateTimelineFromProvider: vi.fn(async () => undefined),
+        seedTimelineFromRows,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-stale-boundary",
+      // Captured before the reload, so it addresses the previous epoch.
+      boundaryCursor: { epoch: "epoch-1", seq: 1 },
+    });
+
+    expect(seedTimelineFromRows).toHaveBeenCalledWith("forked-agent-1", [completedRow]);
   });
 
   // The bridge a provider forks through can be missing, unreachable, or too slow.

@@ -122,7 +122,11 @@ import {
   type TimelineProjectionEntry,
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
-import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import {
+  buildAgentForkContextAttachment,
+  selectForkContextRows,
+} from "./agent/activity-curator.js";
+import type { AgentTimelineRow } from "./agent/agent-timeline-store-types.js";
 import { resolveForkStrategy } from "./agent/fork-strategy.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
@@ -7533,7 +7537,10 @@ export class Session {
 
       if (strategy === "provider-fork") {
         try {
-          const forkedAgentId = await this.forkAgentThroughProviderSession(snapshot);
+          const forkedAgentId = await this.forkAgentThroughProviderSession(
+            snapshot,
+            this.selectForkInheritedRows(msg, snapshot),
+          );
           this.emit({
             type: "agent.fork_context.response",
             payload: {
@@ -7620,7 +7627,10 @@ export class Session {
    * restore a session it just forked — the same contract `resume_agent_request`
    * already depends on.
    */
-  private async forkAgentThroughProviderSession(snapshot: ManagedAgent): Promise<string> {
+  private async forkAgentThroughProviderSession(
+    snapshot: ManagedAgent,
+    inheritedRows: readonly AgentTimelineRow[],
+  ): Promise<string> {
     const session = snapshot.session;
     if (!session) {
       throw new Error(`${snapshot.provider} agent is closed; cannot fork its provider session`);
@@ -7644,12 +7654,87 @@ export class Session {
       },
     );
     await this.agentManager.hydrateTimelineFromProvider(forked.id);
+    // A provider that replays its transcript already filled the timeline and is
+    // the authority on it. One that does not — an ACP provider that resumed
+    // without loadSession — leaves the new agent's window empty while its session
+    // still carries the source's prefix, so show the rows that prefix came from.
+    try {
+      const forkedRows = this.agentManager.fetchTimeline(forked.id, {
+        direction: "tail",
+        limit: 0,
+      }).rows;
+      if (forkedRows.length === 0 && inheritedRows.length > 0) {
+        await this.agentManager.seedTimelineFromRows(forked.id, inheritedRows);
+        this.sessionLogger.info(
+          {
+            agentId: snapshot.id,
+            forkedAgentId: forked.id,
+            inheritedRows: inheritedRows.length,
+          },
+          "Forked agent inherited the source timeline",
+        );
+      }
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, forkedAgentId: forked.id },
+        "Forked agent could not inherit the source timeline",
+      );
+    }
     await this.agentUpdates.forwardLiveAgent(forked);
     this.sessionLogger.info(
       { agentId: snapshot.id, forkedAgentId: forked.id, provider: forked.provider },
       "Forked agent through its provider session",
     );
     return forked.id;
+  }
+
+  /**
+   * The source rows a provider fork carries into the new agent.
+   *
+   * The provider forks its whole completed-turn prefix and the client's boundary
+   * names the message it forked from, so the rows are the same selection the
+   * chat-history attachment would render. A turn still in flight is dropped: the
+   * provider cuts it out of the forked session, and showing it would claim
+   * context the new session does not have.
+   */
+  private selectForkInheritedRows(
+    msg: Extract<SessionInboundMessage, { type: "agent.fork_context.request" }>,
+    snapshot: ManagedAgent,
+  ): readonly AgentTimelineRow[] {
+    let timeline: AgentTimelineFetchResult;
+    try {
+      timeline = this.agentManager.fetchTimeline(msg.agentId, { direction: "tail", limit: 0 });
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, agentId: msg.agentId },
+        "Forked agent has no source rows to inherit",
+      );
+      return [];
+    }
+    const withoutInFlightTurn = (rows: readonly AgentTimelineRow[]): readonly AgentTimelineRow[] =>
+      snapshot.activeForegroundTurnId === null
+        ? rows
+        : rows.filter((row) => row.turnId !== snapshot.activeForegroundTurnId);
+    try {
+      return withoutInFlightTurn(
+        selectForkContextRows({
+          rows: timeline.rows,
+          cursorBoundary: msg.boundaryCursor
+            ? { timelineEpoch: timeline.epoch, cursor: msg.boundaryCursor }
+            : null,
+          boundaryMessageId: msg.boundaryMessageId ?? null,
+        }).rows,
+      );
+    } catch (error) {
+      // The boundary the client named is gone — the agent was reloaded since that
+      // cursor was read, which a daemon restart does. The fork already carries the
+      // whole completed prefix, so inherit that rather than opening empty.
+      this.sessionLogger.warn(
+        { err: error, agentId: msg.agentId },
+        "Fork boundary is stale; inheriting the whole completed prefix",
+      );
+      return withoutInFlightTurn(timeline.rows);
+    }
   }
 
   private async handleSendAgentMessageRequest(
