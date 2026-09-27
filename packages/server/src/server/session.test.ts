@@ -5984,6 +5984,80 @@ describe("agent.fork_context.request", () => {
     expect(hydrateTimelineFromProvider).toHaveBeenCalledWith("forked-agent-1");
   });
 
+  // The title Paseo lists an agent under comes from its first prompt, and a
+  // provider fork sends none, so the fork is titled after the agent it came from.
+  test("titles the forked agent after its source", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => "session-2");
+    const resumeAgentFromPersistence = vi.fn(async () => ({ id: "forked-agent-1" }));
+    const session = createSessionForTest({
+      messages,
+      agentStorage: { get: vi.fn(async () => ({ title: "  fix the parser  " })) },
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence,
+        hydrateTimelineFromProvider: vi.fn(async () => undefined),
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-title",
+    });
+
+    expect(resumeAgentFromPersistence).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-2" }),
+      { title: "fix the parser" },
+      undefined,
+      { labels: {}, workspaceId: undefined },
+    );
+  });
+
+  test("leaves the fork untitled when the source has no title", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const forkProviderSession = vi.fn(async () => "session-2");
+    const resumeAgentFromPersistence = vi.fn(async () => ({ id: "forked-agent-1" }));
+    const session = createSessionForTest({
+      messages,
+      agentStorage: { get: vi.fn(async () => ({ title: null })) },
+      agentManager: {
+        waitForAgentClose: vi.fn(async () => undefined),
+        getAgent: vi.fn(() =>
+          createForkSourceAgent({
+            capabilities: { ...BASE_CAPABILITIES, supportsSessionFork: true },
+            forkProviderSession,
+          }),
+        ),
+        fetchTimeline: vi.fn(() => ({ epoch: "epoch-1", rows: [] })),
+        resumeAgentFromPersistence,
+        hydrateTimelineFromProvider: vi.fn(async () => undefined),
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent.fork_context.request",
+      agentId: FORK_SOURCE_AGENT_ID,
+      targetProvider: FORK_PROVIDER,
+      requestId: "fork-untitled",
+    });
+
+    expect(resumeAgentFromPersistence).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-2" }),
+      undefined,
+      undefined,
+      { labels: {}, workspaceId: undefined },
+    );
+  });
+
   // A provider that resumed without replaying its transcript leaves the new agent's
   // window empty while its session still carries the source's prefix, so the rows
   // that prefix came from are handed over explicitly.

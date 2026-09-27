@@ -7646,7 +7646,10 @@ export class Session {
 
     const forked = await this.agentManager.resumeAgentFromPersistence(
       { ...sourceHandle, sessionId: forkedSessionId, nativeHandle: forkedSessionId },
-      undefined,
+      // Paseo derives an agent's title from its first prompt, and a provider fork
+      // never sends one: the conversation starts from an inherited prefix. Without
+      // this the fork sits in the list untitled.
+      await this.readForkTitle(snapshot.id),
       undefined,
       {
         labels: snapshot.labels,
@@ -7686,6 +7689,23 @@ export class Session {
       "Forked agent through its provider session",
     );
     return forked.id;
+  }
+
+  /**
+   * The title override a fork inherits from its source, or nothing when the
+   * source has no title to give.
+   */
+  private async readForkTitle(agentId: string): Promise<Partial<AgentSessionConfig> | undefined> {
+    try {
+      const title = (await this.agentStorage.get(agentId))?.title?.trim();
+      return title ? { title } : undefined;
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, agentId },
+        "Could not read the source agent title for a fork",
+      );
+      return undefined;
+    }
   }
 
   /**
