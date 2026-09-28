@@ -550,6 +550,14 @@ function MobileWorkspaceTabOption({
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
 }) {
   const { t } = useTranslation();
+  const { archiveAgent } = useArchiveAgent();
+  const handleArchiveAgent = useCallback(
+    async (agentId: string) => {
+      // Timeout errors are swallowed — the daemon will still process the archive.
+      await archiveAgent({ serverId: normalizedServerId, agentId }).catch(() => {});
+    },
+    [archiveAgent, normalizedServerId],
+  );
   const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
     () => ({
       copyResumeCommand: t("workspace.tabs.menu.copyResumeCommand"),
@@ -564,6 +572,7 @@ function MobileWorkspaceTabOption({
       closeOthers: t("workspace.tabs.menu.closeOthers"),
       reloadAgent: t("workspace.tabs.menu.reloadAgent"),
       reloadAgentTooltip: t("workspace.tabs.menu.reloadAgentTooltip"),
+      archiveAgent: t("agentList.archiveSheet.archive"),
       close: t("workspace.tabs.menu.close"),
     }),
     [t],
@@ -580,6 +589,7 @@ function MobileWorkspaceTabOption({
     onCopyTerminalId,
     onCopyFilePath,
     onReloadAgent,
+    onArchiveAgent: handleArchiveAgent,
     onRenameTab,
     onCloseTab,
     onCloseTabsBefore: onCloseTabsAbove,
@@ -2784,6 +2794,14 @@ function WorkspaceScreenContent({
     [client, isConnected, normalizedServerId, toast, t],
   );
 
+  const handleArchiveAgent = useCallback(
+    async (agentId: string) => {
+      // Timeout errors are swallowed — the daemon will still process the archive.
+      await archiveAgent({ serverId: normalizedServerId, agentId }).catch(() => {});
+    },
+    [archiveAgent, normalizedServerId],
+  );
+
   const handleCopyWorkspacePath = useCallback(async () => {
     if (!workspaceDirectory) {
       toast.error(t("workspace.header.toasts.workspacePathUnavailable"));
@@ -3981,6 +3999,7 @@ function WorkspaceScreenContent({
         onCopyTerminalId={handleCopyTerminalId}
         onCopyFilePath={handleCopyFilePath}
         onReloadAgent={handleReloadAgent}
+        onArchiveAgent={handleArchiveAgent}
         onRenameTab={handleRenameTab}
         onCloseTabsToLeft={handleCloseTabsToLeftInPane}
         onCloseTabsToRight={handleCloseTabsToRightInPane}
@@ -4017,6 +4036,7 @@ function WorkspaceScreenContent({
     handleCopyTerminalId,
     handleCopyFilePath,
     handleReloadAgent,
+    handleArchiveAgent,
     handleRenameTab,
     handleCloseTabsToLeftInPane,
     handleCloseTabsToRightInPane,
@@ -4084,6 +4104,7 @@ function WorkspaceScreenContent({
             onCopyTerminalId={handleCopyTerminalId}
             onCopyFilePath={handleCopyFilePath}
             onReloadAgent={handleReloadAgent}
+            onArchiveAgent={handleArchiveAgent}
             onRenameTab={handleRenameTab}
             onCloseTabsToLeft={handleCloseTabsToLeft}
             onCloseTabsToRight={handleCloseTabsToRight}

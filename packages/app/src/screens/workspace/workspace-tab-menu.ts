@@ -18,6 +18,7 @@ export interface WorkspaceTabMenuLabels {
   closeOthers: string;
   reloadAgent: string;
   reloadAgentTooltip: string;
+  archiveAgent: string;
   close: string;
 }
 
@@ -34,6 +35,7 @@ export const DEFAULT_WORKSPACE_TAB_MENU_LABELS: WorkspaceTabMenuLabels = {
   closeOthers: i18n.t("workspace.tabs.menu.closeOthers"),
   reloadAgent: i18n.t("workspace.tabs.menu.reloadAgent"),
   reloadAgentTooltip: i18n.t("workspace.tabs.menu.reloadAgentTooltip"),
+  archiveAgent: i18n.t("agentList.archiveSheet.archive"),
   close: i18n.t("workspace.tabs.menu.close"),
 };
 
@@ -49,6 +51,7 @@ export type WorkspaceTabMenuEntry =
         | "arrow-right-to-line"
         | "copy-x"
         | "pencil"
+        | "archive"
         | "x";
       hint?: string;
       tooltip?: string;
@@ -73,6 +76,7 @@ interface BuildWorkspaceTabMenuEntriesInput {
   onCopyTerminalId: (terminalId: string) => Promise<void> | void;
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
+  onArchiveAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsBefore: (tabId: string) => Promise<void> | void;
@@ -90,6 +94,7 @@ interface BuildWorkspaceDesktopTabActionsInput {
   onCopyTerminalId: (terminalId: string) => Promise<void> | void;
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
+  onArchiveAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsToLeft: (tabId: string) => Promise<void> | void;
@@ -177,6 +182,7 @@ export function buildWorkspaceTabMenuEntries(
     onCopyTerminalId,
     onCopyFilePath,
     onReloadAgent,
+    onArchiveAgent,
     onRenameTab,
     onCloseTab,
     onCloseTabsBefore,
@@ -210,6 +216,22 @@ export function buildWorkspaceTabMenuEntries(
       testID: `${menuTestIDBase}-copy-agent-id`,
       onSelect: () => {
         void onCopyAgentId(agentId);
+      },
+    });
+    // Closing a top-level agent tab already archives it; this is the explicit
+    // way to archive without hunting for the close button. The tab goes away
+    // afterwards: an archived session refuses to load, so leaving it open would
+    // hand the reader a pane that fails on its next request.
+    entries.push({
+      kind: "item",
+      key: "archive-agent",
+      label: labels.archiveAgent,
+      icon: "archive",
+      testID: `${menuTestIDBase}-archive-agent`,
+      onSelect: () => {
+        void Promise.resolve(onArchiveAgent(agentId)).finally(() => {
+          void onCloseTab(tab.tabId);
+        });
       },
     });
   }
@@ -338,6 +360,7 @@ export function buildWorkspaceDesktopTabActions(
       onCopyTerminalId: input.onCopyTerminalId,
       onCopyFilePath: input.onCopyFilePath,
       onReloadAgent: input.onReloadAgent,
+      onArchiveAgent: input.onArchiveAgent,
       onRenameTab: input.onRenameTab,
       onCloseTab: input.onCloseTab,
       onCloseTabsBefore: input.onCloseTabsToLeft,

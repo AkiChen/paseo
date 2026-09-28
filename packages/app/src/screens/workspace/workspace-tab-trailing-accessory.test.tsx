@@ -30,6 +30,7 @@ const { mockTheme } = vi.hoisted(() => ({
 vi.mock("lucide-react-native", () => {
   const StubIcon = () => null;
   return {
+    Archive: StubIcon,
     ArrowLeftToLine: StubIcon,
     ArrowRightToLine: StubIcon,
     Copy: StubIcon,
@@ -145,6 +146,7 @@ function renderAccessory(
     onCopyTerminalId: vi.fn(),
     onCopyFilePath: vi.fn(),
     onReloadAgent: vi.fn(),
+    onArchiveAgent: vi.fn(),
     onRenameTab,
     onCloseTab: vi.fn(),
     onCloseTabsBefore: vi.fn(),

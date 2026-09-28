@@ -37,6 +37,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath,
       onReloadAgent,
+      onArchiveAgent: vi.fn(),
       onRenameTab,
       onCloseTab,
       onCloseTabsBefore,
@@ -47,6 +48,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
     expect(entries.filter((entry) => entry.kind === "item").map((entry) => entry.label)).toEqual([
       "Copy resume command",
       "Copy agent id",
+      "Archive",
       "Rename",
       "Close to the left",
       "Close to the right",
@@ -68,6 +70,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab: vi.fn(),
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
@@ -78,6 +81,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
     expect(entries.filter((entry) => entry.kind === "item").map((entry) => entry.label)).toEqual([
       "Copy resume command",
       "Copy agent id",
+      "Archive",
       "Rename",
       "Close tabs above",
       "Close tabs below",
@@ -104,6 +108,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab: vi.fn(),
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
@@ -115,6 +120,9 @@ describe("buildWorkspaceTabMenuEntries", () => {
       false,
     );
     expect(entries.some((entry) => entry.kind === "item" && entry.label === "Reload agent")).toBe(
+      false,
+    );
+    expect(entries.some((entry) => entry.kind === "item" && entry.key === "archive-agent")).toBe(
       false,
     );
     expect(entries.some((entry) => entry.kind === "item" && entry.label === "Rename")).toBe(false);
@@ -133,6 +141,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab: vi.fn(),
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
@@ -163,6 +172,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab,
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
@@ -199,6 +209,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId,
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab,
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
@@ -250,6 +261,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath,
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab: vi.fn(),
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
@@ -274,6 +286,109 @@ describe("buildWorkspaceTabMenuEntries", () => {
     expect(onCopyFilePath).toHaveBeenCalledWith("/some/path.ts");
   });
 
+  it("invokes onArchiveAgent when the archive entry is selected for agent tabs", async () => {
+    const onArchiveAgent = vi.fn();
+    const onCloseTab = vi.fn();
+    const entries = buildWorkspaceTabMenuEntries({
+      surface: "desktop",
+      tab: createAgentTab(),
+      index: 0,
+      tabCount: 1,
+      menuTestIDBase: "workspace-tab-context-agent_123",
+      onCopyResumeCommand: vi.fn(),
+      onCopyAgentId: vi.fn(),
+      onCopyTerminalId: vi.fn(),
+      onCopyFilePath: vi.fn(),
+      onReloadAgent: vi.fn(),
+      onArchiveAgent,
+      onRenameTab: vi.fn(),
+      onCloseTab,
+      onCloseTabsBefore: vi.fn(),
+      onCloseTabsAfter: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
+    });
+
+    const archiveEntry = entries.find(
+      (entry) => entry.kind === "item" && entry.key === "archive-agent",
+    );
+    if (!archiveEntry || archiveEntry.kind !== "item") {
+      throw new Error("Archive entry missing");
+    }
+
+    expect(archiveEntry).toEqual(
+      expect.objectContaining({
+        label: "Archive",
+        icon: "archive",
+        testID: "workspace-tab-context-agent_123-archive-agent",
+      }),
+    );
+
+    archiveEntry.onSelect();
+    await Promise.resolve();
+
+    expect(onArchiveAgent).toHaveBeenCalledWith("agent-123");
+    // An archived session refuses to load, so the tab must not stay open.
+    expect(onCloseTab).toHaveBeenCalled();
+  });
+
+  it("omits the archive entry for terminal tabs", () => {
+    const entries = buildWorkspaceTabMenuEntries({
+      surface: "desktop",
+      tab: {
+        key: "terminal_abc",
+        tabId: "terminal_abc",
+        kind: "terminal",
+        target: { kind: "terminal", terminalId: "terminal-abc" },
+      },
+      index: 0,
+      tabCount: 1,
+      menuTestIDBase: "workspace-tab-context-terminal_abc",
+      onCopyResumeCommand: vi.fn(),
+      onCopyAgentId: vi.fn(),
+      onCopyTerminalId: vi.fn(),
+      onCopyFilePath: vi.fn(),
+      onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
+      onRenameTab: vi.fn(),
+      onCloseTab: vi.fn(),
+      onCloseTabsBefore: vi.fn(),
+      onCloseTabsAfter: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
+    });
+
+    expect(entries.some((entry) => entry.kind === "item" && entry.key === "archive-agent")).toBe(
+      false,
+    );
+  });
+
+  it("places the archive entry after the copy items and before rename", () => {
+    const entries = buildWorkspaceTabMenuEntries({
+      surface: "desktop",
+      tab: createAgentTab(),
+      index: 0,
+      tabCount: 1,
+      menuTestIDBase: "workspace-tab-context-agent_123",
+      onCopyResumeCommand: vi.fn(),
+      onCopyAgentId: vi.fn(),
+      onCopyTerminalId: vi.fn(),
+      onCopyFilePath: vi.fn(),
+      onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
+      onRenameTab: vi.fn(),
+      onCloseTab: vi.fn(),
+      onCloseTabsBefore: vi.fn(),
+      onCloseTabsAfter: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
+    });
+
+    const keys = entries
+      .filter((entry) => entry.kind === "item")
+      .map((entry) => (entry.kind === "item" ? entry.key : ""));
+
+    expect(keys.indexOf("archive-agent")).toBeGreaterThan(keys.indexOf("copy-agent-id"));
+    expect(keys.indexOf("archive-agent")).toBeLessThan(keys.indexOf("rename"));
+  });
+
   it("uses a Changes close id for the working diff tab", () => {
     const actions = buildWorkspaceDesktopTabActions({
       tab: {
@@ -293,6 +408,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab: vi.fn(),
       onCloseTab: vi.fn(),
       onCloseTabsToLeft: vi.fn(),
@@ -324,6 +440,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
       onCopyTerminalId: vi.fn(),
       onCopyFilePath: vi.fn(),
       onReloadAgent: vi.fn(),
+      onArchiveAgent: vi.fn(),
       onRenameTab: vi.fn(),
       onCloseTab: vi.fn(),
       onCloseTabsBefore: vi.fn(),
