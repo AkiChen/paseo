@@ -73,7 +73,6 @@ vi.mock("lucide-react-native", () => {
     return Icon;
   };
   return {
-    Check: icon("Check"),
     ChevronDown: icon("ChevronDown"),
     Inbox: icon("Inbox"),
     Layers: icon("Layers"),
@@ -1309,49 +1308,5 @@ describe("ImportSessionSheet", () => {
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledTimes(2);
     });
-  });
-
-  it("marks an archived session, and hides it only once the toggle is on", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [
-        createProviderSessionEntry({
-          providerId: "claude",
-          providerHandleId: "archived",
-          title: "Archived session",
-          // The daemon marks a row whose Paseo agent was archived; archiving
-          // never removes the provider's own session.
-          archived: true,
-        }),
-        createProviderSessionEntry({
-          providerId: "claude",
-          providerHandleId: "fresh",
-          title: "Fresh session",
-        }),
-      ],
-    }));
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      { snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] } },
-    );
-
-    // Off by default, so both rows are listed and the archived one says so.
-    await screen.findByTestId("import-session-session-claude-fresh");
-    expect(screen.getByTestId("import-session-session-claude-archived")).toBeTruthy();
-    expect(screen.getByTestId("import-session-row-archived-claude-archived").textContent).toContain(
-      "Archived",
-    );
-
-    fireEvent.click(screen.getByTestId("import-session-hide-archived"));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId("import-session-session-claude-archived")).toBeNull();
-    });
-    expect(screen.getByTestId("import-session-session-claude-fresh")).toBeTruthy();
   });
 });

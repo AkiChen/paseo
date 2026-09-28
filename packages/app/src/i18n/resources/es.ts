@@ -375,7 +375,6 @@ export const es: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "Importar sesión",
     searchPlaceholder: "Buscar sesiones...",
-    hideArchived: "Ocultar archivadas",
     scope: {
       host: "Sesiones en {{host}}",
       workspace: "Este espacio de trabajo",

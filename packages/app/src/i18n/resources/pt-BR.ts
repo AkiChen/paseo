@@ -375,7 +375,6 @@ export const ptBR: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "Importar sessão",
     searchPlaceholder: "Buscar sessões...",
-    hideArchived: "Ocultar arquivadas",
     scope: {
       host: "Sessões em {{host}}",
       workspace: "Este workspace",

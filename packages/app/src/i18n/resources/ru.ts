@@ -374,7 +374,6 @@ export const ru: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "Импортировать сессию",
     searchPlaceholder: "Поиск сессий...",
-    hideArchived: "Скрыть архивные",
     scope: {
       host: "Сессии на {{host}}",
       workspace: "Это рабочее пространство",

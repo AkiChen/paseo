@@ -6,13 +6,10 @@ import {
   buildProviderLabelMap,
   collectProviderErrorRows,
   computeEmptyState,
-  countArchivedSessions,
-  excludeArchivedSessions,
   formatDirectoryLabel,
   getPromptPreview,
   getSessionTitle,
   hasMoreSessions,
-  isArchivedSession,
   nextPageLimit,
   PER_PROVIDER_LIMIT,
   resolveDirectoryLabel,
@@ -467,28 +464,5 @@ describe("computeEmptyState", () => {
       aggregatedCount: 1,
     });
     expect(result.emptyStateTitle).toBe("No z-ai sessions found.");
-  });
-});
-
-describe("archived sessions", () => {
-  const archived = entry({ providerHandleId: "archived-1", archived: true });
-  const fresh = entry({ providerHandleId: "fresh-1" });
-
-  it("reads the flag the daemon set, and treats a missing flag as not archived", () => {
-    expect(isArchivedSession(archived)).toBe(true);
-    expect(isArchivedSession(fresh)).toBe(false);
-  });
-
-  it("counts only the archived rows", () => {
-    expect(countArchivedSessions([archived, fresh, archived])).toBe(2);
-    expect(countArchivedSessions([fresh])).toBe(0);
-  });
-
-  it("keeps every row while the toggle is off", () => {
-    expect(excludeArchivedSessions([archived, fresh], false)).toEqual([archived, fresh]);
-  });
-
-  it("drops only the archived rows when the toggle is on", () => {
-    expect(excludeArchivedSessions([archived, fresh], true)).toEqual([fresh]);
   });
 });

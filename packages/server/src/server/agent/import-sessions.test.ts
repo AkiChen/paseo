@@ -413,9 +413,6 @@ test("listImportableProviderSessions includes a provider session after its Paseo
 
   expect(result.entries.map((entry) => entry.providerHandleId)).toEqual(["archived-session"]);
   expect(result.filteredAlreadyImportedCount).toBe(0);
-  // Listed because the provider still has it, marked because a Paseo agent for
-  // it was archived rather than never created.
-  expect(result.entries[0].archived).toBe(true);
 });
 
 test("listImportableProviderSessions includes an archived provider session still loaded in memory", async () => {
@@ -461,54 +458,6 @@ test("listImportableProviderSessions includes an archived provider session still
 
   expect(result.entries.map((entry) => entry.providerHandleId)).toEqual(["archived-live-session"]);
   expect(result.filteredAlreadyImportedCount).toBe(0);
-  expect(result.entries[0].archived).toBe(true);
-});
-
-test("listImportableProviderSessions marks only the archived rows", async () => {
-  const cwd = "/tmp/project";
-  const sessions = [
-    makeImportableSession({
-      provider: "claude",
-      sessionId: "fresh-session",
-      cwd,
-      title: "Never imported",
-      lastActivityAt: "2026-04-30T12:00:00.000Z",
-      firstPrompt: "start something new",
-    }),
-    makeImportableSession({
-      provider: "claude",
-      sessionId: "archived-session",
-      cwd,
-      title: "Archived import",
-      lastActivityAt: "2026-04-30T11:00:00.000Z",
-      firstPrompt: "import me again",
-    }),
-  ];
-
-  const result = await listImportableProviderSessions({
-    request: makeRequest({ cwd, providers: ["claude"] }),
-    agentManager: {
-      listAgents: () => [],
-      listImportableSessions: async () => makeImportableSessionsResult(sessions),
-    } satisfies Pick<AgentManager, "listAgents" | "listImportableSessions">,
-    agentStorage: {
-      list: async () => [
-        {
-          provider: "claude",
-          archivedAt: "2026-04-30T12:01:00.000Z",
-          persistence: {
-            provider: "claude",
-            sessionId: "archived-session",
-          },
-        } as StoredAgentRecord,
-      ],
-    } satisfies Pick<AgentStorage, "list">,
-    providerSnapshotManager: { getProviderLabel: () => "Claude" },
-  });
-
-  const byHandle = new Map(result.entries.map((entry) => [entry.providerHandleId, entry]));
-  expect(byHandle.get("fresh-session")?.archived).toBeUndefined();
-  expect(byHandle.get("archived-session")?.archived).toBe(true);
 });
 
 test("listImportableProviderSessions filters out metadata generation sessions", async () => {

@@ -51,7 +51,7 @@ interface CloseBulkWorkspaceTabsInput {
 
 export function classifyBulkClosableTabs(
   tabs: WorkspaceTabDescriptor[],
-  resolveAgentCloseKind: (agentId: string) => "archive" | "layout-only" = () => "layout-only",
+  resolveAgentCloseKind: (agentId: string) => "archive" | "layout-only" = () => "archive",
 ): BulkClosableTabGroups {
   const groups: BulkClosableTabGroups = {
     archiveAgentTabs: [],

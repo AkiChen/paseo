@@ -373,7 +373,6 @@ export const fr: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "Session d'importation",
     searchPlaceholder: "Rechercher des sessions...",
-    hideArchived: "Masquer les archivées",
     scope: {
       host: "Sessions sur {{host}}",
       workspace: "Cet espace de travail",

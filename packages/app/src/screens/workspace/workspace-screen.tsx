@@ -550,14 +550,6 @@ function MobileWorkspaceTabOption({
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
 }) {
   const { t } = useTranslation();
-  const { archiveAgent } = useArchiveAgent();
-  const handleArchiveAgent = useCallback(
-    async (agentId: string) => {
-      // Timeout errors are swallowed — the daemon will still process the archive.
-      await archiveAgent({ serverId: normalizedServerId, agentId }).catch(() => {});
-    },
-    [archiveAgent, normalizedServerId],
-  );
   const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
     () => ({
       copyResumeCommand: t("workspace.tabs.menu.copyResumeCommand"),
@@ -572,7 +564,6 @@ function MobileWorkspaceTabOption({
       closeOthers: t("workspace.tabs.menu.closeOthers"),
       reloadAgent: t("workspace.tabs.menu.reloadAgent"),
       reloadAgentTooltip: t("workspace.tabs.menu.reloadAgentTooltip"),
-      archiveAgent: t("agentList.archiveSheet.archive"),
       close: t("workspace.tabs.menu.close"),
     }),
     [t],
@@ -589,7 +580,6 @@ function MobileWorkspaceTabOption({
     onCopyTerminalId,
     onCopyFilePath,
     onReloadAgent,
-    onArchiveAgent: handleArchiveAgent,
     onRenameTab,
     onCloseTab,
     onCloseTabsBefore: onCloseTabsAbove,
@@ -2563,20 +2553,44 @@ function WorkspaceScreenContent({
         if (!normalizedServerId) {
           return;
         }
-        const sessionClient = useSessionStore.getState().sessions[normalizedServerId]?.client;
-        if (!sessionClient) {
-          toast.error(t("common.errors.daemonClientUnavailable"));
-          return;
-        }
-        try {
-          const clientId = await getOrCreateClientId();
-          await sessionClient.updateAgent(agentId, {
-            labels: { [getOpenAgentTabLabel(clientId)]: "false" },
+
+        const agent =
+          useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
+        let closePolicy = resolveCloseAgentTabPolicy(agent);
+        const isRunning = agent?.status === "running";
+
+        if (isRunning && closePolicy.kind === "archive-on-close") {
+          const confirmed = await confirmDialog({
+            title: t("workspace.tabs.confirmations.archiveRunningAgentTitle"),
+            message: t("workspace.tabs.confirmations.archiveRunningAgentMessage"),
+            confirmLabel: t("workspace.tabs.confirmations.archive"),
+            cancelLabel: t("workspace.tabs.confirmations.cancel"),
+            destructive: true,
           });
-        } catch (error) {
-          console.error("[WorkspaceScreen] Failed to close subagent tab", { error, agentId });
-          toast.error(t("workspace.tabs.toasts.failedToCloseAgent"));
-          return;
+          if (!confirmed) {
+            return;
+          }
+        }
+
+        if (closePolicy.kind === "layout-only") {
+          const sessionClient = useSessionStore.getState().sessions[normalizedServerId]?.client;
+          if (!sessionClient) {
+            toast.error(t("common.errors.daemonClientUnavailable"));
+            return;
+          }
+          try {
+            const clientId = await getOrCreateClientId();
+            await sessionClient.updateAgent(agentId, {
+              labels: { [getOpenAgentTabLabel(clientId)]: "false" },
+            });
+            const latestAgent =
+              useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
+            closePolicy = resolveCloseAgentTabPolicy(latestAgent);
+          } catch (error) {
+            console.error("[WorkspaceScreen] Failed to close subagent tab", { error, agentId });
+            toast.error(t("workspace.tabs.toasts.failedToCloseAgent"));
+            return;
+          }
         }
 
         setHoveredCloseTabKey((current) => (current === tabId ? null : current));
@@ -2586,9 +2600,24 @@ function WorkspaceScreenContent({
             target: { kind: "agent", agentId },
           });
         }
+
+        if (closePolicy.kind === "layout-only") {
+          return;
+        }
+
+        // Errors (e.g. timeout) are handled by the mutation's onSettled callback
+        void archiveAgent({ serverId: normalizedServerId, agentId }).catch(() => {});
       });
     },
-    [closeTab, closeWorkspaceTabWithCleanup, normalizedServerId, persistenceKey, t, toast],
+    [
+      archiveAgent,
+      closeTab,
+      closeWorkspaceTabWithCleanup,
+      normalizedServerId,
+      persistenceKey,
+      t,
+      toast,
+    ],
   );
 
   const handleClosePassiveTab = useCallback(
@@ -2755,14 +2784,6 @@ function WorkspaceScreenContent({
     [client, isConnected, normalizedServerId, toast, t],
   );
 
-  const handleArchiveAgent = useCallback(
-    async (agentId: string) => {
-      // Timeout errors are swallowed — the daemon will still process the archive.
-      await archiveAgent({ serverId: normalizedServerId, agentId }).catch(() => {});
-    },
-    [archiveAgent, normalizedServerId],
-  );
-
   const handleCopyWorkspacePath = useCallback(async () => {
     if (!workspaceDirectory) {
       toast.error(t("workspace.header.toasts.workspacePathUnavailable"));
@@ -2818,7 +2839,7 @@ function WorkspaceScreenContent({
 
       const groups = classifyBulkClosableTabs(tabsToClose, (agentId) => {
         const agent = useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId);
-        return resolveCloseAgentTabPolicy(agent).kind;
+        return resolveCloseAgentTabPolicy(agent).kind === "layout-only" ? "layout-only" : "archive";
       });
       const modifiedCount = tabsToClose.filter(
         (tab) =>
@@ -2855,6 +2876,11 @@ function WorkspaceScreenContent({
           await client.updateAgent(agentId, {
             labels: { [getOpenAgentTabLabel(clientId)]: "false" },
           });
+          const latestAgent =
+            useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
+          if (resolveCloseAgentTabPolicy(latestAgent).kind === "archive-on-close") {
+            await archiveAgent({ serverId: normalizedServerId, agentId });
+          }
         },
         closeWorkspaceTabWithCleanup: (cleanupInput) => {
           if (!persistenceKey) {
@@ -2873,6 +2899,7 @@ function WorkspaceScreenContent({
       return true;
     },
     [
+      archiveAgent,
       bulkCloseConfirmationLabels,
       client,
       closeTab,
@@ -3954,7 +3981,6 @@ function WorkspaceScreenContent({
         onCopyTerminalId={handleCopyTerminalId}
         onCopyFilePath={handleCopyFilePath}
         onReloadAgent={handleReloadAgent}
-        onArchiveAgent={handleArchiveAgent}
         onRenameTab={handleRenameTab}
         onCloseTabsToLeft={handleCloseTabsToLeftInPane}
         onCloseTabsToRight={handleCloseTabsToRightInPane}
@@ -3991,7 +4017,6 @@ function WorkspaceScreenContent({
     handleCopyTerminalId,
     handleCopyFilePath,
     handleReloadAgent,
-    handleArchiveAgent,
     handleRenameTab,
     handleCloseTabsToLeftInPane,
     handleCloseTabsToRightInPane,
@@ -4059,7 +4084,6 @@ function WorkspaceScreenContent({
             onCopyTerminalId={handleCopyTerminalId}
             onCopyFilePath={handleCopyFilePath}
             onReloadAgent={handleReloadAgent}
-            onArchiveAgent={handleArchiveAgent}
             onRenameTab={handleRenameTab}
             onCloseTabsToLeft={handleCloseTabsToLeft}
             onCloseTabsToRight={handleCloseTabsToRight}

@@ -167,9 +167,6 @@ export async function listImportableProviderSessions(
     .map((descriptor) =>
       toRecentProviderSessionDescriptorPayload(descriptor, {
         providerLabel: providerSnapshotManager.getProviderLabel(descriptor.provider),
-        archived: importedSessions.archivedHandles.has(
-          toProviderSessionHandleKey(descriptor.provider, descriptor.providerHandleId),
-        ),
       }),
     );
 
@@ -347,43 +344,36 @@ async function collectImportedProviderSessions(
   agentManager: Pick<AgentManager, "listAgents">,
   agentStorage: Pick<AgentStorage, "list">,
   providerFilter: Set<string> | undefined,
-): Promise<{ handles: Set<string>; archivedHandles: Set<string>; count: number }> {
+): Promise<{ handles: Set<string>; count: number }> {
   const handles = new Set<string>();
-  const archivedHandles = new Set<string>();
   const sessions = new Set<string>();
   const records = await agentStorage.list();
   const storedRecordsById = new Map(records.map((record) => [record.id, record]));
 
-  // An archived agent is not an import in flight: its session stays listed so
-  // importing it again can revive it, and `archivedHandles` is what lets the row
-  // say so instead of looking like an untouched provider session.
   const collect = (
     provider: AgentProvider | StoredAgentRecord["provider"] | string,
     persistence: AgentPersistenceHandle | null | undefined,
-    archived: boolean,
   ) => {
     if (!persistence || (providerFilter && !providerFilter.has(provider))) return;
-    if (archived) {
-      collectProviderSessionHandleKeys(archivedHandles, provider, persistence);
-      return;
-    }
     sessions.add(toProviderSessionHandleKey(provider, persistence.sessionId));
     collectProviderSessionHandleKeys(handles, provider, persistence);
   };
 
   for (const agent of agentManager.listAgents()) {
-    collect(
-      agent.provider,
-      agent.persistence,
-      Boolean(storedRecordsById.get(agent.id)?.archivedAt),
-    );
+    if (storedRecordsById.get(agent.id)?.archivedAt) {
+      continue;
+    }
+    collect(agent.provider, agent.persistence);
   }
 
   for (const record of records) {
-    collect(record.provider, record.persistence, Boolean(record.archivedAt));
+    if (record.archivedAt) {
+      continue;
+    }
+    collect(record.provider, record.persistence);
   }
 
-  return { handles, archivedHandles, count: sessions.size };
+  return { handles, count: sessions.size };
 }
 
 function toProviderSessionHandleKey(provider: string, providerHandleId: string): string {

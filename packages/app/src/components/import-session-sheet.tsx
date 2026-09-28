@@ -7,13 +7,12 @@ import type {
   FetchRecentProviderSessionEntry,
 } from "@getpaseo/client/internal/daemon-client";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
-import { Check, ChevronDown, Inbox, Layers, RotateCw } from "lucide-react-native";
+import { ChevronDown, Inbox, Layers, RotateCw } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { getProviderIcon } from "@/components/provider-icons";
 import { formatTimeAgo } from "@/utils/time";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -28,14 +27,11 @@ import {
   buildProviderLabelMap,
   collectProviderErrorRows,
   computeEmptyState,
-  countArchivedSessions,
   type DirectoryProject,
-  excludeArchivedSessions,
   formatDirectoryLabel,
   getPromptPreview,
   getSessionTitle,
   hasMoreSessions,
-  isArchivedSession,
   resolveDirectoryLabel,
   nextPageLimit,
   PER_PROVIDER_LIMIT,
@@ -348,15 +344,6 @@ function ImportSessionSheetRow({
           <Text style={styles.rowTitle} numberOfLines={1}>
             {title}
           </Text>
-          {isArchivedSession(entry) ? (
-            // The row is here because the provider still has the session, not
-            // because nothing was imported; say which of the two it is.
-            <View
-              testID={`import-session-row-archived-${entry.providerId}-${entry.providerHandleId}`}
-            >
-              <StatusBadge label={t("agentList.badges.archived")} variant="muted" />
-            </View>
-          ) : null}
           <Text style={styles.rowMeta}>
             {importing ? t("importSession.row.importing") : lastActivity}
           </Text>
@@ -375,132 +362,6 @@ function ImportSessionSheetRow({
         ) : null}
       </View>
     </Pressable>
-  );
-}
-
-/**
- * The archived filter. It stays next to the provider filter because both narrow
- * the same list, and it only appears when there is something to hide.
- */
-function HideArchivedToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
-  const { t } = useTranslation();
-  const { theme } = useUnistyles();
-  const accessibilityState = useMemo(() => ({ selected: active }), [active]);
-  const pressableStyle = useCallback(
-    ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
-      styles.filterTrigger,
-      active && styles.hideArchivedActive,
-      Boolean(hovered) && styles.filterTriggerHovered,
-      pressed && styles.filterTriggerPressed,
-    ],
-    [active],
-  );
-  const textStyle = useMemo(
-    () => [styles.filterTriggerText, !active && styles.hideArchivedTextInactive],
-    [active],
-  );
-
-  return (
-    <Pressable
-      onPress={onToggle}
-      style={pressableStyle}
-      testID="import-session-hide-archived"
-      accessibilityRole="button"
-      accessibilityState={accessibilityState}
-      accessibilityLabel={t("importSession.hideArchived")}
-    >
-      <Text style={textStyle} numberOfLines={1}>
-        {t("importSession.hideArchived")}
-      </Text>
-      {active ? <Check size={14} color={theme.colors.foreground} /> : null}
-    </Pressable>
-  );
-}
-
-/**
- * The row above the list: which provider to list, and whether to hide sessions
- * whose Paseo agent was archived. Both narrow the same list, so they sit
- * together, and each appears only when it has something to narrow.
- */
-function SessionControls({
-  showProviderFilter,
-  selectedProvider,
-  selectedProviderLabel,
-  serverId,
-  filterAnchorRef,
-  filterTriggerStyle,
-  filterComboboxOptions,
-  isFilterOpen,
-  onFilterOpen,
-  onFilterOpenChange,
-  onFilterSelect,
-  renderFilterOption,
-  archivedCount,
-  hideArchived,
-  onToggleHideArchived,
-}: {
-  showProviderFilter: boolean;
-  selectedProvider: string;
-  selectedProviderLabel: string;
-  serverId: string | null;
-  filterAnchorRef: React.ComponentProps<typeof Combobox>["anchorRef"];
-  filterTriggerStyle: React.ComponentProps<typeof Pressable>["style"];
-  filterComboboxOptions: ComboboxOption[];
-  isFilterOpen: boolean;
-  onFilterOpen: () => void;
-  onFilterOpenChange: (open: boolean) => void;
-  onFilterSelect: (id: string) => void;
-  renderFilterOption: React.ComponentProps<typeof Combobox>["renderOption"];
-  archivedCount: number;
-  hideArchived: boolean;
-  onToggleHideArchived: () => void;
-}) {
-  const { theme } = useUnistyles();
-  if (!showProviderFilter && archivedCount === 0) return null;
-
-  return (
-    <View style={styles.controlsRow}>
-      {showProviderFilter ? (
-        <View ref={filterAnchorRef} collapsable={false}>
-          <Pressable
-            onPress={onFilterOpen}
-            style={filterTriggerStyle}
-            testID="import-session-filter-trigger"
-            accessibilityRole="button"
-            accessibilityLabel={`Filter: ${selectedProviderLabel}`}
-          >
-            {selectedProvider === ALL_FILTER_VALUE ? (
-              <Layers size={14} color={theme.colors.foregroundMuted} />
-            ) : (
-              (() => {
-                const ProviderIcon = getProviderIcon(selectedProvider, serverId);
-                return <ProviderIcon size={14} color={theme.colors.foregroundMuted} />;
-              })()
-            )}
-            <Text style={styles.filterTriggerText} numberOfLines={1}>
-              {selectedProviderLabel}
-            </Text>
-            <ChevronDown size={14} color={theme.colors.foregroundMuted} />
-          </Pressable>
-          <Combobox
-            options={filterComboboxOptions}
-            value={selectedProvider}
-            onSelect={onFilterSelect}
-            renderOption={renderFilterOption}
-            searchable={false}
-            title="Filter by provider"
-            open={isFilterOpen}
-            onOpenChange={onFilterOpenChange}
-            anchorRef={filterAnchorRef}
-            desktopPlacement="bottom-start"
-            desktopPreventInitialFlash
-          />
-        </View>
-      ) : null}
-      {archivedCount > 0 ? (
-        <HideArchivedToggle active={hideArchived} onToggle={onToggleHideArchived} />
-      ) : null}
-    </View>
   );
 }
 
@@ -557,9 +418,6 @@ export function ImportSessionSheet({
   const [searchInput, setSearchInput] = useState("");
   const [pageLimit, setPageLimit] = useState(PER_PROVIDER_LIMIT);
   const [selectedProvider, setSelectedProvider] = useState<string>(ALL_FILTER_VALUE);
-  // Off by default: an archived session stays listed so importing it again can
-  // revive it, and the toggle is how a reader asks not to see those.
-  const [hideArchived, setHideArchived] = useState(false);
 
   const scopeCwd = isShowingAllDirectories ? null : (cwd ?? null);
   const supportsSearch = useHostFeature(serverId, "importSessionSearch");
@@ -636,17 +494,9 @@ export function ImportSessionSheet({
   }, [visible, filterProviders, selectedProvider]);
 
   const visibleEntries = useMemo(() => {
-    const byProvider =
-      selectedProvider === ALL_FILTER_VALUE
-        ? aggregatedEntries
-        : aggregatedEntries.filter((entry) => entry.providerId === selectedProvider);
-    return excludeArchivedSessions(byProvider, hideArchived);
-  }, [aggregatedEntries, hideArchived, selectedProvider]);
-
-  const archivedCount = useMemo(
-    () => countArchivedSessions(aggregatedEntries),
-    [aggregatedEntries],
-  );
+    if (selectedProvider === ALL_FILTER_VALUE) return aggregatedEntries;
+    return aggregatedEntries.filter((entry) => entry.providerId === selectedProvider);
+  }, [aggregatedEntries, selectedProvider]);
 
   const projectServerIds = useMemo(() => (serverId ? [serverId] : []), [serverId]);
   const hostProjects = useHostProjects(projectServerIds);
@@ -702,8 +552,6 @@ export function ImportSessionSheet({
     setSelectedProvider(id);
     setIsFilterOpen(false);
   }, []);
-
-  const handleToggleHideArchived = useCallback(() => setHideArchived((value) => !value), []);
 
   const filterOptionIcons = useMemo(() => {
     const map = new Map<string, React.ReactNode>();
@@ -862,9 +710,7 @@ export function ImportSessionSheet({
     isQueryingProviders,
     allQueriesSettled,
     selectedProvider,
-    // Hiding archived sessions narrows the list the way a query does, so an
-    // empty result reads as "nothing matches" rather than "nothing to import".
-    hasQuery: query.length > 0 || hideArchived,
+    hasQuery: query.length > 0,
     aggregatedCount: aggregatedEntries.length,
     visibleCount: visibleEntries.length,
     totalAlreadyImportedCount,
@@ -882,23 +728,43 @@ export function ImportSessionSheet({
       desktopMaxWidth={560}
       snapPoints={IMPORT_SHEET_SNAP_POINTS}
     >
-      <SessionControls
-        showProviderFilter={showFilter}
-        selectedProvider={selectedProvider}
-        selectedProviderLabel={selectedProviderLabel}
-        serverId={serverId}
-        filterAnchorRef={filterAnchorRef}
-        filterTriggerStyle={filterTriggerStyle}
-        filterComboboxOptions={filterComboboxOptions}
-        isFilterOpen={isFilterOpen}
-        onFilterOpen={handleFilterOpen}
-        onFilterOpenChange={setIsFilterOpen}
-        onFilterSelect={handleFilterSelect}
-        renderFilterOption={renderFilterOption}
-        archivedCount={archivedCount}
-        hideArchived={hideArchived}
-        onToggleHideArchived={handleToggleHideArchived}
-      />
+      {showFilter ? (
+        <View ref={filterAnchorRef} collapsable={false} style={styles.filterTriggerWrap}>
+          <Pressable
+            onPress={handleFilterOpen}
+            style={filterTriggerStyle}
+            testID="import-session-filter-trigger"
+            accessibilityRole="button"
+            accessibilityLabel={`Filter: ${selectedProviderLabel}`}
+          >
+            {selectedProvider === ALL_FILTER_VALUE ? (
+              <Layers size={14} color={theme.colors.foregroundMuted} />
+            ) : (
+              (() => {
+                const ProviderIcon = getProviderIcon(selectedProvider, serverId);
+                return <ProviderIcon size={14} color={theme.colors.foregroundMuted} />;
+              })()
+            )}
+            <Text style={styles.filterTriggerText} numberOfLines={1}>
+              {selectedProviderLabel}
+            </Text>
+            <ChevronDown size={14} color={theme.colors.foregroundMuted} />
+          </Pressable>
+          <Combobox
+            options={filterComboboxOptions}
+            value={selectedProvider}
+            onSelect={handleFilterSelect}
+            renderOption={renderFilterOption}
+            searchable={false}
+            title="Filter by provider"
+            open={isFilterOpen}
+            onOpenChange={setIsFilterOpen}
+            anchorRef={filterAnchorRef}
+            desktopPlacement="bottom-start"
+            desktopPreventInitialFlash
+          />
+        </View>
+      ) : null}
       <SheetStatusMessages
         isClientReady={Boolean(client)}
         isSnapshotUnsupported={isSnapshotUnsupported}
@@ -953,11 +819,7 @@ const styles = StyleSheet.create((theme) => ({
   subtitleAction: {
     marginHorizontal: -theme.spacing[2],
   },
-  controlsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: theme.spacing[1.5],
+  filterTriggerWrap: {
     paddingBottom: theme.spacing[2],
   },
   filterTrigger: {
@@ -975,13 +837,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   filterTriggerHovered: {
     backgroundColor: theme.colors.surface2,
-  },
-  hideArchivedActive: {
-    backgroundColor: theme.colors.surface2,
-    borderColor: theme.colors.foregroundMuted,
-  },
-  hideArchivedTextInactive: {
-    color: theme.colors.foregroundMuted,
   },
   filterTriggerPressed: {
     backgroundColor: theme.colors.surface3,

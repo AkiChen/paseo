@@ -30,8 +30,6 @@ interface ProjectionOptions {
 
 interface RecentProviderSessionProjectionOptions {
   providerLabel: string;
-  /** True when a Paseo agent for this session exists and is archived. */
-  archived?: boolean;
 }
 
 function normalizeThinkingOptionId(value: string | null | undefined): string | null {
@@ -286,7 +284,6 @@ export function toRecentProviderSessionDescriptorPayload(
     firstPromptPreview: session.firstPromptPreview,
     lastPromptPreview: session.lastPromptPreview,
     lastActivityAt: session.lastActivityAt.toISOString(),
-    ...(options.archived ? { archived: true } : {}),
   };
 }
 

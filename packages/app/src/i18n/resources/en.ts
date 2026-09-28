@@ -367,7 +367,6 @@ export const en = {
     title: "Import session",
     chooseHostTitle: "Import from host",
     searchPlaceholder: "Search sessions...",
-    hideArchived: "Hide archived",
     scope: {
       host: "Sessions on {{host}}",
       workspace: "This workspace",

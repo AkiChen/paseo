@@ -375,7 +375,6 @@ export const ja: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "セッションをインポート",
     searchPlaceholder: "セッションを検索...",
-    hideArchived: "アーカイブ済みを非表示",
     scope: {
       host: "{{host}} のセッション",
       workspace: "このワークスペース",
