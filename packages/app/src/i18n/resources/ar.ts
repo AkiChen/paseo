@@ -369,6 +369,7 @@ export const ar: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "جلسة الاستيراد",
     searchPlaceholder: "البحث في الجلسات...",
+    hideArchived: "إخفاء المؤرشفة",
     scope: {
       host: "الجلسات على {{host}}",
       workspace: "مساحة العمل هذه",

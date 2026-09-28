@@ -96,6 +96,29 @@ export function sumFilteredAlreadyImportedCount(
 }
 
 /**
+ * A session whose Paseo agent was archived. The daemon keeps listing it because
+ * archiving never touches the provider's store and importing it again revives
+ * that session, so the row marks itself instead of pretending to be new.
+ */
+export function isArchivedSession(entry: FetchRecentProviderSessionEntry): boolean {
+  return entry.archived === true;
+}
+
+export function countArchivedSessions(
+  entries: ReadonlyArray<FetchRecentProviderSessionEntry>,
+): number {
+  return entries.reduce((total, entry) => (isArchivedSession(entry) ? total + 1 : total), 0);
+}
+
+/** The toggle only ever drops rows, so an untouched sheet lists everything. */
+export function excludeArchivedSessions(
+  entries: ReadonlyArray<FetchRecentProviderSessionEntry>,
+  hideArchived: boolean,
+): FetchRecentProviderSessionEntry[] {
+  return hideArchived ? entries.filter((entry) => !isArchivedSession(entry)) : [...entries];
+}
+
+/**
  * A provider that returned a full page may have more behind it. The daemon
  * slices to `limit` after dropping already-imported sessions, so a short page is
  * the end of that provider's list. Placeholder rows belong to the previous page,

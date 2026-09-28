@@ -370,6 +370,7 @@ export const ko: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "세션 가져오기",
     searchPlaceholder: "세션 검색...",
+    hideArchived: "보관된 항목 숨기기",
     scope: {
       host: "{{host}}의 세션",
       workspace: "이 워크스페이스",

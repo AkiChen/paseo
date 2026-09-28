@@ -918,6 +918,11 @@ export const RecentProviderSessionDescriptorPayloadSchema = z.object({
   firstPromptPreview: z.string().nullable(),
   lastPromptPreview: z.string().nullable(),
   lastActivityAt: z.string(),
+  // COMPAT(recentSessionArchived): added in v0.8.0; set when a Paseo agent for
+  // this session was archived. Archiving never touches the provider's own store,
+  // so the session stays importable and the row has to say why it is listed.
+  // Old clients ignore the flag and show the row, which is what they did before.
+  archived: z.boolean().optional(),
 });
 
 export type RecentProviderSessionDescriptorPayload = z.infer<

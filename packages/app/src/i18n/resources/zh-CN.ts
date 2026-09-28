@@ -369,6 +369,7 @@ export const zhCN: TranslationResources = {
     chooseHostTitle: en.importSession.chooseHostTitle,
     title: "导入会话",
     searchPlaceholder: "搜索会话...",
+    hideArchived: "隐藏已归档",
     scope: {
       host: "{{host}} 上的会话",
       workspace: "此 workspace",
