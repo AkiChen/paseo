@@ -34,7 +34,7 @@ function makeFileTab(path: string): WorkspaceTabDescriptor {
 }
 
 describe("workspace bulk close helpers", () => {
-  it("classifies agent, terminal, and passive tabs for shared bulk close handling", () => {
+  it("treats agent tabs as layout-only by default when classifying a bulk close", () => {
     const groups = classifyBulkClosableTabs([
       makeAgentTab("a1"),
       makeTerminalTab("t1"),
@@ -42,8 +42,8 @@ describe("workspace bulk close helpers", () => {
     ]);
 
     expect(groups).toEqual({
-      archiveAgentTabs: [{ tabId: "agent_a1", agentId: "a1" }],
-      layoutOnlyAgentTabs: [],
+      archiveAgentTabs: [],
+      layoutOnlyAgentTabs: [{ tabId: "agent_a1", agentId: "a1" }],
       terminalTabs: [{ tabId: "terminal_t1", terminalId: "t1" }],
       otherTabs: [
         {
@@ -79,8 +79,9 @@ describe("workspace bulk close helpers", () => {
       ]),
     );
 
+    // The two agent tabs only close, so they count as tabs, not as archives.
     expect(message).toBe(
-      "This will archive 2 agent(s), close 1 terminal(s), and close 1 tab(s). Any running process in a closed terminal will be stopped immediately.",
+      "This will close 1 terminal(s) and close 3 tab(s). Any running process in a closed terminal will be stopped immediately.",
     );
   });
 
@@ -127,8 +128,9 @@ describe("workspace bulk close helpers", () => {
     });
 
     expect(closeItems).toHaveBeenCalledTimes(1);
+    // No agent archives on close any more, so the RPC carries terminals only.
     expect(closeItems).toHaveBeenCalledWith({
-      agentIds: ["a1"],
+      agentIds: [],
       terminalIds: ["t1", "t2"],
     });
     expect(closedTabIds).toEqual([
