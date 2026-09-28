@@ -132,12 +132,24 @@ try {
   if (Test-Path -LiteralPath $desktopDist) {
     Remove-Item -LiteralPath $desktopDist -Recurse -Force
   }
+  # The build info has to go with it. Left behind, tsc considers the deleted
+  # output current, writes nothing, and electron-builder fails with a missing
+  # entry file ten minutes later.
+  $desktopBuildInfo = Join-Path $desktopRoot "tsconfig.tsbuildinfo"
+  if (Test-Path -LiteralPath $desktopBuildInfo) {
+    Remove-Item -LiteralPath $desktopBuildInfo -Force
+  }
 
   Invoke-BuildStep `
     -Label "Build Electron main process" `
     -WorkingDirectory $desktopRoot `
     -Command $npmCommand `
     -Arguments @("run", "build:main")
+
+  $desktopEntry = Join-Path $desktopDist "main.js"
+  if (-not (Test-Path -LiteralPath $desktopEntry)) {
+    throw "The Electron main process build produced no dist/main.js."
+  }
 
   Invoke-BuildStep `
     -Label "Package Windows x64 directory" `
