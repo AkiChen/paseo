@@ -97,37 +97,4 @@ describe("GenericACPAgentClient", () => {
       },
     });
   });
-
-  test("forwards a configured fork bridge and reports that the provider can fork", () => {
-    const _client = new GenericACPAgentClient({
-      logger: createTestLogger(),
-      command: ["dsh", "--profile", "acp"],
-      providerParams: {
-        forkBridge: { kind: "dsh-plugin", home: "~/.dsh" },
-      },
-    });
-    void _client;
-
-    expect(mockState.superConstructorOptions.at(-1)).toMatchObject({
-      forkBridge: { kind: "dsh-plugin", home: "~/.dsh" },
-      capabilities: {
-        supportsSessionFork: true,
-      },
-    });
-  });
-
-  test("reports no fork support without a configured bridge", () => {
-    const _client = new GenericACPAgentClient({
-      logger: createTestLogger(),
-      command: ["dsh", "--profile", "acp"],
-    });
-    void _client;
-
-    const options = mockState.superConstructorOptions.at(-1) as {
-      forkBridge: unknown;
-      capabilities: Record<string, unknown>;
-    };
-    expect(options.forkBridge).toBeNull();
-    expect(options.capabilities.supportsSessionFork).toBeUndefined();
-  });
 });

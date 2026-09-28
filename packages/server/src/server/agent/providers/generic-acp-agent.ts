@@ -17,7 +17,6 @@ import {
   type DiagnosticEntry,
   toDiagnosticErrorMessage,
 } from "./diagnostic-utils.js";
-import { DshForkBridgeSchema } from "./dsh-fork/bridge.js";
 import { SessionMetadataSchema } from "./session-metadata.js";
 
 export const GenericACPProviderParamsSchema = z
@@ -37,9 +36,6 @@ export const GenericACPProviderParamsSchema = z
     // A store to read session titles and times from, for providers that do not
     // send them over ACP. See `session-metadata.ts`.
     sessionMetadata: SessionMetadataSchema.optional(),
-    // A plugin Paseo loads into the provider process to fork sessions there, for
-    // providers that expose no ACP fork. See `dsh-fork/bridge.ts`.
-    forkBridge: DshForkBridgeSchema.optional(),
   })
   .passthrough();
 
@@ -86,7 +82,6 @@ export class GenericACPAgentClient extends ACPAgentClient {
       extensionCommandsParser: options.extensionCommandsParser,
       catalogModelResolver: options.catalogModelResolver,
       sessionMetadata: providerParams.sessionMetadata ?? null,
-      forkBridge: providerParams.forkBridge ?? null,
       now: options.now,
     });
 
@@ -177,9 +172,6 @@ function buildGenericACPCapabilities(params: GenericACPProviderParams): AgentCap
   return {
     ...DEFAULT_ACP_CAPABILITIES,
     supportsMcpServers: params.supportsMcpServers ?? DEFAULT_ACP_CAPABILITIES.supportsMcpServers,
-    // A configured bridge forks this provider's sessions, so the fork strategy
-    // may use one even though the agent itself advertises no ACP fork.
-    ...(params.forkBridge === undefined ? {} : { supportsSessionFork: true }),
   };
 }
 

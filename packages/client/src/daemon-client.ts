@@ -627,11 +627,6 @@ function normalizeListCommandsOptions(
 export interface AgentForkContextOptions {
   boundaryCursor?: FetchAgentTimelineCursor;
   boundaryMessageId?: string;
-  /**
-   * Provider the new conversation should use. Omit to fork within the source agent's
-   * provider, which is the only case where the provider's own fork can be used.
-   */
-  targetProvider?: string;
   requestId?: string;
 }
 
@@ -3162,7 +3157,6 @@ export class DaemonClient {
       requestId: resolvedRequestId,
       ...(options.boundaryCursor ? { boundaryCursor: options.boundaryCursor } : {}),
       ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
-      ...(options.targetProvider ? { targetProvider: options.targetProvider } : {}),
     });
 
     const payload = await this.sendRequest({

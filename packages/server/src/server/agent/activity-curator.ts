@@ -221,20 +221,12 @@ interface ForkCursorBoundary {
   cursor: { epoch: string; seq: number };
 }
 
-/**
- * The source rows a fork carries, up to the requested boundary.
- *
- * `items` is the curated projection the chat-history attachment renders. `rows`
- * is the same selection unprojected, for a fork that hands the rows to the new
- * agent's own timeline instead of folding them into one attachment.
- */
-export function selectForkContextRows(input: {
+function selectForkContextRows(input: {
   rows: readonly AgentTimelineRow[];
   cursorBoundary?: ForkCursorBoundary | null;
   boundaryMessageId?: string | null;
 }): {
   items: AgentTimelineItem[];
-  rows: readonly AgentTimelineRow[];
   boundaryCursor: { epoch: string; seq: number } | null;
   boundaryMessageId: string | null;
 } {
@@ -244,7 +236,6 @@ export function selectForkContextRows(input: {
     const projected = projectTimelineRows({ rows: input.rows, mode: "projected" });
     return {
       items: projected.map((entry) => entry.item),
-      rows: input.rows,
       boundaryCursor: null,
       boundaryMessageId: null,
     };
@@ -273,7 +264,6 @@ export function selectForkContextRows(input: {
 
   return {
     items: projected.map((entry) => entry.item),
-    rows: selectedRows,
     boundaryCursor,
     boundaryMessageId,
   };

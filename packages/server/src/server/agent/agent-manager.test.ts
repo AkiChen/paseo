@@ -691,56 +691,6 @@ test("uses an injected timeline store without making it a production requirement
   }
 });
 
-test("seeds a forked agent's timeline from the rows its provider session inherited", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-fork-rows-"));
-  const store = new RecordingTimelineStore();
-  const manager = new AgentManager({
-    clients: { codex: new TestAgentClient() },
-    durableTimelineStore: store,
-    logger,
-  });
-  let agentId: string | null = null;
-  try {
-    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
-      workspaceId: undefined,
-    });
-    agentId = agent.id;
-    const inherited: AgentTimelineRow[] = [
-      {
-        seq: 3,
-        timestamp: "2026-01-01T00:00:00.000Z",
-        turnId: "turn-1",
-        item: {
-          type: "user_message",
-          text: "where were we",
-          messageId: "m1",
-          clientMessageId: "c1",
-        },
-      },
-      {
-        seq: 8,
-        timestamp: "2026-01-01T00:00:01.000Z",
-        turnId: "turn-1",
-        item: { type: "assistant_message", text: "mid-refactor", messageId: "m2" },
-      },
-    ];
-
-    await manager.seedTimelineFromRows(agent.id, inherited);
-
-    // The rows are the new agent's own sequence, and its timeline starts empty, so
-    // the source's spacing is renumbered rather than reused.
-    expect(manager.fetchTimeline(agent.id, { direction: "tail", limit: 0 }).rows).toEqual([
-      { ...inherited[0], seq: 1 },
-      { ...inherited[1], seq: 2 },
-    ]);
-    expect(store.writes.flat().map((row) => row.seq)).toEqual([1, 2]);
-    expect((await store.getCommittedRows(agent.id)).map((row) => row.seq)).toEqual([1, 2]);
-  } finally {
-    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
-    rmSync(workdir, { recursive: true, force: true });
-  }
-});
-
 test("retries provider history hydration after a stream failure", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-retry-"));
   let attempts = 0;

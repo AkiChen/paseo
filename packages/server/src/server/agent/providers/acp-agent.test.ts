@@ -1,9 +1,5 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   AgentSideConnection,
@@ -46,7 +42,6 @@ import {
   writeCopilotProviderMode,
 } from "./copilot-acp-agent.js";
 import { GenericACPAgentClient } from "./generic-acp-agent.js";
-import { DshForkBridge } from "./dsh-fork/bridge.js";
 import { parseKiroExtensionCommands } from "./kiro-acp-agent.js";
 import { transformPiModels } from "./pi/agent.js";
 import type { AgentStreamEvent, AgentTimelineItem } from "../agent-sdk-types.js";
@@ -3909,60 +3904,6 @@ describe("ACPAgentClient probe cleanup", () => {
 });
 
 describe("ACP session/load invariant — cwd and mcpServers always passed", () => {
-  const forkBridgeDirectories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      forkBridgeDirectories
-        .splice(0)
-        .map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
-  async function createForkBridgeHome(): Promise<string> {
-    const home = await mkdtemp(path.join(tmpdir(), "paseo-dsh-fork-session-"));
-    forkBridgeDirectories.push(home);
-    return home;
-  }
-
-  /** A real bridge channel that answers one fork request. */
-  async function serveBridgeFork() {
-    const requests: Record<string, unknown>[] = [];
-    const childSessionId = "session-forked";
-    const server = createServer((socket) => {
-      let pending = "";
-      socket.on("data", (chunk: Buffer) => {
-        pending += chunk.toString("utf8");
-        const end = pending.indexOf("\n");
-        if (end === -1) return;
-        requests.push(JSON.parse(pending.slice(0, end)) as Record<string, unknown>);
-        socket.write(
-          `${JSON.stringify({ id: "request-1", ok: true, sessionId: childSessionId })}\n`,
-        );
-      });
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      throw new Error("test bridge did not expose a TCP address");
-    }
-    return {
-      channel: `tcp:127.0.0.1:${address.port}`,
-      childSessionId,
-      requests,
-      close: () =>
-        new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        }),
-    };
-  }
-
   /**
    * Shared factory: creates an ACPAgentSession subclass whose spawnProcess
    * returns stubbed ACP internals so tests can inspect connection method calls
@@ -3973,18 +3914,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
     handle: AgentPersistenceHandle;
     loadSession?: ReturnType<typeof vi.fn>;
     unstableResumeSession?: ReturnType<typeof vi.fn>;
-    newSession?: ReturnType<typeof vi.fn>;
-    forkSession?: ReturnType<typeof vi.fn>;
-    forkBridge?: DshForkBridge;
   }) {
-    const newSession =
-      args.newSession ??
-      vi.fn().mockResolvedValue({
-        sessionId: "session-1",
-        modes: null,
-        models: null,
-        configOptions: [],
-      });
     const loadSession =
       args.loadSession ??
       vi.fn().mockResolvedValue({
@@ -4001,27 +3931,15 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
         models: null,
         configOptions: [],
       });
-    const forkSession =
-      args.forkSession ??
-      vi.fn().mockResolvedValue({
-        sessionId: "session-2",
-        modes: null,
-        models: null,
-        configOptions: [],
-      });
 
     class TestSession extends ACPAgentSession {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
-        // A real launch names the fork channel here, before the process starts.
-        await this.prepareForkBridgeLaunch();
         return {
           child: createProbeChildStub(),
           connection: {
             prompt: vi.fn(),
-            newSession,
             loadSession,
             unstable_resumeSession: unstableResumeSession,
-            unstable_forkSession: forkSession,
           } as unknown as ClientSideConnection,
           initialize: { agentCapabilities: args.capabilities ?? {} },
         } as SpawnedACPProcess;
@@ -4046,11 +3964,10 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
           ...args.capabilities,
         },
         handle: args.handle,
-        ...(args.forkBridge === undefined ? {} : { forkBridge: args.forkBridge }),
       },
     );
 
-    return { session, loadSession, unstableResumeSession, newSession, forkSession };
+    return { session, loadSession, unstableResumeSession };
   }
 
   test("loadSession is always called with sessionId, cwd, and mcpServers even when mcpServers is empty", async () => {
@@ -4255,114 +4172,6 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       sessionId: "session-1",
       cwd: "/tmp/paseo-acp-test",
       mcpServers: [],
-    });
-  });
-
-  describe("session/fork", () => {
-    test("advertises fork on a fresh session too, not only on a resumed one", async () => {
-      const newSession = vi.fn().mockResolvedValue({
-        sessionId: "session-1",
-        modes: null,
-        models: null,
-        configOptions: [],
-      });
-      const { session, forkSession } = makeTestSession({
-        capabilities: { sessionCapabilities: { fork: {} } },
-        handle: { sessionId: "session-1", provider: "claude-acp" },
-        newSession,
-      });
-
-      await session.initializeNewSession();
-
-      expect(session.capabilities.supportsSessionFork).toBe(true);
-      await expect(session.forkProviderSession()).resolves.toBe("session-2");
-      expect(forkSession).toHaveBeenCalledWith({
-        sessionId: "session-1",
-        cwd: "/tmp/paseo-acp-test",
-        mcpServers: [],
-      });
-    });
-
-    test("advertises fork and returns the forked session id when the provider announces session/fork", async () => {
-      const { session, forkSession } = makeTestSession({
-        capabilities: { loadSession: true, sessionCapabilities: { fork: {} } },
-        handle: { sessionId: "session-1", provider: "claude-acp" },
-      });
-
-      await session.initializeResumedSession();
-
-      expect(session.capabilities.supportsSessionFork).toBe(true);
-      await expect(session.forkProviderSession()).resolves.toBe("session-2");
-      expect(forkSession).toHaveBeenCalledWith({
-        sessionId: "session-1",
-        cwd: "/tmp/paseo-acp-test",
-        mcpServers: [],
-      });
-    });
-
-    test("does not advertise fork and refuses to fork when the provider omits session/fork", async () => {
-      const { session, forkSession } = makeTestSession({
-        capabilities: { loadSession: true },
-        handle: { sessionId: "session-1", provider: "claude-acp" },
-      });
-
-      await session.initializeResumedSession();
-
-      expect(session.capabilities.supportsSessionFork).toBeUndefined();
-      await expect(session.forkProviderSession()).rejects.toThrow(
-        "does not support ACP session fork",
-      );
-      expect(forkSession).not.toHaveBeenCalled();
-    });
-
-    test("forks through the bridge when the provider advertises no ACP fork", async () => {
-      const home = await createForkBridgeHome();
-      const bridge = new DshForkBridge({
-        source: { kind: "dsh-plugin", home },
-        logger: createTestLogger(),
-        platform: "linux",
-      });
-      const { channel, childSessionId, requests, close } = await serveBridgeFork();
-      vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
-        channel,
-        args: ["--patch", path.join(home, "profiles", "paseo-fork-bridge.yml")],
-        env: { PASEO_FORK_BRIDGE_SOCKET: channel },
-      });
-      const { session, forkSession } = makeTestSession({
-        capabilities: { loadSession: true, sessionCapabilities: { resume: {} } },
-        handle: { sessionId: "session-1", provider: "dsh" },
-        forkBridge: bridge,
-      });
-
-      await session.initializeResumedSession();
-      const forked = await session.forkProviderSession();
-
-      expect(forked).toBe(childSessionId);
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({ op: "fork", sessionId: "session-1" });
-      expect(forkSession).not.toHaveBeenCalled();
-      await close();
-    });
-
-    test("refuses to fork when the bridge could not be prepared", async () => {
-      const home = await createForkBridgeHome();
-      const bridge = new DshForkBridge({
-        source: { kind: "dsh-plugin", home },
-        logger: createTestLogger(),
-        platform: "linux",
-      });
-      vi.spyOn(bridge, "prepareLaunch").mockRejectedValue(new Error("disk is full"));
-      const { session } = makeTestSession({
-        capabilities: { loadSession: true, sessionCapabilities: { resume: {} } },
-        handle: { sessionId: "session-1", provider: "dsh" },
-        forkBridge: bridge,
-      });
-
-      await session.initializeResumedSession();
-
-      await expect(session.forkProviderSession()).rejects.toThrow(
-        "does not support ACP session fork",
-      );
     });
   });
 });

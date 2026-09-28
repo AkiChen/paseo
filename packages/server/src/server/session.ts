@@ -122,12 +122,7 @@ import {
   type TimelineProjectionEntry,
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
-import {
-  buildAgentForkContextAttachment,
-  selectForkContextRows,
-} from "./agent/activity-curator.js";
-import type { AgentTimelineRow } from "./agent/agent-timeline-store-types.js";
-import { resolveForkStrategy } from "./agent/fork-strategy.js";
+import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -7525,51 +7520,6 @@ export class Session {
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
-      // A provider fork is answered with an agent id and no attachment, so it is only
-      // used when the request names the target provider and that provider is the
-      // source's. A client too old to name a target cannot consume a forked agent id,
-      // and the rule reads a missing target as "cannot prove the provider stays".
-      const strategy = resolveForkStrategy({
-        sourceProvider: snapshot.provider,
-        targetProvider: msg.targetProvider,
-        providerSupportsFork: snapshot.capabilities.supportsSessionFork === true,
-      });
-
-      if (strategy === "provider-fork") {
-        try {
-          const forkedAgentId = await this.forkAgentThroughProviderSession(
-            snapshot,
-            this.selectForkInheritedRows(msg, snapshot),
-          );
-          this.emit({
-            type: "agent.fork_context.response",
-            payload: {
-              requestId: msg.requestId,
-              agentId: msg.agentId,
-              attachment: null,
-              itemCount: 0,
-              // A provider fork has no message boundary: it inherits the whole prefix,
-              // so reporting the requested boundary would claim a truncation that the
-              // forked session does not have.
-              boundaryCursor: null,
-              boundaryMessageId: null,
-              forkedAgentId,
-              error: null,
-            },
-          });
-          return;
-        } catch (error) {
-          // The provider cannot fork right now — no provider session, no bridge,
-          // or a bridge that did not answer. The timeline attachment is the
-          // behavior every client already understands, so degrade to it instead
-          // of failing the fork the user asked for.
-          this.sessionLogger.warn(
-            { err: error, agentId: msg.agentId },
-            "Provider session fork failed; falling back to the timeline attachment",
-          );
-        }
-      }
-
       const agentPayload = await this.buildAgentPayload(snapshot);
       const timeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction: "tail",
@@ -7614,146 +7564,6 @@ export class Session {
           error: error instanceof Error ? error.message : String(error),
         },
       });
-    }
-  }
-
-  /**
-   * Ask the source agent's live provider session for a sibling session, then register
-   * that session as its own agent. The new agent keeps the source's labels and
-   * workspace: a provider fork keeps the same cwd and therefore the same workspace.
-   *
-   * The forked session lives in the source provider process. Owning it here means
-   * resuming the returned id through the provider, so the provider must be able to
-   * restore a session it just forked — the same contract `resume_agent_request`
-   * already depends on.
-   */
-  private async forkAgentThroughProviderSession(
-    snapshot: ManagedAgent,
-    inheritedRows: readonly AgentTimelineRow[],
-  ): Promise<string> {
-    const session = snapshot.session;
-    if (!session) {
-      throw new Error(`${snapshot.provider} agent is closed; cannot fork its provider session`);
-    }
-    if (!session.forkProviderSession) {
-      throw new Error(`${snapshot.provider} does not support provider session fork`);
-    }
-    const forkedSessionId = await session.forkProviderSession();
-    const sourceHandle = session.describePersistence();
-    if (!sourceHandle) {
-      throw new Error(`${snapshot.provider} session has no persistence handle to fork from`);
-    }
-
-    const forked = await this.agentManager.resumeAgentFromPersistence(
-      { ...sourceHandle, sessionId: forkedSessionId, nativeHandle: forkedSessionId },
-      // Paseo derives an agent's title from its first prompt, and a provider fork
-      // never sends one: the conversation starts from an inherited prefix. Without
-      // this the fork sits in the list untitled.
-      await this.readForkTitle(snapshot.id),
-      undefined,
-      {
-        labels: snapshot.labels,
-        workspaceId: snapshot.workspaceId,
-      },
-    );
-    await this.agentManager.hydrateTimelineFromProvider(forked.id);
-    // A provider that replays its transcript already filled the timeline and is
-    // the authority on it. One that does not — an ACP provider that resumed
-    // without loadSession — leaves the new agent's window empty while its session
-    // still carries the source's prefix, so show the rows that prefix came from.
-    try {
-      const forkedRows = this.agentManager.fetchTimeline(forked.id, {
-        direction: "tail",
-        limit: 0,
-      }).rows;
-      if (forkedRows.length === 0 && inheritedRows.length > 0) {
-        await this.agentManager.seedTimelineFromRows(forked.id, inheritedRows);
-        this.sessionLogger.info(
-          {
-            agentId: snapshot.id,
-            forkedAgentId: forked.id,
-            inheritedRows: inheritedRows.length,
-          },
-          "Forked agent inherited the source timeline",
-        );
-      }
-    } catch (error) {
-      this.sessionLogger.warn(
-        { err: error, forkedAgentId: forked.id },
-        "Forked agent could not inherit the source timeline",
-      );
-    }
-    await this.agentUpdates.forwardLiveAgent(forked);
-    this.sessionLogger.info(
-      { agentId: snapshot.id, forkedAgentId: forked.id, provider: forked.provider },
-      "Forked agent through its provider session",
-    );
-    return forked.id;
-  }
-
-  /**
-   * The title override a fork inherits from its source, or nothing when the
-   * source has no title to give.
-   */
-  private async readForkTitle(agentId: string): Promise<Partial<AgentSessionConfig> | undefined> {
-    try {
-      const title = (await this.agentStorage.get(agentId))?.title?.trim();
-      return title ? { title } : undefined;
-    } catch (error) {
-      this.sessionLogger.warn(
-        { err: error, agentId },
-        "Could not read the source agent title for a fork",
-      );
-      return undefined;
-    }
-  }
-
-  /**
-   * The source rows a provider fork carries into the new agent.
-   *
-   * The provider forks its whole completed-turn prefix and the client's boundary
-   * names the message it forked from, so the rows are the same selection the
-   * chat-history attachment would render. A turn still in flight is dropped: the
-   * provider cuts it out of the forked session, and showing it would claim
-   * context the new session does not have.
-   */
-  private selectForkInheritedRows(
-    msg: Extract<SessionInboundMessage, { type: "agent.fork_context.request" }>,
-    snapshot: ManagedAgent,
-  ): readonly AgentTimelineRow[] {
-    let timeline: AgentTimelineFetchResult;
-    try {
-      timeline = this.agentManager.fetchTimeline(msg.agentId, { direction: "tail", limit: 0 });
-    } catch (error) {
-      this.sessionLogger.warn(
-        { err: error, agentId: msg.agentId },
-        "Forked agent has no source rows to inherit",
-      );
-      return [];
-    }
-    const withoutInFlightTurn = (rows: readonly AgentTimelineRow[]): readonly AgentTimelineRow[] =>
-      snapshot.activeForegroundTurnId === null
-        ? rows
-        : rows.filter((row) => row.turnId !== snapshot.activeForegroundTurnId);
-    try {
-      return withoutInFlightTurn(
-        selectForkContextRows({
-          rows: timeline.rows,
-          cursorBoundary: msg.boundaryCursor
-            ? { timelineEpoch: timeline.epoch, cursor: msg.boundaryCursor }
-            : null,
-          boundaryMessageId: msg.boundaryMessageId ?? null,
-        }).rows,
-      );
-    } catch (error) {
-      // The boundary the client named is gone — the agent was reloaded since that
-      // cursor was read, which a daemon restart does. The fork already carries the
-      // whole completed prefix, so inherit that rather than opening empty.
-      this.sessionLogger.warn(
-        { err: error, agentId: msg.agentId },
-        "Fork boundary is stale; inheriting the whole completed prefix",
-      );
-      return withoutInFlightTurn(timeline.rows);
     }
   }
 
