@@ -732,6 +732,7 @@ async function getTrackedDiffTextForPath(input: {
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace: input.ignoreWhitespace,
+      contextLines: input.contextLines,
       extra: [...getCheckoutDiffRefArgs(input.refsForDiff), "--", `:(literal)${input.path}`],
     }),
     {
