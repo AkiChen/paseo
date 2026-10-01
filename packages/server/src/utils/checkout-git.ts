@@ -753,7 +753,6 @@ async function getTrackedDiffTexts(input: {
   refsForDiff: CheckoutDiffRefs;
   paths: string[];
   ignoreWhitespace: boolean;
-  contextLines?: number;
 }): Promise<Array<{ path: string; text: string; truncated: boolean }>> {
   if (input.paths.length === 0) return [];
   if (input.paths.length === 1)
@@ -761,7 +760,6 @@ async function getTrackedDiffTexts(input: {
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace: input.ignoreWhitespace,
-      ...(input.contextLines !== undefined ? { contextLines: input.contextLines } : {}),
       extra: [
         ...getCheckoutDiffRefArgs(input.refsForDiff),
         "--",
@@ -3349,7 +3347,7 @@ interface ProcessTrackedChangesResult {
 async function processTrackedChanges(
   input: ProcessTrackedChangesInput,
 ): Promise<ProcessTrackedChangesResult> {
-  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, contextLines, appendDiff } = input;
+  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, appendDiff } = input;
   const trackedNumstatByPath =
     trackedChanges.length > 0
       ? await getTrackedNumstatByPath(cwd, refsForDiff, ignoreWhitespace)
@@ -3382,7 +3380,6 @@ async function processTrackedChanges(
       refsForDiff,
       paths: paths.filter((path) => !renamedPaths.has(path)),
       ignoreWhitespace,
-      contextLines,
     });
     const renamed = await Promise.all(
       paths
