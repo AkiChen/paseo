@@ -754,6 +754,7 @@ async function getTrackedDiffTexts(input: {
   refsForDiff: CheckoutDiffRefs;
   paths: string[];
   ignoreWhitespace: boolean;
+  contextLines?: number;
 }): Promise<Array<{ path: string; text: string; truncated: boolean }>> {
   if (input.paths.length === 0) return [];
   if (input.paths.length === 1)
@@ -3348,7 +3349,7 @@ interface ProcessTrackedChangesResult {
 async function processTrackedChanges(
   input: ProcessTrackedChangesInput,
 ): Promise<ProcessTrackedChangesResult> {
-  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, appendDiff } = input;
+  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, contextLines, appendDiff } = input;
   const trackedNumstatByPath =
     trackedChanges.length > 0
       ? await getTrackedNumstatByPath(cwd, refsForDiff, ignoreWhitespace)
@@ -3381,6 +3382,7 @@ async function processTrackedChanges(
       refsForDiff,
       paths: paths.filter((path) => !renamedPaths.has(path)),
       ignoreWhitespace,
+      contextLines,
     });
     const renamed = await Promise.all(
       paths
@@ -3391,6 +3393,7 @@ async function processTrackedChanges(
             refsForDiff,
             path,
             ignoreWhitespace,
+            contextLines,
           }),
         ),
     );
