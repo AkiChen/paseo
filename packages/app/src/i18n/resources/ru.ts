@@ -233,6 +233,14 @@ export const ru: TranslationResources = {
     scrollToBottom: "Прокрутить вниз",
     historyLoadFailed: "Не удалось загрузить историю агента",
     messageCapped: "Это сообщение было обрезано ({{bytes}} байт).",
+    turnProcess: {
+      thought: "Подумал немного",
+      toolCalls: {
+        one: "{{count}} вызов инструмента",
+        other: "{{count}} вызовов инструментов",
+      },
+      subAgents: { one: "{{count}} субагент", other: "{{count}} субагентов" },
+    },
     permission: {
       rejectedPlan: "Отклонённый план",
       approvedPlan: "Одобренный план",
@@ -957,6 +965,11 @@ export const ru: TranslationResources = {
         diffMode: "Режим диффа",
         uncommitted: "Незафиксированные изменения",
         committed: "Зафиксированные изменения",
+        compareBase: "Сравнить с",
+        compareBaseInput: "Ветка, тег или коммит",
+        compareBasePlaceholder: "Ветка, тег или SHA коммита",
+        applyBase: "Применить сравнение",
+        useDefaultBase: "Использовать базу workspace по умолчанию",
         branchUnknown: "Неизвестная ветка",
         base: "базовая ветка",
         newFile: "Новый",
@@ -1807,6 +1820,7 @@ export const ru: TranslationResources = {
   },
   diffViewer: {
     empty: "Нет изменений для отображения",
+    expandContext: "Нажмите, чтобы показать скрытые строки",
   },
   serviceUrl: {
     title: "Открыть URL сервиса",
@@ -1901,6 +1915,12 @@ export const ru: TranslationResources = {
       empty: "Нет изменений",
       loadError: "Не удалось загрузить список изменений",
       capabilityMissing: "Обновите хост, чтобы просматривать изменения в коммитах.",
+      commitDetails: {
+        toggle: "Развернуть или свернуть сведения о коммите",
+        commit: "Коммит",
+        author: "Автор",
+        date: "Дата",
+      },
     },
   },
   toolCallDetails: {
@@ -2090,6 +2110,32 @@ export const ru: TranslationResources = {
         description: "Количество строк, сохраняемых во встроенном буфере терминала",
         accessibilityLabel: "Количество строк в буфере прокрутки терминала",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Тема терминала",
+        description: "Цветовая схема встроенных терминалов",
+        accessibilityLabel: "Выбрать тему терминала ({{value}})",
+      },
+      terminalCursor: {
+        label: "Курсор терминала",
+        description: "Форма курсора во встроенных терминалах",
+        options: { block: "Блок", bar: "Черта", underline: "Подчеркивание" },
+      },
+      terminalCloseConfirmation: {
+        label: "Подтверждать закрытие терминалов",
+        description: "Спрашивать перед остановкой терминала из вкладки",
+        accessibilityLabel: "Подтверждать закрытие терминалов",
+      },
       autoExpandReasoning: {
         label: "Всегда разворачивать размышления",
         description:
@@ -2101,6 +2147,16 @@ export const ru: TranslationResources = {
         options: {
           overview: "Сводка",
           detailed: "Все подробности",
+        },
+      },
+      turnProcessFolding: {
+        label: "Процесс хода",
+        description:
+          "Сворачивает рассуждения и вызовы инструментов завершённого хода DeepSeek Harness",
+        accessibilityLabel: "Выбрать отображение процесса хода ({{value}})",
+        options: {
+          compact: "Компактно",
+          standard: "Стандартно",
         },
       },
       language: {

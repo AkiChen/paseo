@@ -2,6 +2,22 @@
 dist/
 release/
 
+# A packaged Electron app copied into the package root. electron-builder writes
+# to release/, so these names at this level only appear when a build ran with its
+# output directory overridden or when a win-unpacked tree was copied by hand.
+# None of them exist in this package's source, so the patterns are anchored to
+# the package root to keep them off the real source tree.
+/Paseo.exe
+/Paseo
+/*.dll
+/*.pak
+/*.bin
+/*.dat
+/LICENSE.electron.txt
+/LICENSES.chromium.html
+/locales/
+/resources/
+
 # Dependencies
 node_modules/
 

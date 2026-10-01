@@ -11,6 +11,7 @@ import {
 import { StyleSheet } from "react-native-unistyles";
 import Svg, { G, Path } from "react-native-svg";
 import type { ITheme } from "@xterm/xterm";
+import type { TerminalCursorStyle } from "../cursor-style";
 
 import {
   createTerminalCellStyleResolver,
@@ -72,6 +73,7 @@ export interface TerminalGridViewProps {
   xtermTheme?: ITheme;
   fontFamily?: string;
   fontSize?: number;
+  cursorStyle: TerminalCursorStyle;
   style?: StyleProp<ViewStyle>;
   selection?: TerminalSelectionRange | null;
   onCellMetricsChange?: (metrics: TerminalGridCellMetrics) => void;
@@ -297,6 +299,7 @@ export function TerminalGridView({
   xtermTheme = DEFAULT_TERMINAL_THEME,
   fontFamily,
   fontSize = DEFAULT_FONT_SIZE,
+  cursorStyle: cursorShape,
   style,
   selection = null,
   onCellMetricsChange,
@@ -366,12 +369,14 @@ export function TerminalGridView({
       styles.cursor,
       {
         backgroundColor: resolver.cursorColor,
-        width: metrics.cellWidth,
-        height: metrics.cellHeight,
+        width: cursorShape === "bar" ? Math.max(2, metrics.cellWidth * 0.14) : metrics.cellWidth,
+        height:
+          cursorShape === "underline" ? Math.max(2, metrics.cellHeight * 0.14) : metrics.cellHeight,
         transform: [{ translateX: cursorOffset.x }, { translateY: cursorOffset.y }],
+        ...(cursorShape === "underline" ? { top: metrics.cellHeight * 0.86 } : {}),
       },
     ];
-  }, [metrics, state.cursor.col, state.cursor.row, resolver.cursorColor]);
+  }, [cursorShape, metrics, state.cursor.col, state.cursor.row, resolver.cursorColor]);
 
   const handleMeasure = useCallback(
     (event: LayoutChangeEvent) => {

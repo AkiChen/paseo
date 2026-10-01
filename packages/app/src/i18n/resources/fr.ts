@@ -235,6 +235,11 @@ export const fr: TranslationResources = {
     scrollToBottom: "Faire défiler vers le bas",
     historyLoadFailed: "Impossible de charger l’historique de l’agent",
     messageCapped: "Ce message a été tronqué ({{bytes}} octets).",
+    turnProcess: {
+      thought: "A réfléchi un moment",
+      toolCalls: { one: "{{count}} appel d’outil", other: "{{count}} appels d’outils" },
+      subAgents: { one: "{{count}} sous-agent", other: "{{count}} sous-agents" },
+    },
     permission: {
       rejectedPlan: "Plan refusé",
       approvedPlan: "Plan approuvé",
@@ -972,6 +977,11 @@ export const fr: TranslationResources = {
         diffMode: "Mode différentiel",
         uncommitted: "Non engagé",
         committed: "Engagé",
+        compareBase: "Comparer avec",
+        compareBaseInput: "Branche, tag ou commit",
+        compareBasePlaceholder: "Branche, tag ou SHA du commit",
+        applyBase: "Appliquer la comparaison",
+        useDefaultBase: "Utiliser la base par défaut de l’espace de travail",
         branchUnknown: "Inconnu",
         base: "base",
         newFile: "Nouveau",
@@ -1827,6 +1837,7 @@ export const fr: TranslationResources = {
   },
   diffViewer: {
     empty: "Aucun changement à afficher",
+    expandContext: "Cliquez pour afficher les lignes masquées",
   },
   serviceUrl: {
     title: "Service ouvertURL",
@@ -1921,6 +1932,12 @@ export const fr: TranslationResources = {
       empty: "Aucune modification",
       loadError: "Échec du chargement des différences",
       capabilityMissing: "Mettez à jour l'hôte pour voir les différences des commits.",
+      commitDetails: {
+        toggle: "Développer ou réduire les détails du commit",
+        commit: "Commit",
+        author: "Auteur",
+        date: "Date",
+      },
     },
   },
   toolCallDetails: {
@@ -2110,6 +2127,32 @@ export const fr: TranslationResources = {
         description: "Lignes conservées dans le tampon du terminal intégré",
         accessibilityLabel: "Lignes de défilementTerminal",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Thème du terminal",
+        description: "Jeu de couleurs des terminaux intégrés",
+        accessibilityLabel: "Sélectionner le thème du terminal ({{value}})",
+      },
+      terminalCursor: {
+        label: "Curseur du terminal",
+        description: "Forme du curseur dans les terminaux integres",
+        options: { block: "Bloc", bar: "Barre", underline: "Souligne" },
+      },
+      terminalCloseConfirmation: {
+        label: "Confirmer avant de fermer les terminaux",
+        description: "Demander avant d’arrêter un terminal depuis son onglet",
+        accessibilityLabel: "Confirmer avant de fermer les terminaux",
+      },
       autoExpandReasoning: {
         label: "Toujours afficher le raisonnement",
         description: "Afficher le raisonnement de l'agent entièrement développé par défaut",
@@ -2120,6 +2163,16 @@ export const fr: TranslationResources = {
         options: {
           overview: "Résumé",
           detailed: "Détails complets",
+        },
+      },
+      turnProcessFolding: {
+        label: "Processus du tour",
+        description:
+          "Replie la réflexion et les appels d’outils d’un tour DeepSeek Harness terminé",
+        accessibilityLabel: "Sélectionner l’affichage du processus du tour ({{value}})",
+        options: {
+          compact: "Compact",
+          standard: "Standard",
         },
       },
       language: {

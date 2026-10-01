@@ -12,12 +12,14 @@ import type {
   TerminalLocalFileLinkSource,
   TerminalLocalFileLinkTarget,
 } from "../local-links/terminal-local-link-provider";
+import type { TerminalCursorStyle } from "../cursor-style";
 
 interface MountMessage {
   type: "mount";
   streamKey: string;
   initialSnapshot: TerminalState | null;
   scrollbackLines: number;
+  cursorStyle: TerminalCursorStyle;
   theme: ITheme;
   fontFamily?: string;
   fontSize?: number;
@@ -40,6 +42,7 @@ type InboundMessage =
   | { type: "resize"; streamKey: string; forceClaim: boolean; shouldClaim?: boolean }
   | { type: "setTheme"; streamKey: string; theme: ITheme }
   | { type: "setScrollback"; streamKey: string; lines: number }
+  | { type: "setCursorStyle"; streamKey: string; style: TerminalCursorStyle }
   | { type: "setFont"; streamKey: string; fontFamily?: string; fontSize?: number }
   | { type: "setPendingModifiers"; streamKey: string; pendingModifiers: PendingTerminalModifiers }
   | { type: "setSwipeGesturesEnabled"; streamKey: string; enabled: boolean }
@@ -300,6 +303,9 @@ class TerminalWebViewBridge {
       case "setScrollback":
         this.runtime?.setScrollback({ lines: message.lines });
         return true;
+      case "setCursorStyle":
+        this.runtime?.setCursorStyle({ style: message.style });
+        return true;
       case "setFont":
         this.runtime?.setFont({ fontFamily: message.fontFamily, fontSize: message.fontSize });
         return true;
@@ -361,6 +367,7 @@ class TerminalWebViewBridge {
       host: this.host,
       initialSnapshot: message.initialSnapshot,
       scrollback: message.scrollbackLines,
+      cursorStyle: message.cursorStyle,
       theme: message.theme,
       fontFamily: message.fontFamily,
       fontSize: message.fontSize,

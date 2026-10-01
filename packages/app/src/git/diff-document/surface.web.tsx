@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useToast } from "@/contexts/toast-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { InlineReviewAddButton, InlineReviewThread } from "@/review";
+import { InlineReviewAddButton, InlineReviewThread, type InlineReviewActions } from "@/review";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import type { ReviewableDiffTarget } from "@/utils/diff-layout";
 import { DocumentFileHeader } from "./document-file-header";
@@ -70,6 +70,24 @@ function emptyStickyHeaderCanvasSlot(): StickyHeaderCanvasSlot {
   };
 }
 
+function tryExpandContext(input: {
+  wasClick: boolean;
+  hit: DiffHit | null;
+  model: ReturnType<typeof buildDiffDocumentModel> | null;
+  mode: DiffSurfaceProps["mode"];
+}): boolean {
+  if (!input.wasClick || input.hit?.kind !== "cell") {
+    return false;
+  }
+  const row = input.model?.rows[input.hit.position.rowIndex];
+  const cell = row?.kind === "line" ? row.cells[input.hit.position.cellIndex] : null;
+  if (cell?.type !== "header" || input.mode.fullContextShown || !input.mode.onExpandContext) {
+    return false;
+  }
+  input.mode.onExpandContext();
+  return true;
+}
+
 export function DiffSurface(props: DiffSurfaceProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -118,8 +136,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const hasHoveredAffordanceRef = useRef(false);
   const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_STACK;
   useLayoutEffect(() => {
-    const stats = (window as typeof window & { __PASEO_DIFF_REACT_STATS__?: { commits: number } })
-      .__PASEO_DIFF_REACT_STATS__;
+    const stats = (
+      window as typeof window & {
+        __PASEO_DIFF_REACT_STATS__?: { commits: number };
+      }
+    ).__PASEO_DIFF_REACT_STATS__;
     if (stats) stats.commits += 1;
   });
   const desiredTypography = useMemo<DiffTypography>(
@@ -158,7 +179,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     readyTypographyResource === typographyResource ? typographyResource.typography : null;
   const measurement =
     readyTypographyResource === typographyResource ? typographyResource.measureText : null;
-  const reviewActions = props.mode.kind === "working" ? props.mode.reviewActions : undefined;
+  const reviewActions = props.mode.reviewActions;
   const model = useMemo(() => {
     if (!loadedTypography || !measurement) {
       return emptyDiffDocumentModel({
@@ -181,7 +202,10 @@ export function DiffSurface(props: DiffSurfaceProps) {
       labels: {
         binary: t("workspace.git.diff.binaryFile"),
         tooLarge: t("workspace.git.diff.tooLarge"),
+        expandContext: t("diffViewer.expandContext"),
       },
+      canExpandContext:
+        !props.mode.fullContextShown && typeof props.mode.onExpandContext === "function",
       materializationWindow: diffMaterializationWindow(fileWindowTop, viewport.height),
     });
     return next;
@@ -192,6 +216,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     props.displayPreferences.layout,
     props.displayPreferences.wrapLines,
     props.files,
+    props.mode,
     props.palette,
     reviewActions,
     t,
@@ -683,6 +708,17 @@ export function DiffSurface(props: DiffSurfaceProps) {
             alreadyDragging: drag.moved,
           })
         : false;
+      if (
+        tryExpandContext({
+          wasClick: Boolean(drag && !moved),
+          hit,
+          model: modelRef.current,
+          mode: props.mode,
+        })
+      ) {
+        setSelection(null);
+        return;
+      }
       if (drag && !moved && drag.dismissSelectionOnClick) {
         setSelection(null);
         return;
@@ -699,7 +735,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
         reviewActions.onStartComment(hit.target);
       }
     },
-    [pointHit, reviewActions, setSelection],
+    [pointHit, props.mode, reviewActions, setSelection],
   );
   const cancelPointer = useCallback(() => {
     dragRef.current = null;
@@ -829,6 +865,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
                 file={file}
                 selectedPath={props.selectedPath}
                 mode={props.mode}
+                collapsible={props.collapsible}
                 onToggleFile={props.onToggleFile}
                 onSelectPath={props.onSelectPath}
                 canvasRendered
@@ -845,7 +882,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
                 onScroll={handleHorizontalScroll}
               />
             ))}
-          {props.mode.kind === "working" && reviewActions
+          {reviewActions
             ? model.rows.map((row) => {
                 if (row.kind !== "line" || row.reviewHeight === 0) return null;
                 const columnWidth = model.viewportWidth / row.cells.length;
@@ -1038,7 +1075,7 @@ function WebReviewThread({
   pinToViewport,
 }: {
   target: ReviewableDiffTarget;
-  actions: NonNullable<Extract<DiffSurfaceProps["mode"], { kind: "working" }>["reviewActions"]>;
+  actions: InlineReviewActions;
   top: number;
   left: number;
   width: number;

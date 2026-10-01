@@ -337,6 +337,7 @@ function GeneralSection({ settings, handleLanguageChange }: GeneralSectionProps)
         t(selectedLanguageOption.labelKey),
       )
     : settings.language;
+
   return (
     <SettingsSection title={t("settings.general.title")}>
       <View style={settingsStyles.card}>
@@ -1576,6 +1577,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[2],
   },
+
   placeholder: {
     flex: 1,
     alignItems: "center",

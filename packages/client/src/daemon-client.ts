@@ -4067,26 +4067,42 @@ export class DaemonClient {
     mode: "uncommitted" | "base";
     baseRef?: string;
     ignoreWhitespace?: boolean;
-  }): { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean } {
+    contextLines?: number;
+  }): {
+    mode: "uncommitted" | "base";
+    baseRef?: string;
+    ignoreWhitespace?: boolean;
+    contextLines?: number;
+  } {
     if (compare.mode === "uncommitted") {
       return compare.ignoreWhitespace === true
-        ? { mode: "uncommitted", ignoreWhitespace: true }
-        : { mode: "uncommitted" };
+        ? { mode: "uncommitted", ignoreWhitespace: true, contextLines: compare.contextLines }
+        : { mode: "uncommitted", contextLines: compare.contextLines };
     }
     const trimmedBaseRef = compare.baseRef?.trim();
     if (!trimmedBaseRef) {
       return compare.ignoreWhitespace === true
-        ? { mode: "base", ignoreWhitespace: true }
-        : { mode: "base" };
+        ? { mode: "base", ignoreWhitespace: true, contextLines: compare.contextLines }
+        : { mode: "base", contextLines: compare.contextLines };
     }
     return compare.ignoreWhitespace === true
-      ? { mode: "base", baseRef: trimmedBaseRef, ignoreWhitespace: true }
-      : { mode: "base", baseRef: trimmedBaseRef };
+      ? {
+          mode: "base",
+          baseRef: trimmedBaseRef,
+          ignoreWhitespace: true,
+          contextLines: compare.contextLines,
+        }
+      : { mode: "base", baseRef: trimmedBaseRef, contextLines: compare.contextLines };
   }
 
   async getCheckoutDiff(
     cwd: string,
-    compare: { mode: "uncommitted" | "base"; baseRef?: string; ignoreWhitespace?: boolean },
+    compare: {
+      mode: "uncommitted" | "base";
+      baseRef?: string;
+      ignoreWhitespace?: boolean;
+      contextLines?: number;
+    },
     requestId?: string,
   ): Promise<CheckoutDiffPayload> {
     return this.sendCorrelatedSessionRequest({
@@ -4225,6 +4241,7 @@ export class DaemonClient {
     sha: string,
     path: string,
     requestId?: string,
+    contextLines?: number,
   ): Promise<{ file: ParsedDiffFile | null }> {
     const payload =
       await this.sendNamespacedCorrelatedSessionRequest<"checkout.commits.file_diff.response">({
@@ -4234,6 +4251,7 @@ export class DaemonClient {
           cwd,
           sha,
           path,
+          contextLines,
         },
         timeout: 60000,
       });

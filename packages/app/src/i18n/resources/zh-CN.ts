@@ -231,6 +231,11 @@ export const zhCN: TranslationResources = {
     scrollToBottom: "滚动到底部",
     historyLoadFailed: "无法加载智能体历史记录",
     messageCapped: "此消息已被截断（{{bytes}} 字节）。",
+    turnProcess: {
+      thought: "已思考",
+      toolCalls: { one: "{{count}} 次工具调用", other: "{{count}} 次工具调用" },
+      subAgents: { one: "{{count}} 个子代理", other: "{{count}} 个子代理" },
+    },
     permission: {
       rejectedPlan: "已拒绝的计划",
       approvedPlan: "已批准的计划",
@@ -932,6 +937,11 @@ export const zhCN: TranslationResources = {
         diffMode: "Diff 模式",
         uncommitted: "未 commit",
         committed: "已 commit",
+        compareBase: "比较基准",
+        compareBaseInput: "分支、tag 或 commit",
+        compareBasePlaceholder: "分支、tag 或 commit SHA",
+        applyBase: "应用比较基准",
+        useDefaultBase: "使用 workspace 默认基准",
         branchUnknown: "未知",
         base: "base",
         newFile: "新增",
@@ -1754,6 +1764,7 @@ export const zhCN: TranslationResources = {
   },
   diffViewer: {
     empty: "没有可显示的变更",
+    expandContext: "点击展开隐藏行",
   },
   serviceUrl: {
     title: "打开服务 URL",
@@ -1847,6 +1858,12 @@ export const zhCN: TranslationResources = {
       empty: "没有更改",
       loadError: "加载差异失败",
       capabilityMissing: "请更新主机以查看提交差异。",
+      commitDetails: {
+        toggle: "展开或折叠提交详情",
+        commit: "提交",
+        author: "作者",
+        date: "时间",
+      },
     },
   },
   toolCallDetails: {
@@ -2031,6 +2048,32 @@ export const zhCN: TranslationResources = {
         description: "内置终端缓冲区保留的行数",
         accessibilityLabel: "终端回滚行数",
       },
+      terminalFontFamily: {
+        label: "终端字体",
+        description: "终端标签页使用的字体",
+        accessibilityLabel: "终端字体",
+        placeholder: "默认终端字体",
+      },
+      terminalFontSize: {
+        label: "终端字号",
+        description: "终端标签页使用的字号",
+        accessibilityLabel: "终端字号",
+      },
+      terminalTheme: {
+        label: "终端主题",
+        description: "内置终端使用的配色方案",
+        accessibilityLabel: "选择终端主题（{{value}}）",
+      },
+      terminalCursor: {
+        label: "终端光标",
+        description: "内置终端中光标的形状",
+        options: { block: "方块", bar: "竖线", underline: "下划线" },
+      },
+      terminalCloseConfirmation: {
+        label: "关闭终端前确认",
+        description: "从标签页停止终端前显示确认窗口",
+        accessibilityLabel: "关闭终端前确认",
+      },
       autoExpandReasoning: {
         label: "始终展开推理过程",
         description: "默认情况下完全展开 AI 的思考和推理过程",
@@ -2041,6 +2084,15 @@ export const zhCN: TranslationResources = {
         options: {
           overview: "摘要",
           detailed: "完整详情",
+        },
+      },
+      turnProcessFolding: {
+        label: "轮次过程",
+        description: "折叠 DeepSeek Harness 轮次结束后的思考与工具调用",
+        accessibilityLabel: "选择轮次过程显示方式（{{value}}）",
+        options: {
+          compact: "紧凑",
+          standard: "标准",
         },
       },
       language: {

@@ -1,4 +1,9 @@
 npmRebuild: false
+# The legacy winCodeSign archive contains macOS symlinks and cannot be extracted
+# on Windows machines without the Create symbolic links privilege. The current
+# platform-specific toolset downloads only the Windows tools needed by this build.
+toolsets:
+  winCodeSign: "1.1.0"
 appId: sh.paseo.desktop
 productName: Paseo
 executableName: Paseo
@@ -39,7 +44,9 @@ mac:
   artifactName: "Paseo-${version}-${arch}.${ext}"
   minimumSystemVersion: "13.0.0"
   category: public.app-category.developer-tools
-  icon: assets/icon.icns
+  # electron-builder converts this PNG itself. The checked-in .icns still holds the
+  # previous mark and cannot be regenerated without macOS tooling.
+  icon: assets/icon.png
   hardenedRuntime: true
   notarize: true
   entitlements: build/entitlements.mac.plist
@@ -80,8 +87,14 @@ appImage:
   # version stays discoverable via the release tag and the in-app version.
   artifactName: "Paseo-${arch}.${ext}"
 win:
+  # The packaged exe has to carry the app icon, and electron-builder writes it with
+  # rcedit through the pinned winCodeSign toolset. The legacy archive that needs
+  # elevated link privileges is what that pin exists to avoid, so this is safe here.
+  signAndEditExecutable: true
   artifactName: "Paseo-Setup-${version}-${arch}.${ext}"
-  icon: assets/icon.ico
+  # As with mac: the checked-in .ico holds the previous mark, so let electron-builder
+  # convert the PNG instead of shipping a stale icon.
+  icon: assets/icon.png
   extraResources:
     - from: bin/paseo.cmd
       to: bin/paseo.cmd

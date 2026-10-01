@@ -41,30 +41,45 @@ describe("GenericACPAgentClient", () => {
     });
     void _client;
 
-    expect(mockState.superConstructorOptions).toEqual([
-      {
-        provider: "acp",
-        logger: expect.any(Object),
-        runtimeSettings: {
-          env: {
-            HERMES_LOG: "info",
-          },
-        },
-        defaultCommand: ["hermes", "acp"],
-        capabilities: {
-          supportsStreaming: true,
-          supportsSessionPersistence: true,
-          supportsDynamicModes: true,
-          supportsMcpServers: true,
-          supportsReasoningStream: true,
-          supportsToolInvocations: true,
-          supportsRewindConversation: false,
-          supportsRewindFiles: false,
-          supportsRewindBoth: false,
+    // The constructor spreads the whole option object, so this asserts the
+    // fields the test is about rather than enumerating every option.
+    expect(mockState.superConstructorOptions.at(-1)).toMatchObject({
+      provider: "acp",
+      logger: expect.any(Object),
+      runtimeSettings: {
+        env: {
+          HERMES_LOG: "info",
         },
         waitForInitialCommands: true,
       },
-    ]);
+      defaultCommand: ["hermes", "acp"],
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+        supportsDynamicModes: true,
+        supportsMcpServers: true,
+        supportsReasoningStream: true,
+        supportsToolInvocations: true,
+        supportsRewindConversation: false,
+        supportsRewindFiles: false,
+        supportsRewindBoth: false,
+      },
+    });
+  });
+
+  test("forwards a configured session metadata store to the client", () => {
+    const _client = new GenericACPAgentClient({
+      logger: createTestLogger(),
+      command: ["dsh", "--profile", "acp"],
+      providerParams: {
+        sessionMetadata: { kind: "dsh-projcache", home: "~/.dsh" },
+      },
+    });
+    void _client;
+
+    expect(mockState.superConstructorOptions.at(-1)).toMatchObject({
+      sessionMetadata: { kind: "dsh-projcache", home: "~/.dsh" },
+    });
   });
 
   test("uses provider params to report MCP support", () => {

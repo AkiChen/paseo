@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { FileFind, FileFindModel } from "../find/index.web";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { foldGutter, foldKeymap } from "@codemirror/language";
+import { EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { getLanguageForFile } from "@getpaseo/highlight";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { EditorVisualTheme } from "../editor/extensions.web";
 import { editorTheme } from "../editor/extensions.web";
+import { codeFolding } from "../editor/fold.web";
+import {
+  setTargetLines,
+  targetLineHighlight,
+  targetLinesFromLocation,
+} from "../editor/target-line.web";
 import { selectSourcePresentation, type SourcePresentation } from "./presentation";
 
 interface FileSourceViewProps {
@@ -80,6 +87,12 @@ function ReadonlyCodeMirror({
             "aria-label": `Source for ${values.filename}`,
           }),
           EditorView.editable.of(false),
+          lineNumbers(),
+          highlightActiveLineGutter(),
+          foldGutter(),
+          codeFolding(),
+          targetLineHighlight,
+          keymap.of(foldKeymap),
           languageCompartment.of(
             languageFor({ filename: values.filename, presentation: values.presentation }),
           ),
@@ -109,13 +122,22 @@ function ReadonlyCodeMirror({
     });
   }, [filename, presentation, theme]);
 
+  const { lineEnd, lineStart } = location;
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !location.lineStart) return;
-    const line = Math.min(location.lineStart, view.state.doc.lines);
-    const from = view.state.doc.line(line).from;
-    view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
-  }, [location.lineStart, navigationRevision]);
+    if (!view) return;
+    const range = targetLinesFromLocation(view.state, { lineEnd, lineStart });
+    if (!range) {
+      view.dispatch({ effects: setTargetLines.of(null) });
+      return;
+    }
+    const from = view.state.doc.line(range.fromLine).from;
+    // The selection marks the gutter number; the decoration marks the line.
+    view.dispatch({
+      selection: { anchor: from },
+      effects: [setTargetLines.of(range), EditorView.scrollIntoView(from, { y: "center" })],
+    });
+  }, [lineEnd, lineStart, navigationRevision]);
 
   return (
     <div style={FRAME_STYLE}>

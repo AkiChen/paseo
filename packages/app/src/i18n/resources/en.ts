@@ -227,6 +227,11 @@ export const en = {
     scrollToBottom: "Scroll to bottom",
     historyLoadFailed: "Couldn't load agent history",
     messageCapped: "This message was capped ({{bytes}} bytes).",
+    turnProcess: {
+      thought: "Thought for a while",
+      toolCalls: { one: "{{count}} tool call", other: "{{count}} tool calls" },
+      subAgents: { one: "{{count}} subagent", other: "{{count}} subagents" },
+    },
     permission: {
       rejectedPlan: "Rejected plan",
       approvedPlan: "Approved plan",
@@ -948,6 +953,11 @@ export const en = {
         diffMode: "Diff mode",
         uncommitted: "Uncommitted",
         committed: "Committed",
+        compareBase: "Compare against",
+        compareBaseInput: "Branch, tag, or commit",
+        compareBasePlaceholder: "Branch, tag, or commit SHA",
+        applyBase: "Apply comparison",
+        useDefaultBase: "Use workspace default",
         branchUnknown: "Unknown",
         base: "base",
         newFile: "New",
@@ -1800,6 +1810,7 @@ export const en = {
   },
   diffViewer: {
     empty: "No changes to display",
+    expandContext: "Click to show hidden lines",
   },
   serviceUrl: {
     title: "Open service URL",
@@ -1893,6 +1904,12 @@ export const en = {
       empty: "No changes",
       loadError: "Failed to load diff",
       capabilityMissing: "Update the host to view commit diffs.",
+      commitDetails: {
+        toggle: "Toggle commit details",
+        commit: "Commit",
+        author: "Author",
+        date: "Date",
+      },
     },
   },
   toolCallDetails: {
@@ -2178,6 +2195,32 @@ export const en = {
         description: "Lines kept in the built-in terminal buffer",
         accessibilityLabel: "Terminal scrollback lines",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "Terminal theme",
+        description: "Color scheme used by built-in terminals",
+        accessibilityLabel: "Select terminal theme ({{value}})",
+      },
+      terminalCursor: {
+        label: "Terminal cursor",
+        description: "Shape of the cursor in built-in terminals",
+        options: { block: "Block", bar: "Bar", underline: "Underline" },
+      },
+      terminalCloseConfirmation: {
+        label: "Confirm before closing terminals",
+        description: "Ask before stopping a terminal from its tab",
+        accessibilityLabel: "Confirm before closing terminals",
+      },
       autoExpandReasoning: {
         label: "Always expand reasoning",
         description: "Show agent thinking and chain-of-thought blocks fully expanded by default",
@@ -2188,6 +2231,15 @@ export const en = {
         options: {
           overview: "Summary",
           detailed: "Full detail",
+        },
+      },
+      turnProcessFolding: {
+        label: "Turn process",
+        description: "Collapse a finished DeepSeek Harness turn's thinking and tool calls",
+        accessibilityLabel: "Select turn process display ({{value}})",
+        options: {
+          compact: "Compact",
+          standard: "Standard",
         },
       },
       language: {

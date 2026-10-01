@@ -2142,6 +2142,7 @@ const CheckoutDiffCompareSchema = z.object({
   mode: z.enum(["uncommitted", "base"]),
   baseRef: z.string().optional(),
   ignoreWhitespace: z.boolean().optional(),
+  contextLines: z.number().int().min(0).max(100000).optional(),
 });
 
 export const CheckoutStatusRequestSchema = z.object({
@@ -2266,7 +2267,10 @@ const CheckoutCommitSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
   subject: z.string(),
+  // COMPAT(commitMessage): added in v0.8.0; older hosts omit the full body.
+  message: z.string().optional(),
   authorName: z.string(),
+  authorEmail: z.string().optional(),
   authorDate: z.string(), // ISO 8601
   isOnRemote: z.boolean(), // false = local-only (unpushed)
   // COMPAT(commitBaseClassification): added in v0.2.0, remove optional after 2027-01-23.
@@ -2285,6 +2289,7 @@ export const CheckoutCommitFileDiffRequestSchema = z.object({
   cwd: z.string(),
   sha: z.string(),
   path: z.string(),
+  contextLines: z.number().int().min(0).max(100000).optional(),
   requestId: z.string(),
 });
 

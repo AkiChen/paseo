@@ -231,6 +231,11 @@ export const ar: TranslationResources = {
     scrollToBottom: "قم بالتمرير إلى الأسفل",
     historyLoadFailed: "تعذر تحميل سجل الوكيل",
     messageCapped: "تم اقتطاع هذه الرسالة ({{bytes}} بايت).",
+    turnProcess: {
+      thought: "فكّر لبعض الوقت",
+      toolCalls: { one: "{{count}} استدعاء أداة", other: "{{count}} استدعاءات أدوات" },
+      subAgents: { one: "{{count}} وكيل فرعي", other: "{{count}} وكلاء فرعيون" },
+    },
     permission: {
       rejectedPlan: "خطة مرفوضة",
       approvedPlan: "خطة معتمدة",
@@ -940,6 +945,11 @@ export const ar: TranslationResources = {
         diffMode: "وضع الفرق",
         uncommitted: "غير ملتزم",
         committed: "ملتزم",
+        compareBase: "مقارنة مع",
+        compareBaseInput: "فرع أو وسم أو التزام",
+        compareBasePlaceholder: "فرع أو وسم أو SHA الالتزام",
+        applyBase: "تطبيق المقارنة",
+        useDefaultBase: "استخدام الإعداد الافتراضي لمساحة العمل",
         branchUnknown: "مجهول",
         base: "قاعدة",
         newFile: "جديد",
@@ -1775,6 +1785,7 @@ export const ar: TranslationResources = {
   },
   diffViewer: {
     empty: "لا توجد تغييرات للعرض",
+    expandContext: "انقر لإظهار الأسطر المخفية",
   },
   serviceUrl: {
     title: "افتح الخدمة URL",
@@ -1868,6 +1879,12 @@ export const ar: TranslationResources = {
       empty: "لا توجد تغييرات",
       loadError: "فشل تحميل الفروقات",
       capabilityMissing: "حدّث المضيف لعرض فروقات الالتزامات.",
+      commitDetails: {
+        toggle: "توسيع أو طي تفاصيل الالتزام",
+        commit: "الالتزام",
+        author: "المؤلف",
+        date: "التاريخ",
+      },
     },
   },
   toolCallDetails: {
@@ -2055,6 +2072,32 @@ export const ar: TranslationResources = {
         description: "يتم الاحتفاظ بالخطوط في المخزن المؤقت الطرفي المدمج",
         accessibilityLabel: "خطوط التمرير Terminal",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "سمة الطرفية",
+        description: "نظام الألوان المستخدم في الطرفيات المدمجة",
+        accessibilityLabel: "اختيار سمة الطرفية ({{value}})",
+      },
+      terminalCursor: {
+        label: "Terminal cursor",
+        description: "Shape of the cursor in built-in terminals",
+        options: { block: "Block", bar: "Bar", underline: "Underline" },
+      },
+      terminalCloseConfirmation: {
+        label: "التأكيد قبل إغلاق الطرفيات",
+        description: "السؤال قبل إيقاف طرفية من علامة تبويبها",
+        accessibilityLabel: "التأكيد قبل إغلاق الطرفيات",
+      },
       autoExpandReasoning: {
         label: "عرض التفكير دائماً",
         description: "إظهار تفكير الوكيل وخطوات الاستدلال بشكل كامل بشكل افتراضي",
@@ -2065,6 +2108,15 @@ export const ar: TranslationResources = {
         options: {
           overview: "ملخص",
           detailed: "التفاصيل الكاملة",
+        },
+      },
+      turnProcessFolding: {
+        label: "سير الدور",
+        description: "يطوي تفكير دور DeepSeek Harness المنتهي واستدعاءات الأدوات",
+        accessibilityLabel: "اختر عرض سير الدور ({{value}})",
+        options: {
+          compact: "مضغوط",
+          standard: "قياسي",
         },
       },
       language: {

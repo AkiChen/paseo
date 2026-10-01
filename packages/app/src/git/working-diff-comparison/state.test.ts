@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   expireWorkingDiffComparisonsInState,
+  resolveWorkingDiffBaseRefFromState,
   resolveWorkingDiffComparisonFromState,
+  selectWorkingDiffBaseRefInState,
   selectWorkingDiffComparisonInState,
   type WorkingDiffComparisonState,
   workingDiffComparisonKey,
@@ -10,7 +12,7 @@ import {
 const checkout = { serverId: "server-1", workspaceId: "workspace-1", cwd: "/repo" };
 
 function emptyState(): WorkingDiffComparisonState {
-  return { overrides: {} };
+  return { overrides: {}, baseRefOverrides: {} };
 }
 
 describe("working diff comparison", () => {
@@ -100,5 +102,36 @@ describe("working diff comparison", () => {
         isDirty: true,
       }),
     ).toBe(state);
+  });
+
+  it("scopes a custom base ref and restores the workspace default when cleared", () => {
+    const selected = selectWorkingDiffBaseRefInState(emptyState(), {
+      ...checkout,
+      baseRef: " feature/base ",
+    });
+    expect(
+      resolveWorkingDiffBaseRefFromState(selected, { ...checkout, defaultBaseRef: "main" }),
+    ).toBe("feature/base");
+
+    const switchedMode = selectWorkingDiffComparisonInState(selected, {
+      ...checkout,
+      comparison: "base",
+      isDirty: true,
+    });
+    expect(
+      resolveWorkingDiffBaseRefFromState(switchedMode, { ...checkout, defaultBaseRef: "main" }),
+    ).toBe("feature/base");
+    expect(
+      resolveWorkingDiffBaseRefFromState(selected, {
+        ...checkout,
+        workspaceId: "workspace-2",
+        defaultBaseRef: "main",
+      }),
+    ).toBe("main");
+
+    const cleared = selectWorkingDiffBaseRefInState(selected, { ...checkout, baseRef: "  " });
+    expect(
+      resolveWorkingDiffBaseRefFromState(cleared, { ...checkout, defaultBaseRef: "main" }),
+    ).toBe("main");
   });
 });

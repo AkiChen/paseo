@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { withUnistyles } from "react-native-unistyles";
 import { RenderProfile } from "@/utils/render-profiler";
+import { toggleCollapsedFilePath } from "./collapse";
 import { createDiffPalette, retainDiffPalette } from "./palette";
 import { DiffSurface } from "./surface";
 import type { DiffDocumentProps, DiffHeaderTypography, DiffPalette } from "./types";
@@ -19,24 +20,24 @@ function ThemedDiffDocument(props: ThemedDiffDocumentProps) {
   const paletteRef = useRef(props.palette);
   paletteRef.current = retainDiffPalette(paletteRef.current, props.palette);
   const palette = paletteRef.current;
-  const collapseState = props.mode.kind === "working" ? props.collapseState : null;
+  // A commit diff folds the same way a Changes diff does; only the mode that
+  // stores the paths differs.
+  const collapseState = props.collapseState ?? null;
   const paths = collapseState?.paths ?? EMPTY_PATHS;
   const collapsedFilePaths = useMemo(() => new Set(paths), [paths]);
   const toggleFile = useCallback(
     (path: string) => {
       if (!collapseState) return;
-      const next = collapsedFilePaths.has(path)
-        ? paths.filter((entry) => entry !== path)
-        : [...paths, path];
-      collapseState.onChange(next);
+      collapseState.onChange(toggleCollapsedFilePath(paths, path));
     },
-    [collapseState, collapsedFilePaths, paths],
+    [collapseState, paths],
   );
   return (
     <DiffSurface
       {...props}
       palette={palette}
       collapsedFilePaths={collapsedFilePaths}
+      collapsible={collapseState !== null}
       onToggleFile={toggleFile}
       selectedPath={selectedPath}
       onSelectPath={setSelectedPath}

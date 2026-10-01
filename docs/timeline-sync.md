@@ -5,10 +5,12 @@ Agent chat delivery has two paths:
 1. **Live stream** — `agent_stream` WebSocket messages for immediacy. These may be delta-shaped lifecycle updates.
 2. **Authoritative history** — `fetch_agent_timeline_request` for correctness. This always returns full projected timeline items, never lifecycle deltas.
 
-The daemon retains projected items in memory. Each source event advances the stream sequence,
-then replaces the previous tool state or merges into the current text item. Intermediate payloads
-are never retained for history or catch-up. Provider history is the durable transcript authority
-and rebuilds the projection when an agent resumes.
+The daemon keeps canonical rows in runtime memory and persists them under
+`$PASEO_HOME/timelines/`, one append-only file per agent. Provider replay still wins where it
+exists: a provider that replays its transcript replaces the stored rows, and a provider that
+replays nothing — an ACP agent that resumes without `loadSession` — leaves them in place. That
+fallback is the only reason the copy exists; the store it replaces rewrote a whole transcript on
+every buffered update, and that write amplification is why it left production.
 
 The invariants are:
 
@@ -17,7 +19,7 @@ The invariants are:
 > through backward pagination.
 
 Tool output is bounded before it enters either delivery path. Canonical shell tool output is sliced
-to 64 KiB, and the same bounded item is used for runtime timeline rows and live stream events.
+to 64 KiB, and the same bounded item is used for durable timeline rows and live stream events.
 Provider history hydration applies the same rule so reopening an agent cannot restore an oversized
 tool payload.
 
