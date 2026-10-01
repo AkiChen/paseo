@@ -271,4 +271,24 @@ describe("foldTurnProcesses", () => {
 
     expect(fold(items).items).toBe(items);
   });
+
+  // The stream folds two presentation lists and merges their host maps, so a
+  // control row has to resolve whichever list it came from.
+  it("resolves a control row from either presentation list", () => {
+    const tail = fold([
+      thought("t1", "turn-1"),
+      toolCall("c1", "turn-1"),
+      assistant("a1", "turn-1", "Answer."),
+    ]);
+    const head = fold([thought("h1", "turn-2"), assistant("h2", "turn-2", "Head answer.")]);
+    const foldsByHostId = new Map([...tail.foldsByHostId, ...head.foldsByHostId]);
+
+    expect(foldsByHostId.get(turnProcessFoldHostId("t1"))?.members.map((item) => item.id)).toEqual([
+      "t1",
+      "c1",
+    ]);
+    expect(foldsByHostId.get(turnProcessFoldHostId("h1"))?.members.map((item) => item.id)).toEqual([
+      "h1",
+    ]);
+  });
 });
