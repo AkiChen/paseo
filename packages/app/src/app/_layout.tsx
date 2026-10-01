@@ -22,6 +22,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AppearanceProvider } from "@/appearance/provider";
+import { useBundledFonts } from "@/assets/use-bundled-fonts";
 import { CommandCenter } from "@/command-center/command-center";
 import { CommandCenterRootActions } from "@/command-center/root-registration";
 import { CommandCenterProvider } from "@/command-center/provider";
@@ -1000,6 +1001,9 @@ function RootAppTree() {
 }
 
 export default function RootLayout() {
+  // Fonts the app ships (Fira Code) load here so the code font setting can name
+  // them on a device that does not have them installed.
+  useBundledFonts();
   useEffect(() => installWebScrollbarStyles(), []);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {

@@ -19,6 +19,7 @@ import {
 import { SettingsCard, SettingsSwitch } from "@/components/settings";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useContributedThemes } from "@/appearance/provider";
+import { BUNDLED_CODE_FONTS } from "@/assets/bundled-fonts";
 import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import {
   MAX_CODE_FONT_SIZE,
@@ -591,7 +592,12 @@ export function AppearanceSection() {
   } = useContributedThemes();
   const showInterfaceFontFamilyRow = !isNative;
   const uiFontPlaceholder = resolveDefaultStackPlaceholder(t, DEFAULT_UI_FONT_STACK);
-  const monoFontPlaceholder = resolveDefaultStackPlaceholder(t, DEFAULT_MONO_FONT_STACK);
+  // The code font field takes a family name, so name what the app ships with the
+  // placeholder: those families resolve on any platform.
+  const monoFontPlaceholder = [
+    resolveDefaultStackPlaceholder(t, DEFAULT_MONO_FONT_STACK),
+    ...BUNDLED_CODE_FONTS,
+  ].join(" · ");
 
   const [uiFontDraft, setUiFontDraft] = useState(settings.uiFontFamily);
   const [monoFontDraft, setMonoFontDraft] = useState(settings.monoFontFamily);
