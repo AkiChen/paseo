@@ -233,6 +233,14 @@ export const ja: TranslationResources = {
     scrollToBottom: "下にスクロール",
     historyLoadFailed: "エージェントの履歴を読み込めませんでした",
     messageCapped: "このメッセージは上限で切り詰められました（{{bytes}}バイト）。",
+    turnProcess: {
+      thought: "しばらく考えました",
+      toolCalls: { one: "ツール呼び出し {{count}} 件", other: "ツール呼び出し {{count}} 件" },
+      subAgents: {
+        one: "サブエージェント {{count}} 件",
+        other: "サブエージェント {{count}} 件",
+      },
+    },
     permission: {
       rejectedPlan: "却下されたプラン",
       approvedPlan: "承認されたプラン",
@@ -953,6 +961,11 @@ export const ja: TranslationResources = {
         diffMode: "差分モード",
         uncommitted: "未コミット",
         committed: "コミット済み",
+        compareBase: "比較対象",
+        compareBaseInput: "ブランチ、タグ、またはコミット",
+        compareBasePlaceholder: "ブランチ、タグ、またはコミット SHA",
+        applyBase: "比較を適用",
+        useDefaultBase: "ワークスペースのデフォルトを使用",
         branchUnknown: "不明",
         base: "ベース",
         newFile: "新規",
@@ -1794,6 +1807,7 @@ export const ja: TranslationResources = {
   },
   diffViewer: {
     empty: "表示する変更がありません",
+    expandContext: "クリックして非表示の行を表示",
   },
   serviceUrl: {
     title: "サービスURLを開く",
@@ -1888,6 +1902,12 @@ export const ja: TranslationResources = {
       empty: "変更はありません",
       loadError: "差分の読み込みに失敗しました",
       capabilityMissing: "コミット差分を表示するにはホストを更新してください。",
+      commitDetails: {
+        toggle: "コミット詳細を展開または折りたたむ",
+        commit: "コミット",
+        author: "作成者",
+        date: "日時",
+      },
     },
   },
   toolCallDetails: {
@@ -2074,6 +2094,32 @@ export const ja: TranslationResources = {
         description: "組み込みターミナルバッファに保持する行数",
         accessibilityLabel: "ターミナルスクロールバック行数",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "ターミナルテーマ",
+        description: "内蔵ターミナルで使用する配色",
+        accessibilityLabel: "ターミナルテーマを選択（{{value}}）",
+      },
+      terminalCursor: {
+        label: "ターミナルカーソル",
+        description: "内蔵ターミナルのカーソル形状",
+        options: { block: "ブロック", bar: "バー", underline: "下線" },
+      },
+      terminalCloseConfirmation: {
+        label: "ターミナルを閉じる前に確認",
+        description: "タブからターミナルを停止する前に確認する",
+        accessibilityLabel: "ターミナルを閉じる前に確認",
+      },
       autoExpandReasoning: {
         label: "常に思考プロセスを展開",
         description: "デフォルトでAIのエージェント思考・推論ブロックを完全に展開して表示します",
@@ -2084,6 +2130,15 @@ export const ja: TranslationResources = {
         options: {
           overview: "要約",
           detailed: "すべての詳細",
+        },
+      },
+      turnProcessFolding: {
+        label: "ターンの過程",
+        description: "終了した DeepSeek Harness のターンの思考とツール呼び出しを折りたたみます",
+        accessibilityLabel: "ターンの過程の表示を選択（{{value}}）",
+        options: {
+          compact: "コンパクト",
+          standard: "標準",
         },
       },
       language: {

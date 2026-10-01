@@ -92,6 +92,33 @@ function addBareRemote(repoDir: string, tempDir: string): string {
 }
 
 describe("listCheckoutCommits", () => {
+  it("includes the full commit message and author email", async () => {
+    const { repoDir } = initRepoOnMain();
+    writeFileSync(join(repoDir, "details.txt"), "details\n");
+    git(["add", "."], repoDir);
+    git(
+      [
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "Detailed subject",
+        "-m",
+        "First body paragraph.\n\nSecond body paragraph.",
+      ],
+      repoDir,
+    );
+
+    const { commits } = await listCheckoutCommits({ cwd: repoDir });
+
+    expect(commits[0]).toMatchObject({
+      subject: "Detailed subject",
+      message: "Detailed subject\n\nFirst body paragraph.\n\nSecond body paragraph.",
+      authorName: "Test User",
+      authorEmail: "test@test.com",
+    });
+  });
+
   it("lists recent commits newest-first with on-remote flags and file stats", async () => {
     const { repoDir, tempDir } = initRepoOnMain();
     git(["checkout", "-b", "feature"], repoDir);

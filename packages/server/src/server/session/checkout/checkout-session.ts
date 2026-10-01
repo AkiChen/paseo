@@ -291,14 +291,19 @@ export class CheckoutSession {
   }
 
   async handleCommitFileDiffRequest(msg: CheckoutCommitFileDiffRequest): Promise<void> {
-    const { cwd, sha, path, requestId } = msg;
+    const { cwd, sha, path, contextLines, requestId } = msg;
 
     try {
       assertSafeGitRef(sha, "commit");
       if (path.length === 0 || isAbsolute(path) || path.split(/[\\/]/).includes("..")) {
         throw new Error(`Invalid path: ${path}`);
       }
-      const file = await getCommitFileDiff({ cwd: expandTilde(cwd), sha, path });
+      const file = await getCommitFileDiff({
+        cwd: expandTilde(cwd),
+        sha,
+        path,
+        contextLines,
+      });
       this.host.emit({
         type: "checkout.commits.file_diff.response",
         payload: { cwd, sha, path, file, error: null, requestId },

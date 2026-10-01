@@ -9,6 +9,7 @@ export interface WorkingDiffComparisonOverride {
 
 export interface WorkingDiffComparisonState {
   overrides: Record<string, WorkingDiffComparisonOverride>;
+  baseRefOverrides: Record<string, string>;
 }
 
 export interface WorkingDiffCheckoutIdentity {
@@ -38,6 +39,7 @@ export function selectWorkingDiffComparisonInState(
   },
 ): WorkingDiffComparisonState {
   return {
+    ...state,
     overrides: {
       ...state.overrides,
       [workingDiffComparisonKey(input)]: {
@@ -48,6 +50,28 @@ export function selectWorkingDiffComparisonInState(
       },
     },
   };
+}
+
+export function selectWorkingDiffBaseRefInState(
+  state: WorkingDiffComparisonState,
+  input: WorkingDiffCheckoutIdentity & { baseRef: string },
+): WorkingDiffComparisonState {
+  const key = workingDiffComparisonKey(input);
+  const baseRef = input.baseRef.trim();
+  const baseRefOverrides = { ...state.baseRefOverrides };
+  if (baseRef) {
+    baseRefOverrides[key] = baseRef;
+  } else {
+    delete baseRefOverrides[key];
+  }
+  return { ...state, baseRefOverrides };
+}
+
+export function resolveWorkingDiffBaseRefFromState(
+  state: WorkingDiffComparisonState,
+  input: WorkingDiffCheckoutIdentity & { defaultBaseRef?: string },
+): string | undefined {
+  return state.baseRefOverrides[workingDiffComparisonKey(input)] ?? input.defaultBaseRef;
 }
 
 export function resolveWorkingDiffComparisonFromState(
@@ -81,5 +105,5 @@ export function expireWorkingDiffComparisonsInState(
 
   const overrides = { ...state.overrides };
   for (const key of staleKeys) delete overrides[key];
-  return { overrides };
+  return { ...state, overrides };
 }

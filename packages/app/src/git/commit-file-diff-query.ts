@@ -7,14 +7,27 @@ export function commitFileDiffQueryOptions(input: {
   cwd: string;
   sha: string;
   path: string;
+  contextLines?: number;
   client: Pick<DaemonClient, "getCommitFileDiff"> | null;
   enabled: boolean;
 }) {
   return {
-    queryKey: checkoutCommitFileDiffQueryKey(input.serverId, input.cwd, input.sha, input.path),
+    queryKey: checkoutCommitFileDiffQueryKey(
+      input.serverId,
+      input.cwd,
+      input.sha,
+      input.path,
+      input.contextLines,
+    ),
     queryFn: () => {
       if (!input.client) throw new Error("Host disconnected");
-      return input.client.getCommitFileDiff(input.cwd, input.sha, input.path);
+      return input.client.getCommitFileDiff(
+        input.cwd,
+        input.sha,
+        input.path,
+        undefined,
+        input.contextLines,
+      );
     },
     enabled: input.enabled,
     gcTime: COMMIT_FILE_DIFF_STALE_TIME,

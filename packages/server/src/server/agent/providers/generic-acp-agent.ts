@@ -17,6 +17,7 @@ import {
   type DiagnosticEntry,
   toDiagnosticErrorMessage,
 } from "./diagnostic-utils.js";
+import { SessionMetadataSchema } from "./session-metadata.js";
 
 export const GenericACPProviderParamsSchema = z
   .object({
@@ -32,6 +33,9 @@ export const GenericACPProviderParamsSchema = z
         terminal: z.boolean().optional(),
       })
       .optional(),
+    // A store to read session titles and times from, for providers that do not
+    // send them over ACP. See `session-metadata.ts`.
+    sessionMetadata: SessionMetadataSchema.optional(),
   })
   .passthrough();
 
@@ -79,6 +83,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
       configFeatureOptions: options.configFeatureOptions,
       extensionCommandsParser: options.extensionCommandsParser,
       catalogModelResolver: options.catalogModelResolver,
+      sessionMetadata: providerParams.sessionMetadata ?? null,
       now: options.now,
     });
 

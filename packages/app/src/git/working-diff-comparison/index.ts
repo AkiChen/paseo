@@ -2,7 +2,9 @@ import { useCallback } from "react";
 import { create } from "zustand";
 import {
   expireWorkingDiffComparisonsInState,
+  resolveWorkingDiffBaseRefFromState,
   resolveWorkingDiffComparisonFromState,
+  selectWorkingDiffBaseRefInState,
   selectWorkingDiffComparisonInState,
   type WorkingDiffCheckoutIdentity,
   type WorkingDiffComparison,
@@ -16,30 +18,48 @@ interface WorkingDiffComparisonStore extends WorkingDiffComparisonState {
       isDirty: boolean;
     },
   ) => void;
+  selectBaseRef: (input: WorkingDiffCheckoutIdentity & { baseRef: string }) => void;
 }
 
 const useWorkingDiffComparisonStore = create<WorkingDiffComparisonStore>((set) => ({
   overrides: {},
+  baseRefOverrides: {},
   select: (input) => set((state) => selectWorkingDiffComparisonInState(state, input)),
+  selectBaseRef: (input) => set((state) => selectWorkingDiffBaseRefInState(state, input)),
 }));
 
 export function useWorkingDiffComparison(
-  input: WorkingDiffCheckoutIdentity & { isDirty: boolean },
+  input: WorkingDiffCheckoutIdentity & { isDirty: boolean; defaultBaseRef?: string },
 ): {
   comparison: WorkingDiffComparison;
+  baseRef: string | undefined;
   selectComparison: (comparison: WorkingDiffComparison) => void;
+  selectBaseRef: (baseRef: string) => void;
 } {
-  const { serverId, workspaceId, cwd, isDirty } = input;
+  const { serverId, workspaceId, cwd, isDirty, defaultBaseRef } = input;
   const comparison = useWorkingDiffComparisonStore((state) =>
     resolveWorkingDiffComparisonFromState(state, { serverId, workspaceId, cwd, isDirty }),
   );
+  const baseRef = useWorkingDiffComparisonStore((state) =>
+    resolveWorkingDiffBaseRefFromState(state, {
+      serverId,
+      workspaceId,
+      cwd,
+      defaultBaseRef,
+    }),
+  );
   const select = useWorkingDiffComparisonStore((state) => state.select);
+  const selectBase = useWorkingDiffComparisonStore((state) => state.selectBaseRef);
   const selectComparison = useCallback(
     (next: WorkingDiffComparison) =>
       select({ serverId, workspaceId, cwd, isDirty, comparison: next }),
     [cwd, isDirty, select, serverId, workspaceId],
   );
-  return { comparison, selectComparison };
+  const selectBaseRef = useCallback(
+    (next: string) => selectBase({ serverId, workspaceId, cwd, baseRef: next }),
+    [cwd, selectBase, serverId, workspaceId],
+  );
+  return { comparison, baseRef, selectComparison, selectBaseRef };
 }
 
 export function selectWorkingDiffComparison(
@@ -68,5 +88,5 @@ export function expireWorkingDiffComparisons(input: {
 }
 
 export function resetWorkingDiffComparisons(): void {
-  useWorkingDiffComparisonStore.setState({ overrides: {} });
+  useWorkingDiffComparisonStore.setState({ overrides: {}, baseRefOverrides: {} });
 }

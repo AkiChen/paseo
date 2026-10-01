@@ -130,6 +130,7 @@ import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import { FileAgentTimelineStore } from "./agent/file-agent-timeline-store.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
@@ -184,7 +185,12 @@ import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
 } from "./agent/provider-launch-config.js";
-import { loadPersistedConfig, type PersistedConfig } from "./persisted-config.js";
+import {
+  loadPersistedConfig,
+  readFileAccessRoots,
+  type PersistedConfig,
+} from "./persisted-config.js";
+import { configureFileAccessRoots } from "./file-explorer/service.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
@@ -596,6 +602,9 @@ export async function createPaseoDaemon(
           cli: config.configReload?.cli,
           relayEnabledFallback: config.configReload?.relayEnabledFallback,
         });
+        // File access roots are read from persisted config, so a `paseo reload`
+        // is what applies an edit to an already running daemon.
+        configureFileAccessRoots(readFileAccessRoots(config.paseoHome));
         return {
           mutable: createInitialMutableDaemonConfig(reloaded),
           overrideControlledPaths: reloaded.configReload?.overrideControlledPaths ?? [],
@@ -603,6 +612,7 @@ export async function createPaseoDaemon(
       },
     },
   });
+  configureFileAccessRoots(readFileAccessRoots(config.paseoHome));
   const orchestrationSkills = createOrchestrationSkills(daemonConfigStore);
   void orchestrationSkills.autoUpdate().catch((error) => {
     logger.error({ err: error }, "Failed to maintain orchestration skills at startup");
@@ -862,6 +872,10 @@ export async function createPaseoDaemon(
   }
 
   const agentStorage = new AgentStorage(config.agentStoragePath, logger);
+  // Durable canonical rows for agents whose provider cannot replay its own
+  // transcript. Providers that can still win: a resumed agent skips provider
+  // hydration once these rows exist, and a forced hydration replaces them.
+  const durableTimelineStore = new FileAgentTimelineStore(path.join(config.paseoHome, "timelines"));
   const projectRegistry = new FileBackedProjectRegistry(
     path.join(config.paseoHome, "projects", "projects.json"),
     logger,
@@ -926,6 +940,7 @@ export async function createPaseoDaemon(
   });
   const initialAgentManagerState = providerSnapshotManager.getAgentManagerProviderState();
   const agentManager = new AgentManager({
+    durableTimelineStore,
     pluginLifecycle: pluginRuntime,
     clients: initialAgentManagerState.clients,
     providerDefinitions: initialAgentManagerState.providerDefinitions,

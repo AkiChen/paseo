@@ -16,6 +16,8 @@ interface DiffDocumentBaseProps {
 
 export interface WorkingDiffMode {
   kind: "working";
+  fullContextShown?: boolean;
+  onExpandContext?: () => void;
   reviewActions?: InlineReviewActions;
   onFilePress?: (path: string) => void;
   focusPath?: string;
@@ -33,16 +35,26 @@ export interface WorkingDiffMode {
   onRevert?: (path: string, oldPath?: string) => void;
 }
 
+export interface DiffCollapseState {
+  paths: readonly string[];
+  onChange: (paths: string[]) => void;
+}
+
 export type DiffDocumentProps = DiffDocumentBaseProps &
   (
     | {
         mode: WorkingDiffMode;
-        collapseState: {
-          paths: readonly string[];
-          onChange: (paths: string[]) => void;
-        };
+        collapseState: DiffCollapseState;
       }
-    | { mode: { kind: "commit" }; collapseState?: never }
+    | {
+        mode: {
+          kind: "commit";
+          reviewActions?: InlineReviewActions;
+          fullContextShown?: boolean;
+          onExpandContext?: () => void;
+        };
+        collapseState?: DiffCollapseState;
+      }
   );
 
 export interface DiffTypography {
@@ -183,7 +195,8 @@ export interface BuildDiffDocumentModelInput {
   measureText: TextMeasurer;
   palette: DiffPalette;
   reviewActions?: InlineReviewActions;
-  labels: { binary: string; tooLarge: string };
+  labels: { binary: string; tooLarge: string; expandContext?: string };
+  canExpandContext?: boolean;
   materializationWindow?: { top: number; height: number };
   /** A geometry-compatible model whose unchanged file measurements may be reused. */
   reuseFrom?: readonly DiffDocumentModel[];
@@ -225,6 +238,8 @@ export type DiffSurfaceProps = DiffDocumentProps & {
   palette: DiffPalette;
   headerTypography: DiffHeaderTypography;
   collapsedFilePaths: ReadonlySet<string>;
+  /** False when the diff has no collapse state, so a header stays inert. */
+  collapsible: boolean;
   onToggleFile: (path: string) => void;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;

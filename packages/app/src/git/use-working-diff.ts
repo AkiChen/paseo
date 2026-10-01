@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   buildWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
@@ -29,6 +29,7 @@ export function useWorkingDiff({
   enabled,
   queryScope,
 }: UseWorkingDiffOptions) {
+  const [showFullContext, setShowFullContext] = useState(false);
   const {
     status,
     isLoading: isStatusLoading,
@@ -41,19 +42,34 @@ export function useWorkingDiff({
   const statusErrorMessage =
     status?.error?.message ??
     (isStatusError && statusError instanceof Error ? statusError.message : null);
-  const baseRef = gitStatus?.baseRef ?? undefined;
+  const defaultBaseRef = gitStatus?.baseRef ?? undefined;
   const hasUncommittedChanges = Boolean(gitStatus?.isDirty);
   const currentBranchName =
     gitStatus?.currentBranch && gitStatus.currentBranch !== "HEAD" ? gitStatus.currentBranch : null;
 
-  const { comparison: diffMode, selectComparison } = useWorkingDiffComparison({
+  const {
+    comparison: diffMode,
+    baseRef,
+    selectComparison,
+    selectBaseRef: selectComparisonBaseRef,
+  } = useWorkingDiffComparison({
     serverId,
     workspaceId,
     cwd,
     isDirty: hasUncommittedChanges,
+    defaultBaseRef,
   });
+  useEffect(() => setShowFullContext(false), [baseRef, cwd, diffMode, ignoreWhitespace, serverId]);
+  const expandFullContext = useCallback(() => setShowFullContext(true), []);
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
   const selectBase = useCallback(() => selectComparison("base"), [selectComparison]);
+  const selectBaseRef = useCallback(
+    (nextBaseRef: string) => {
+      selectComparisonBaseRef(nextBaseRef);
+      selectComparison("base");
+    },
+    [selectComparison, selectComparisonBaseRef],
+  );
 
   const {
     files,
@@ -66,6 +82,7 @@ export function useWorkingDiff({
     mode: diffMode,
     baseRef,
     ignoreWhitespace,
+    contextLines: showFullContext ? 100000 : undefined,
     enabled: enabled && isGit,
     queryScope,
   });
@@ -101,12 +118,15 @@ export function useWorkingDiff({
     diffMode,
     selectUncommitted,
     selectBase,
+    selectBaseRef,
     files,
     diffPayloadError,
     diffTooLarge,
     isDiffLoading,
     reviewActions,
     reviewAttachment,
+    showFullContext,
+    expandFullContext,
   };
 }
 

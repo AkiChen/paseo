@@ -165,9 +165,10 @@ export async function listDirectoryEntries({
           kind,
         });
       } catch (error) {
-        // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
-        // Skip entries whose targets disappeared instead of failing the whole listing.
-        if (isMissingEntryError(error) || isOutsideWorkspaceError(error)) {
+        // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md)
+        // and links into a mount outside every allowed root. Skip those entries
+        // instead of failing the whole listing.
+        if (shouldSkipDirectoryEntry(error)) {
           return null;
         }
         throw error;
@@ -800,28 +801,111 @@ async function isCaseOnlyRename(
   return isSameEntry && source.requestedPath.toLowerCase() === targetPath.toLowerCase();
 }
 
+/**
+ * Directories the explorer may reach outside a workspace root, from
+ * `daemon.fileAccess.allowedRoots`. Held here rather than in every call site so
+ * the boundary has one enforcement point: a request the file explorer forgets to
+ * pass the list to is a request that silently skips the whole check.
+ */
+let configuredAllowedRoots: readonly string[] = [];
+
+export function configureFileAccessRoots(roots: readonly string[]): void {
+  configuredAllowedRoots = roots.map((root) => root.trim()).filter((root) => root.length > 0);
+}
+
+export function getFileAccessRoots(): readonly string[] {
+  return configuredAllowedRoots;
+}
+
 async function resolveScopedPath({
   root,
   relativePath = ".",
 }: ScopedPathParams): Promise<ScopedPath> {
   const workspacePath = expandUserPath(root);
   const requestedPath = resolvePathFromBase(workspacePath, relativePath);
-  assertWithinWorkspace(workspacePath, requestedPath);
-  const canonicalRoot = await fs.realpath(workspacePath);
-  try {
-    const canonicalPath = await fs.realpath(requestedPath);
-    assertWithinWorkspace(canonicalRoot, canonicalPath);
-    return { requestedPath, resolvedPath: canonicalPath };
-  } catch (error) {
-    if (isMissingEntryError(error)) return { requestedPath, resolvedPath: requestedPath };
-    throw error;
+  // Relative entries are workspace-relative, `~` entries are the daemon user's.
+  const allowedPaths = configuredAllowedRoots.map((entry) =>
+    resolvePathFromBase(workspacePath, entry),
+  );
+  if (!isWithinAnyRoot([workspacePath, ...allowedPaths], requestedPath)) {
+    throw new FileAccessRefusedError(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
   }
+  const canonicalRoot = await fs.realpath(workspacePath);
+  const canonicalAllowed = await Promise.all(
+    allowedPaths.map(async (entry) => fs.realpath(entry).catch(() => null)),
+  );
+  const canonicalPath = await fs.realpath(requestedPath).catch((error: unknown) => {
+    if (isMissingEntryError(error)) return null;
+    throw error;
+  });
+  if (canonicalPath === null) {
+    // A link whose target is gone used to fall through to a read that failed as
+    // "missing", so the reader was told the file does not exist while the path
+    // they clicked plainly does.
+    const failure = classifySymlinkFailure({
+      linkTarget: await readSymlinkTarget(requestedPath),
+      escapedWorkspace: false,
+    });
+    if (failure) throw new FileAccessRefusedError(describeSymlinkFailure(failure));
+    return { requestedPath, resolvedPath: requestedPath };
+  }
+  const canonicalRoots = [
+    canonicalRoot,
+    ...canonicalAllowed.filter((entry): entry is string => entry !== null),
+  ];
+  if (!isWithinAnyRoot(canonicalRoots, canonicalPath)) {
+    const failure = classifySymlinkFailure({
+      linkTarget: await readSymlinkTarget(requestedPath),
+      escapedWorkspace: true,
+    });
+    throw new FileAccessRefusedError(
+      failure ? describeSymlinkFailure(failure) : ACCESS_OUTSIDE_WORKSPACE_MESSAGE,
+    );
+  }
+  return { requestedPath, resolvedPath: canonicalPath };
 }
 
-function assertWithinWorkspace(root: string, candidate: string): void {
+function isWithinAnyRoot(roots: readonly string[], candidate: string): boolean {
+  return roots.some((root) => isWithinWorkspace(root, candidate));
+}
+
+/**
+ * Why a path the reader can see could not be opened. A symlink inside the
+ * workspace may point elsewhere or point at nothing, and neither is "the file
+ * does not exist"; the message has to name the link so the reader can fix it.
+ */
+export interface SymlinkFailure {
+  kind: "outside" | "dangling";
+  link: string;
+}
+
+export function classifySymlinkFailure(input: {
+  linkTarget: string | null;
+  escapedWorkspace: boolean;
+}): SymlinkFailure | null {
+  if (input.linkTarget === null) {
+    return null;
+  }
+  return { kind: input.escapedWorkspace ? "outside" : "dangling", link: input.linkTarget };
+}
+
+export function describeSymlinkFailure(failure: SymlinkFailure): string {
+  return failure.kind === "outside"
+    ? `Symlink target is outside the workspace: ${failure.link}`
+    : `Symlink target does not exist: ${failure.link}`;
+}
+
+async function readSymlinkTarget(entryPath: string): Promise<string | null> {
+  const stats = await fs.lstat(entryPath).catch(() => null);
+  if (!stats?.isSymbolicLink()) {
+    return null;
+  }
+  return fs.readlink(entryPath).catch(() => null);
+}
+
+function isWithinWorkspace(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return;
-  throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 async function openFileForRead(filePath: string): Promise<FileHandle> {
@@ -853,8 +937,28 @@ function isMissingEntryError(error: unknown): boolean {
   return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
 }
 
-function isOutsideWorkspaceError(error: unknown): boolean {
-  return error instanceof Error && error.message === ACCESS_OUTSIDE_WORKSPACE_MESSAGE;
+/**
+ * A path the explorer refuses to hand out. The message is what the reader sees,
+ * so it is only for them: callers that need to react to the refusal match the
+ * type, because a message that changes its wording must not change behaviour.
+ */
+export class FileAccessRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FileAccessRefusedError";
+  }
+}
+
+export function isFileAccessRefusedError(error: unknown): boolean {
+  return error instanceof Error && error.name === "FileAccessRefusedError";
+}
+
+/**
+ * An entry a directory listing hides instead of failing the listing: a broken
+ * link, or a link whose target sits outside every allowed root.
+ */
+export function shouldSkipDirectoryEntry(error: unknown): boolean {
+  return isMissingEntryError(error) || isFileAccessRefusedError(error);
 }
 
 function normalizeRelativePath({ root, targetPath }: { root: string; targetPath: string }): string {

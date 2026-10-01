@@ -165,6 +165,7 @@ function NativeTerminalEmulator({
   testId = "terminal-surface",
   xtermTheme = DEFAULT_XTERM_THEME,
   scrollbackLines,
+  cursorStyle,
   fontFamily,
   fontSize,
   keyboardInset = 0,
@@ -982,6 +983,7 @@ function NativeTerminalEmulator({
       xtermTheme={xtermTheme}
       fontFamily={fontFamily}
       fontSize={fontSize}
+      cursorStyle={cursorStyle}
       style={styles.nativeGrid}
       selection={selectionRange}
       onCellMetricsChange={handleCellMetricsChange}

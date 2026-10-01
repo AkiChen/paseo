@@ -64,6 +64,8 @@ import { QuestionFormCard } from "@/components/question-form-card";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import { createStreamPresentation, getStreamItemMessageId } from "./presentation";
 import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
+import { type TurnProcessFold } from "./turn-process-fold/model";
+import { TurnProcessFoldView } from "./turn-process-fold/view";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
@@ -370,6 +372,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
       new Set(),
     );
+    const [expandedTurnProcessFoldIds, setExpandedTurnProcessFoldIds] = useState<Set<string>>(
+      new Set(),
+    );
 
     // Get serverId (fallback to agent's serverId if not provided)
     const resolvedServerId = serverId ?? context.serverId ?? "";
@@ -553,6 +558,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         isTurnActive,
       ],
     );
+
     const {
       start: historyWindowStart,
       hasLocalHistory,
@@ -682,6 +688,18 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           next.add(groupId);
         } else {
           next.delete(groupId);
+        }
+        return next;
+      });
+    }, []);
+
+    const setTurnProcessFoldExpanded = useCallback((foldId: string, expanded: boolean) => {
+      setExpandedTurnProcessFoldIds((previous) => {
+        const next = new Set(previous);
+        if (expanded) {
+          next.add(foldId);
+        } else {
+          next.delete(foldId);
         }
         return next;
       });
@@ -821,6 +839,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const getToolCallGroup = useStableEvent((hostId: string) =>
       presentation.groupsByHostId.get(hostId),
     );
+    // The fold pass has to be re-applied against upstream's `presentation` projection
+    // before this can resolve a fold again; the two render sites below stay valid.
+    const getTurnProcessFold = useStableEvent(
+      (_hostId: string): TurnProcessFold | undefined => undefined,
+    );
     const renderToolCallItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "tool_call" }>) => {
         const group = getToolCallGroup(item.id);
@@ -860,6 +883,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
         const item = layoutItem.item;
+        const fold = getTurnProcessFold(item.id);
+        if (fold) {
+          return (
+            <TurnProcessFoldView
+              fold={fold}
+              expanded={expandedTurnProcessFoldIds.has(fold.host.id)}
+              onToggle={setTurnProcessFoldExpanded}
+            />
+          );
+        }
         switch (item.kind) {
           case "user_message":
             return renderUserMessageItem(layoutItem, item);
@@ -899,11 +932,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [
         agentId,
+        expandedTurnProcessFoldIds,
+        getTurnProcessFold,
         renderUserMessageItem,
         renderAssistantMessageItem,
         renderThoughtItem,
         renderToolCallItem,
         resolvedServerId,
+        setTurnProcessFoldExpanded,
       ],
     );
 

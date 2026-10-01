@@ -536,6 +536,41 @@ container. When delegating filesystem operations to Paseo (`fs.readTextFile: tru
 or `fs.writeTextFile: true`), ensure the agent and Paseo share equivalent
 absolute workspace paths.
 
+### Session titles and times from a provider store
+
+The import list takes a session's title, update time, and prompt previews from
+ACP: the first two from `session/list`, the previews from `loadSession`. A
+provider that sends neither leaves every row reading "untitled session" and 1970. When that provider keeps the same information on the same machine, point
+Paseo at the store so the rows read properly:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "my-agent": {
+        "extends": "acp",
+        "label": "My Agent",
+        "command": ["my-agent", "acp"],
+        "params": {
+          "sessionMetadata": { "kind": "dsh-projcache", "home": "~/.dsh" }
+        }
+      }
+    }
+  }
+}
+```
+
+`kind` selects the store format; `home` is the provider's home directory and
+defaults to the format's own. `dsh-projcache` reads DeepSeek Harness's
+`storages/session_projcache/sessions/<id>.json`, which is where its own UI takes
+the title from.
+
+Values read this way only fill what ACP left empty, so a provider that starts
+sending `title`, `updatedAt`, or `loadSession` needs no config change. A store
+that is missing, stale, or reformatted costs the extra fields and nothing else.
+The store format is private to the provider and versioned, so treat this as a
+bridge rather than the way sessions should be described.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.

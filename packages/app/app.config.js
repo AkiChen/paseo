@@ -121,6 +121,9 @@ export default {
       adaptiveIcon: {
         backgroundColor: "#000000",
         foregroundImage: "./assets/images/android-icon-foreground.png",
+        // Themed icons: Android tints this layer, so it is the mark's shape on
+        // transparency. No slot existed before the new icon set.
+        monochromeImage: "./assets/images/android-icon-monochrome.png",
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,

@@ -1,6 +1,8 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
   bracketMatching,
+  foldGutter,
+  foldKeymap,
   defaultHighlightStyle,
   indentOnInput,
   syntaxHighlighting,
@@ -13,6 +15,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { createCodeMirrorHighlightStyle, type HighlightStyle } from "@getpaseo/highlight";
+import { codeFolding } from "./fold.web";
 
 export interface EditorVisualTheme {
   colorScheme: "light" | "dark";
@@ -30,6 +33,8 @@ export interface EditorVisualTheme {
 export function editorBaseExtensions(onSave: () => void) {
   return [
     lineNumbers(),
+    foldGutter(),
+    codeFolding(),
     history(),
     drawSelection(),
     indentOnInput(),
@@ -41,6 +46,7 @@ export function editorBaseExtensions(onSave: () => void) {
       indentWithTab,
       ...defaultKeymap,
       ...historyKeymap,
+      ...foldKeymap,
     ]),
   ];
 }
@@ -77,6 +83,14 @@ export function editorTheme(theme: EditorVisualTheme) {
         },
         ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { backgroundColor: "transparent", color: theme.foreground },
+        // The line a transcript link named. It stays marked after the reader
+        // clicks elsewhere, so the target is still visible on return.
+        ".cm-targetLine": { backgroundColor: theme.selection },
+        ".cm-foldPlaceholder": {
+          backgroundColor: theme.background,
+          border: `1px solid ${theme.border}`,
+          color: theme.foregroundMuted,
+        },
         "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
           backgroundColor: theme.selection,
         },

@@ -231,6 +231,11 @@ export const ko: TranslationResources = {
     scrollToBottom: "맨 아래로 스크롤",
     historyLoadFailed: "에이전트 기록을 로드할 수 없습니다.",
     messageCapped: "이 메시지는 길이 제한으로 잘렸습니다({{bytes}}바이트).",
+    turnProcess: {
+      thought: "잠시 생각함",
+      toolCalls: { one: "도구 호출 {{count}}회", other: "도구 호출 {{count}}회" },
+      subAgents: { one: "서브에이전트 {{count}}개", other: "서브에이전트 {{count}}개" },
+    },
     permission: {
       rejectedPlan: "거부된 계획",
       approvedPlan: "승인된 계획",
@@ -947,6 +952,11 @@ export const ko: TranslationResources = {
         diffMode: "Diff 모드",
         uncommitted: "커밋되지 않음",
         committed: "커밋됨",
+        compareBase: "비교 대상",
+        compareBaseInput: "브랜치, 태그 또는 커밋",
+        compareBasePlaceholder: "브랜치, 태그 또는 커밋 SHA",
+        applyBase: "비교 적용",
+        useDefaultBase: "워크스페이스 기본값 사용",
         branchUnknown: "알 수 없음",
         base: "기준",
         newFile: "신규",
@@ -1785,6 +1795,7 @@ export const ko: TranslationResources = {
   },
   diffViewer: {
     empty: "표시할 변경 사항이 없습니다",
+    expandContext: "숨겨진 줄을 표시하려면 클릭",
   },
   serviceUrl: {
     title: "서비스 URL 열기",
@@ -1878,6 +1889,12 @@ export const ko: TranslationResources = {
       empty: "변경사항 없음",
       loadError: "Diff를 불러오지 못했습니다.",
       capabilityMissing: "커밋 diff를 보려면 호스트를 업데이트하세요.",
+      commitDetails: {
+        toggle: "커밋 세부 정보 펼치기 또는 접기",
+        commit: "커밋",
+        author: "작성자",
+        date: "날짜",
+      },
     },
   },
   toolCallDetails: {
@@ -2066,6 +2083,32 @@ export const ko: TranslationResources = {
         description: "내장 터미널 버퍼에 보관되는 줄 수",
         accessibilityLabel: "터미널 스크롤백 줄 수",
       },
+      terminalFontFamily: {
+        label: "Terminal font",
+        description: "Font used by terminal panes",
+        accessibilityLabel: "Terminal font",
+        placeholder: "Default terminal font",
+      },
+      terminalFontSize: {
+        label: "Terminal font size",
+        description: "Font size used by terminal panes",
+        accessibilityLabel: "Terminal font size",
+      },
+      terminalTheme: {
+        label: "터미널 테마",
+        description: "내장 터미널에서 사용할 색 구성표",
+        accessibilityLabel: "터미널 테마 선택({{value}})",
+      },
+      terminalCursor: {
+        label: "터미널 커서",
+        description: "내장 터미널의 커서 모양",
+        options: { block: "블록", bar: "막대", underline: "밑줄" },
+      },
+      terminalCloseConfirmation: {
+        label: "터미널을 닫기 전에 확인",
+        description: "탭에서 터미널을 중지하기 전에 확인",
+        accessibilityLabel: "터미널을 닫기 전에 확인",
+      },
       autoExpandReasoning: {
         label: "추론 항상 펼치기",
         description: "에이전트의 사고 및 추론 블록을 기본적으로 모두 펼쳐 표시합니다.",
@@ -2076,6 +2119,15 @@ export const ko: TranslationResources = {
         options: {
           overview: "요약",
           detailed: "전체 세부정보",
+        },
+      },
+      turnProcessFolding: {
+        label: "턴 과정",
+        description: "끝난 DeepSeek Harness 턴의 사고와 도구 호출을 접습니다",
+        accessibilityLabel: "턴 과정 표시 선택({{value}})",
+        options: {
+          compact: "간략",
+          standard: "표준",
         },
       },
       language: {

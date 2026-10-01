@@ -27,8 +27,17 @@ export function checkoutDiffQueryKey(
   mode: "uncommitted" | "base",
   baseRef?: string,
   ignoreWhitespace?: boolean,
+  contextLines?: number,
 ) {
-  return ["checkoutDiff", serverId, cwd, mode, baseRef ?? "", ignoreWhitespace === true] as const;
+  return [
+    "checkoutDiff",
+    serverId,
+    cwd,
+    mode,
+    baseRef ?? "",
+    ignoreWhitespace === true,
+    contextLines ?? null,
+  ] as const;
 }
 
 export function checkoutPrStatusQueryKey(serverId: string, cwd: string) {
@@ -44,8 +53,9 @@ export function checkoutCommitFileDiffQueryKey(
   cwd: string,
   sha: string,
   path: string,
+  contextLines?: number,
 ) {
-  return ["checkoutCommitFileDiff", serverId, cwd, sha, path] as const;
+  return ["checkoutCommitFileDiff", serverId, cwd, sha, path, contextLines ?? null] as const;
 }
 
 export async function invalidateCheckoutGitQueriesForClient(
