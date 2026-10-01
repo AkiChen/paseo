@@ -81,10 +81,10 @@ appImage:
   # version stays discoverable via the release tag and the in-app version.
   artifactName: "Paseo-${arch}.${ext}"
 win:
-  # Directory builds are unsigned local test clients. Avoid downloading the
-  # legacy winCodeSign archive, which contains macOS symlinks that require
-  # elevated Windows link privileges to extract.
-  signAndEditExecutable: false
+  # The packaged exe has to carry the app icon, and electron-builder writes it with
+  # rcedit through the pinned winCodeSign toolset. The legacy archive that needs
+  # elevated link privileges is what that pin exists to avoid, so this is safe here.
+  signAndEditExecutable: true
   artifactName: "Paseo-Setup-${version}-${arch}.${ext}"
   # As with mac: the checked-in .ico holds the previous mark, so let electron-builder
   # convert the PNG instead of shipping a stale icon.
