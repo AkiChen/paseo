@@ -50,6 +50,7 @@ describe("GenericACPAgentClient", () => {
         env: {
           HERMES_LOG: "info",
         },
+        waitForInitialCommands: true,
       },
       defaultCommand: ["hermes", "acp"],
       capabilities: {

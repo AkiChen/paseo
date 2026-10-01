@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { FileFind, FileFindModel } from "../find/index.web";
 import { Compartment, EditorState } from "@codemirror/state";
 import { foldGutter, foldKeymap } from "@codemirror/language";
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
@@ -66,6 +67,7 @@ function ReadonlyCodeMirror({
 }: Omit<FileSourceViewProps, "size" | "tooLargeMessage"> & {
   presentation: Exclude<SourcePresentation, "unsupported">;
 }) {
+  const [find] = useState(() => new FileFindModel());
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const initial = useRef({ content, filename, presentation, theme });
@@ -78,7 +80,12 @@ function ReadonlyCodeMirror({
       state: EditorState.create({
         doc: values.content,
         extensions: [
+          find.extension,
           EditorState.readOnly.of(true),
+          EditorView.contentAttributes.of({
+            tabindex: "0",
+            "aria-label": `Source for ${values.filename}`,
+          }),
           EditorView.editable.of(false),
           lineNumbers(),
           highlightActiveLineGutter(),
@@ -98,7 +105,7 @@ function ReadonlyCodeMirror({
       view.destroy();
       viewRef.current = null;
     };
-  }, []);
+  }, [find]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -132,7 +139,12 @@ function ReadonlyCodeMirror({
     });
   }, [lineEnd, lineStart, navigationRevision]);
 
-  return <div ref={hostRef} data-testid="file-source-editor" style={HOST_STYLE} />;
+  return (
+    <div style={FRAME_STYLE}>
+      <div ref={hostRef} data-testid="file-source-editor" style={HOST_STYLE} />
+      <FileFind model={find} editor={viewRef} />
+    </div>
+  );
 }
 
 function languageFor(input: {
@@ -144,6 +156,13 @@ function languageFor(input: {
     : [];
 }
 
+const FRAME_STYLE = {
+  display: "flex",
+  position: "relative",
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+} as const;
 const HOST_STYLE = { flex: 1, minHeight: 0, overflow: "hidden" } as const;
 const UNSUPPORTED_STYLE = {
   alignItems: "center",
