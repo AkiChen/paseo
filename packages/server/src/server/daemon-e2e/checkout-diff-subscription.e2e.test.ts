@@ -133,7 +133,7 @@ test("pushes updates when subscribed from a subdirectory and files change outsid
   }
 }, 60000);
 
-test("keeps the socket usable after rejecting an oversized structured diff", async () => {
+test("lists every changed file when the structured payload cannot hold them", async () => {
   const cwd = tmpCwd();
 
   try {
@@ -149,12 +149,14 @@ test("keeps the socket usable after rejecting an oversized structured diff", asy
     const subscription = ctx.client.observeCheckoutDiff(cwd, { mode: "uncommitted" });
     const initial = await subscription.ready;
 
-    expect(initial).toMatchObject({
-      cwd,
-      files: [],
-      diffTooLarge: true,
-      error: { code: "UNKNOWN" },
-    });
+    // A file the wire cannot carry becomes a "too large" row of its own. The
+    // panel keeps the file list instead of going blank for the whole checkout.
+    expect(initial.error).toBeNull();
+    expect(initial.diffTooLarge).toBeUndefined();
+    expect(initial.files.map((file) => ({ path: file.path, status: file.status }))).toEqual([
+      { path: "large-a.js", status: "too_large" },
+      { path: "large-b.js", status: "too_large" },
+    ]);
 
     const status = await ctx.client.getCheckoutStatus(cwd);
     expect(status).toMatchObject({ cwd, isGit: true });
