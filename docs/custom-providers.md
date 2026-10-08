@@ -571,6 +571,44 @@ that is missing, stale, or reformatted costs the extra fields and nothing else.
 The store format is private to the provider and versioned, so treat this as a
 bridge rather than the way sessions should be described.
 
+### Questions from a DeepSeek Harness agent
+
+`ask_user_question` and the plan review behind `exit_plan_mode` both ask the
+human through DeepSeek Harness's own client UI, on a channel an ACP client
+cannot see: the ACP profile mounts no answerer, and its agent presets — which
+own the `ask_user_question` tool in the first place — are not part of that
+composition. Name a bridge and Paseo answers both from its question card:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "dsh": {
+        "extends": "acp",
+        "label": "DeepSeek Harness",
+        "command": ["dsh", "--profile", "acp"],
+        "params": {
+          "sessionMetadata": { "kind": "dsh-projcache", "home": "~/.dsh" },
+          "questionBridge": { "kind": "dsh-plugin", "home": "~/.dsh" }
+        }
+      }
+    }
+  }
+}
+```
+
+`home` is the DeepSeek Harness home holding `profiles/`, and defaults to
+`~/.dsh`. Paseo materializes a plugin into that home and passes a generated
+`--patch` overlay on the provider command, so only the processes Paseo launches
+load it. The overlay also inserts the `ask_user_question` tool row, which the
+ACP composition does not carry.
+
+The card carries DSH's own options, its multi-select and free-text behavior, and
+its question headers. Answers go back as DSH shapes them: the labels the user
+ticked, plus whatever they typed. A refused card is reported as `ASK_CANCELLED`,
+which is what plan mode turns into "the user dismissed the review". Without this
+param an agent behaves as it did before — DSH reports the question as unanswered.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.

@@ -17,6 +17,7 @@ import {
   type DiagnosticEntry,
   toDiagnosticErrorMessage,
 } from "./diagnostic-utils.js";
+import { DshQuestionBridgeSchema } from "./dsh-questions/bridge.js";
 import { SessionMetadataSchema } from "./session-metadata.js";
 
 export const GenericACPProviderParamsSchema = z
@@ -36,6 +37,10 @@ export const GenericACPProviderParamsSchema = z
     // A store to read session titles and times from, for providers that do not
     // send them over ACP. See `session-metadata.ts`.
     sessionMetadata: SessionMetadataSchema.optional(),
+    // A plugin Paseo loads into the provider process to answer its user
+    // questions there, for providers whose ACP has no question channel. See
+    // `dsh-questions/bridge.ts`.
+    questionBridge: DshQuestionBridgeSchema.optional(),
   })
   .passthrough();
 
@@ -84,6 +89,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
       extensionCommandsParser: options.extensionCommandsParser,
       catalogModelResolver: options.catalogModelResolver,
       sessionMetadata: providerParams.sessionMetadata ?? null,
+      questionBridge: providerParams.questionBridge ?? null,
       now: options.now,
     });
 

@@ -107,6 +107,20 @@ import {
 } from "../create-agent-mode.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
+  createDshQuestionBridge,
+  type DshQuestionBridge,
+  type DshQuestionBridgeConnection,
+  type DshQuestionBridgeLaunch,
+  type DshQuestionBridgeSource,
+  type DshQuestionOutcome,
+  type DshQuestionRequest,
+} from "./dsh-questions/bridge.js";
+import {
+  mapDshQuestionRequest,
+  resolveDshQuestionAnswers,
+  type DshQuestionMapping,
+} from "./dsh-questions/questions.js";
+import {
   createSessionMetadataReader,
   mergeSessionMetadata,
   type SessionMetadataReader,
@@ -461,6 +475,8 @@ interface ACPAgentClientOptions {
   extensionCommandsParser?: ACPExtensionCommandsParser;
   /** Private store to read session titles and times from, when configured. */
   sessionMetadata?: SessionMetadataSource | null;
+  /** Bridge that answers this provider's user questions from Paseo. */
+  questionBridge?: DshQuestionBridgeSource | null;
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
@@ -495,6 +511,8 @@ interface ACPAgentSessionOptions {
   handle?: AgentPersistenceHandle;
   agentId?: string;
   launchEnv?: Record<string, string>;
+  /** Bridge that answers this provider's user questions from Paseo. */
+  questionBridge?: DshQuestionBridge | null;
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
@@ -607,6 +625,21 @@ interface PendingPermission {
   options: PermissionOption[];
   resolve: (response: RequestPermissionResponse) => void;
   reject: (error: Error) => void;
+  turnId: string | null;
+}
+
+/**
+ * A question relayed from the DSH bridge, waiting for the client to answer it.
+ *
+ * It is a permission request everywhere above this layer — the same event, the
+ * same pending list, the same response RPC — but the response is not an ACP
+ * option: it carries the question card's answers, which this session turns back
+ * into DSH's own answer shape.
+ */
+interface PendingQuestion {
+  request: AgentPermissionRequest;
+  mapping: DshQuestionMapping[];
+  settle: (outcome: DshQuestionOutcome) => void;
   turnId: string | null;
 }
 
@@ -926,6 +959,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
   private readonly importPromptCache = new Map<string, ACPImportPromptCacheEntry>();
   private readonly sessionMetadataReader: SessionMetadataReader | null;
+  private readonly questionBridge: DshQuestionBridge | null;
   private readonly now: () => number;
   protected readonly terminateProcess: ProcessTerminator;
 
@@ -956,6 +990,7 @@ export class ACPAgentClient implements AgentClient {
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
     this.sessionMetadataReader = createSessionMetadataReader(options.sessionMetadata ?? null);
+    this.questionBridge = createDshQuestionBridge(options.questionBridge ?? null, this.logger);
     this.now = options.now ?? Date.now;
   }
 
@@ -986,6 +1021,7 @@ export class ACPAgentClient implements AgentClient {
         capabilities: this.capabilities,
         agentId: launchContext?.agentId,
         launchEnv: launchContext?.env,
+        questionBridge: this.questionBridge,
         extensionCommandsParser: this.extensionCommandsParser,
         waitForInitialCommands: this.waitForInitialCommands,
         initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
@@ -1037,6 +1073,7 @@ export class ACPAgentClient implements AgentClient {
       handle,
       agentId: launchContext?.agentId,
       launchEnv: launchContext?.env,
+      questionBridge: this.questionBridge,
       extensionCommandsParser: this.extensionCommandsParser,
       waitForInitialCommands: this.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
@@ -1684,8 +1721,13 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   ) => Promise<void>;
   private readonly agentId?: string;
   private readonly launchEnv?: Record<string, string>;
+  private readonly questionBridge: DshQuestionBridge | null;
+  /** Channel the plugin inside this process answers on, once it is spawned. */
+  private questionBridgeChannel: string | null = null;
+  private questionBridgeConnection: DshQuestionBridgeConnection | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
+  private readonly pendingQuestions = new Map<string, PendingQuestion>();
   private pendingUserMessage: PendingUserMessage | null = null;
   private submittedUserMessageTurnId: string | null = null;
   private readonly toolCalls = new Map<string, ACPToolSnapshot>();
@@ -1743,6 +1785,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.availableModes = options.defaultModes;
     this.agentId = options.agentId;
     this.launchEnv = options.launchEnv;
+    this.questionBridge = options.questionBridge ?? null;
     this.initialHandle = options.handle;
     this.config = { ...config, provider: options.provider };
     this.currentMode = config.modeId ?? null;
@@ -2368,10 +2411,28 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   getPendingPermissions(): AgentPermissionRequest[] {
-    return Array.from(this.pendingPermissions.values(), (entry) => entry.request);
+    return [
+      ...Array.from(this.pendingPermissions.values(), (entry) => entry.request),
+      ...Array.from(this.pendingQuestions.values(), (entry) => entry.request),
+    ];
   }
 
   async respondToPermission(requestId: string, response: AgentPermissionResponse): Promise<void> {
+    const pendingQuestion = this.pendingQuestions.get(requestId);
+    if (pendingQuestion !== undefined) {
+      this.pendingQuestions.delete(requestId);
+      pendingQuestion.settle(resolveDshQuestionAnswers(pendingQuestion.mapping, response));
+
+      this.pushEvent({
+        type: "permission_resolved",
+        provider: this.provider,
+        requestId,
+        resolution: response,
+        turnId: pendingQuestion.turnId ?? undefined,
+      });
+      return;
+    }
+
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       throw new Error(`No pending permission request with id '${requestId}'`);
@@ -2434,6 +2495,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
     this.pendingPermissions.clear();
 
+    // DSH must be told too, or the tool that asked keeps waiting on an answer
+    // whose card has already been taken down.
+    this.settlePendingQuestions({ kind: "dismiss" }, "Interrupted");
+
     if (this.activeForegroundTurnId) {
       await this.connection.cancel({ sessionId: this.sessionId });
     }
@@ -2452,6 +2517,11 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       pending.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.pendingPermissions.clear();
+    this.settlePendingQuestions({ kind: "dismiss" }, "The session closed");
+
+    const questionBridge = this.questionBridgeConnection;
+    this.questionBridgeConnection = null;
+    questionBridge?.close();
 
     if (this.connection && this.sessionId) {
       try {
@@ -2734,6 +2804,121 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     return {};
   }
 
+  /**
+   * Name this process's question channel and materialize the plugin that
+   * answers on it. A bridge that cannot be prepared costs the questions, not
+   * the launch: the session still runs, and a DSH question then fails the way
+   * it does today instead of finding an answerer.
+   */
+  protected async prepareQuestionBridgeLaunch(): Promise<DshQuestionBridgeLaunch | null> {
+    if (this.questionBridge === null) {
+      return null;
+    }
+    try {
+      const launch = await this.questionBridge.prepareLaunch();
+      this.questionBridgeChannel = launch.channel;
+      // Connected here rather than after the handshake: the plugin binds its
+      // channel while the profile boots, and the client retries until it takes.
+      this.attachQuestionBridge();
+      return launch;
+    } catch (error) {
+      this.logger.warn({ err: error }, "Question bridge unavailable for this session");
+      return null;
+    }
+  }
+
+  /**
+   * Answer DSH's questions from Paseo for as long as this process lives.
+   *
+   * The plugin claims the question waterfall inside the process and relays each
+   * request here; what this does is turn one into a permission request the
+   * client already knows how to render, and wait for the client's answer.
+   */
+  private attachQuestionBridge(): void {
+    const channel = this.questionBridgeChannel;
+    if (
+      this.questionBridge === null ||
+      channel === null ||
+      this.questionBridgeConnection !== null
+    ) {
+      return;
+    }
+    const connection = this.questionBridge.connect({
+      channel,
+      onAsk: (request) => this.relayQuestion(request),
+      onSettled: (requestId) => this.dropRelayedQuestion(requestId),
+      onDisconnect: () => {
+        this.logger.warn({ channel }, "The DSH question bridge disconnected");
+      },
+    });
+    this.questionBridgeConnection = connection;
+    void connection.ready.catch((error: Error) => {
+      this.logger.warn({ err: error, channel }, "The DSH question bridge never connected");
+    });
+  }
+
+  private async relayQuestion(request: DshQuestionRequest): Promise<DshQuestionOutcome> {
+    if (this.closed) {
+      return { kind: "unavailable" };
+    }
+    // The bridge's own id is the request id here too. It is a fresh UUID per
+    // question, and reusing it is what lets a later `settled` line find the card
+    // DSH decided to withdraw on its own.
+    const requestId = request.requestId;
+    const mapped = mapDshQuestionRequest({ provider: this.provider, requestId, request });
+    let settle: (outcome: DshQuestionOutcome) => void = () => {};
+    const answered = new Promise<DshQuestionOutcome>((resolve) => {
+      settle = resolve;
+    });
+    this.pendingQuestions.set(requestId, {
+      request: mapped.request,
+      mapping: mapped.mapping,
+      settle,
+      turnId: this.activeForegroundTurnId,
+    });
+    this.pushEvent({
+      type: "permission_requested",
+      provider: this.provider,
+      request: mapped.request,
+      turnId: this.activeForegroundTurnId ?? undefined,
+    });
+    return answered;
+  }
+
+  /**
+   * DSH settled a question without Paseo: an aborted turn, a disposed profile.
+   * The card has to go, and its resolution is a refusal, because nobody chose.
+   */
+  private dropRelayedQuestion(requestId: string): void {
+    const pending = this.pendingQuestions.get(requestId);
+    if (pending === undefined) {
+      return;
+    }
+    this.pendingQuestions.delete(requestId);
+    pending.settle({ kind: "dismiss" });
+    this.pushEvent({
+      type: "permission_resolved",
+      provider: this.provider,
+      requestId,
+      resolution: { behavior: "deny", message: "The question was withdrawn" },
+      turnId: pending.turnId ?? undefined,
+    });
+  }
+
+  private settlePendingQuestions(outcome: DshQuestionOutcome, message: string): void {
+    for (const [requestId, pending] of this.pendingQuestions) {
+      this.pendingQuestions.delete(requestId);
+      pending.settle(outcome);
+      this.pushEvent({
+        type: "permission_resolved",
+        provider: this.provider,
+        requestId,
+        resolution: { behavior: "deny", message },
+        turnId: pending.turnId ?? undefined,
+      });
+    }
+  }
+
   private async spawnProcess(): Promise<SpawnedACPProcess> {
     const prefix = await resolveProviderLaunch({
       commandConfig: this.runtimeSettings?.command,
@@ -2744,13 +2929,14 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       throw new Error(`${this.provider} command '${this.defaultCommand[0]}' not found`);
     }
 
+    const bridge = await this.prepareQuestionBridgeLaunch();
     const command = prefix.command;
-    const args = [...prefix.args, ...this.defaultCommand.slice(1)];
+    const args = [...prefix.args, ...this.defaultCommand.slice(1), ...(bridge?.args ?? [])];
     const child = spawnProcess(command, args, {
       cwd: this.config.cwd,
       ...createProviderEnvSpec({
         runtimeSettings: this.runtimeSettings,
-        overlays: [this.launchEnv],
+        overlays: [this.launchEnv, bridge?.env],
       }),
       stdio: ["pipe", "pipe", "pipe"],
     });

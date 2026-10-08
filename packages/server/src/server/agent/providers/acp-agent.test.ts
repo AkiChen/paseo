@@ -1,6 +1,7 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -46,6 +47,7 @@ import {
   writeCopilotProviderMode,
 } from "./copilot-acp-agent.js";
 import { GenericACPAgentClient } from "./generic-acp-agent.js";
+import { DshQuestionBridge } from "./dsh-questions/bridge.js";
 import { parseKiroExtensionCommands } from "./kiro-acp-agent.js";
 import { transformPiModels } from "./pi/agent.js";
 import type { AgentStreamEvent, AgentTimelineItem } from "../agent-sdk-types.js";
@@ -4319,5 +4321,296 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       cwd: "/tmp/paseo-acp-test",
       mcpServers: [],
     });
+  });
+});
+
+describe("ACPAgentSession question bridge", () => {
+  const homes: string[] = [];
+  const servers: Server[] = [];
+  const sockets = new Set<Socket>();
+
+  function closeTestServer(server: Server): Promise<void> {
+    return new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
+  }
+
+  afterEach(async () => {
+    // A live channel keeps `server.close` from ever calling back, and a failed
+    // test leaves the session's connection open, so drop sockets first.
+    for (const socket of sockets) socket.destroy();
+    sockets.clear();
+    await Promise.all(servers.splice(0).map(closeTestServer));
+    await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
+  });
+
+  async function createHome(): Promise<string> {
+    const home = await mkdtemp(path.join(tmpdir(), "paseo-dsh-questions-"));
+    homes.push(home);
+    return home;
+  }
+
+  /** The plugin's side of the channel: one connection, newline-delimited JSON. */
+  async function servePlugin() {
+    const received: Record<string, unknown>[] = [];
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.setEncoding("utf8");
+      let buffered = "";
+      socket.on("data", (chunk: string) => {
+        buffered += chunk;
+        let index = buffered.indexOf("\n");
+        while (index !== -1) {
+          const line = buffered.slice(0, index);
+          buffered = buffered.slice(index + 1);
+          index = buffered.indexOf("\n");
+          if (line.trim().length > 0) received.push(JSON.parse(line) as Record<string, unknown>);
+        }
+      });
+      socket.on("close", () => sockets.delete(socket));
+      socket.on("error", () => sockets.delete(socket));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("the fake question plugin did not expose a TCP address");
+    }
+    return {
+      channel: `tcp:127.0.0.1:${address.port}`,
+      received,
+      connected: () => sockets.size > 0,
+      send: (message: Record<string, unknown>) => {
+        for (const socket of sockets) socket.write(`${JSON.stringify(message)}\n`);
+      },
+    };
+  }
+
+  async function waitFor(predicate: () => boolean, description: string): Promise<void> {
+    const started = Date.now();
+    while (!predicate()) {
+      if (Date.now() - started > 2_000) throw new Error(`timed out waiting for ${description}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  /** A session whose launch is the real one up to the spawned process. */
+  function createQuestionSession(bridge: DshQuestionBridge): ACPAgentSession {
+    class TestSession extends ACPAgentSession {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        // A real launch writes the plugin, names the channel, and connects.
+        await this.prepareQuestionBridgeLaunch();
+        return {
+          child: createProbeChildStub(),
+          connection: {
+            unstable_resumeSession: vi.fn().mockResolvedValue({
+              sessionId: "session-1",
+              modes: null,
+              models: null,
+              configOptions: [],
+            }),
+          } as unknown as ClientSideConnection,
+          initialize: { agentCapabilities: { sessionCapabilities: { resume: {} } } },
+        } as SpawnedACPProcess;
+      }
+    }
+
+    return new TestSession(
+      { provider: "dsh", cwd: "/tmp/paseo-acp-test" },
+      {
+        provider: "dsh",
+        logger: createTestLogger(),
+        defaultCommand: ["dsh", "--profile", "acp"],
+        defaultModes: [],
+        capabilities: {
+          supportsStreaming: true,
+          supportsSessionPersistence: true,
+          supportsDynamicModes: true,
+          supportsMcpServers: true,
+          supportsReasoningStream: true,
+          supportsToolInvocations: true,
+        },
+        handle: { sessionId: "session-1", provider: "dsh" },
+        questionBridge: bridge,
+        // The spawned process is a stub, so closing must not wait on tree-kill.
+        terminateProcess: new FakeTerminator().terminate,
+      },
+    );
+  }
+
+  const ASK = {
+    op: "ask",
+    protocol: 1,
+    requestId: "question-1",
+    questions: [
+      {
+        id: "color",
+        question: "Which color should I use?",
+        header: "Color",
+        options: [{ label: "Red" }, { label: "Blue" }],
+      },
+    ],
+  };
+
+  function createBridgeFor(home: string): DshQuestionBridge {
+    return new DshQuestionBridge({
+      source: { kind: "dsh-plugin", home },
+      logger: createTestLogger(),
+      platform: "linux",
+      connectTimeoutMs: 2_000,
+      reconnectDelayMs: 10,
+    });
+  }
+
+  test("shows a DSH question as a question card and answers it over the channel", async () => {
+    const bridge = createBridgeFor(await createHome());
+    const plugin = await servePlugin();
+    vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
+      channel: plugin.channel,
+      args: ["--patch", "paseo-question-bridge.yml"],
+      env: { PASEO_QUESTION_BRIDGE_SOCKET: plugin.channel },
+    });
+    const session = createQuestionSession(bridge);
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await session.initializeResumedSession();
+    await waitFor(plugin.connected, "the channel connection");
+    plugin.send(ASK);
+    await waitFor(() => session.getPendingPermissions().length > 0, "the question card");
+
+    const pending = session.getPendingPermissions();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      provider: "dsh",
+      name: "ask_user_question",
+      kind: "question",
+      title: "Which color should I use?",
+      input: {
+        questions: [
+          {
+            question: "Which color should I use?",
+            header: "Color",
+            options: [{ label: "Red" }, { label: "Blue" }],
+            multiSelect: false,
+            allowOther: true,
+          },
+        ],
+      },
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "permission_requested",
+        provider: "dsh",
+        request: expect.objectContaining({ id: pending[0].id, kind: "question" }),
+      }),
+    );
+
+    await session.respondToPermission(pending[0].id, {
+      behavior: "allow",
+      updatedInput: { answers: { Color: "Blue" } },
+    });
+    await waitFor(() => plugin.received.length > 0, "the answer");
+
+    expect(plugin.received).toEqual([
+      {
+        op: "answer",
+        requestId: "question-1",
+        answers: [{ id: "color", selected: ["Blue"] }],
+      },
+    ]);
+    expect(session.getPendingPermissions()).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "permission_resolved",
+        provider: "dsh",
+        requestId: pending[0].id,
+      }),
+    );
+    await session.close();
+  });
+
+  test("tells DSH the user refused instead of answering", async () => {
+    const bridge = createBridgeFor(await createHome());
+    const plugin = await servePlugin();
+    vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
+      channel: plugin.channel,
+      args: [],
+      env: { PASEO_QUESTION_BRIDGE_SOCKET: plugin.channel },
+    });
+    const session = createQuestionSession(bridge);
+
+    await session.initializeResumedSession();
+    await waitFor(plugin.connected, "the channel connection");
+    plugin.send(ASK);
+    await waitFor(() => session.getPendingPermissions().length > 0, "the question card");
+    const pending = session.getPendingPermissions();
+
+    await session.respondToPermission(pending[0].id, {
+      behavior: "deny",
+      message: "Dismissed by user",
+    });
+    await waitFor(() => plugin.received.length > 0, "the dismissal");
+
+    expect(plugin.received).toEqual([{ op: "dismiss", requestId: "question-1" }]);
+    await session.close();
+  });
+
+  test("takes the card down when DSH settles the question itself", async () => {
+    const bridge = createBridgeFor(await createHome());
+    const plugin = await servePlugin();
+    vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
+      channel: plugin.channel,
+      args: [],
+      env: { PASEO_QUESTION_BRIDGE_SOCKET: plugin.channel },
+    });
+    const session = createQuestionSession(bridge);
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await session.initializeResumedSession();
+    await waitFor(plugin.connected, "the channel connection");
+    plugin.send(ASK);
+    await waitFor(() => session.getPendingPermissions().length > 0, "the question card");
+
+    plugin.send({ op: "settled", requestId: "question-1", outcome: "aborted" });
+    await waitFor(() => session.getPendingPermissions().length === 0, "the withdrawn card");
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "permission_resolved",
+        provider: "dsh",
+        resolution: expect.objectContaining({ behavior: "deny" }),
+      }),
+    );
+    await session.close();
+  });
+
+  test("leaves the question unanswered when no bridge is configured", async () => {
+    const session = new ACPAgentSession(
+      { provider: "dsh", cwd: "/tmp/paseo-acp-test" },
+      {
+        provider: "dsh",
+        logger: createTestLogger(),
+        defaultCommand: ["dsh", "--profile", "acp"],
+        defaultModes: [],
+        capabilities: {
+          supportsStreaming: true,
+          supportsSessionPersistence: true,
+          supportsDynamicModes: true,
+          supportsMcpServers: true,
+          supportsReasoningStream: true,
+          supportsToolInvocations: true,
+        },
+      },
+    );
+
+    expect(session.getPendingPermissions()).toEqual([]);
   });
 });
