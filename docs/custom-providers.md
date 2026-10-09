@@ -609,6 +609,14 @@ ticked, plus whatever they typed. A refused card is reported as `ASK_CANCELLED`,
 which is what plan mode turns into "the user dismissed the review". Without this
 param an agent behaves as it did before — DSH reports the question as unanswered.
 
+A connected bridge also adds one line of system-prompt guidance, telling the
+agent to put user-owned decisions to the user with the tool instead of deciding
+for them or asking in prose. Nothing else in the ACP composition says so: the
+tool description covers what the tool does, and the presets that ship
+agent-facing policy are not mounted here. A question asked while no daemon is
+connected is still declined, so an agent on an unwired machine keeps its
+previous behavior.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.

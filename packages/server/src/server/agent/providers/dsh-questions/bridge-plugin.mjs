@@ -16,6 +16,11 @@
  * launch changes: the plugin loads only through a `--patch` overlay the daemon
  * passes on the command line, and it stays inert without a channel.
  *
+ * A channel also buys one line of system-prompt guidance: the shipped tool
+ * description says what the tool does, not when a coding agent should prefer it
+ * over deciding for the user, and the ACP profile mounts no agent preset that
+ * would say so.
+ *
  * It speaks newline-delimited JSON over the channel named by
  * `PASEO_QUESTION_BRIDGE_SOCKET` (`unix:<path>`, `pipe:<name>`,
  * `tcp:<host>:<port>`) and never writes to stdout, which belongs to the ACP
@@ -29,13 +34,38 @@ import path from "node:path";
 
 export const name = "paseo-question-bridge";
 
-/** The seam this plugin answers on. A profile without it never activates us. */
-export const inject = ["userQuestions"];
+/**
+ * The seams this plugin answers on. A profile without them never activates us.
+ *
+ * `systemPrompt` is here for the guidance below: the shipped tool description
+ * says what `ask_user_question` does, not when a coding agent should prefer it
+ * over deciding for the user, and the ACP profile mounts no agent preset to say
+ * so either.
+ */
+export const inject = ["userQuestions", "systemPrompt"];
 
 const SOCKET_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
 const LOG_ENV = "PASEO_QUESTION_BRIDGE_LOG";
 const PROTOCOL = 1;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+const GUIDANCE_SECTION = "paseo:user-questions";
+/** Where the plan policy sits, used when the section order table is unavailable. */
+const GUIDANCE_ORDER_FALLBACK = 500;
+
+/**
+ * When to ask instead of deciding.
+ *
+ * Deliberately short and bounded: the failure this addresses is an agent that
+ * picks for the user, or asks in prose where no options can be rendered — not
+ * an agent that asks about what it could look up itself.
+ */
+const GUIDANCE = [
+  "Use ask_user_question for decisions that belong to the user: which of several",
+  "plausible approaches to take, a preference only they can state, or a choice they",
+  "asked you to make. Ask with the tool rather than in prose, offer concrete",
+  "options, and keep one decision per question. Anything you can settle by reading",
+  "the workspace, settle yourself.",
+].join(" ");
 
 function log(line) {
   const target = process.env[LOG_ENV];
@@ -68,6 +98,20 @@ function questionError(message, code) {
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Where the guidance sits in the prompt: with the plan policy, ahead of every
+ * tool section. The order table is the profile's, so a name it does not carry
+ * falls back to the number that table gives that policy today.
+ */
+function guidanceOrder(systemPrompt) {
+  try {
+    const planPolicy = systemPrompt.getSectionOrder("PLAN_POLICY");
+    return Number.isFinite(planPolicy) ? planPolicy + 1 : GUIDANCE_ORDER_FALLBACK;
+  } catch {
+    return GUIDANCE_ORDER_FALLBACK;
+  }
 }
 
 function optionalString(record, key) {
@@ -467,6 +511,18 @@ export function apply(ctx) {
     // request keeps travelling down the waterfall instead of being answered.
     return answer?.declined === true ? next() : answer;
   });
+
+  // Only while a daemon is wired up: guidance to ask is a promise that someone
+  // will answer, and without a channel there is nobody to ask.
+  ctx.effect(
+    () =>
+      ctx.systemPrompt.section({
+        name: GUIDANCE_SECTION,
+        order: guidanceOrder(ctx.systemPrompt),
+        text: GUIDANCE,
+      }),
+    "paseo-question-bridge: question guidance",
+  );
 
   ctx.effect(() => {
     let server = null;

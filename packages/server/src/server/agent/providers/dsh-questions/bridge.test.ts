@@ -146,9 +146,12 @@ describe("DshQuestionBridge.prepareLaunch", () => {
 
     const manifest = JSON.parse(await readFile(path.join(pluginDirectory, "package.json"), "utf8"));
     expect(manifest).toMatchObject({ name: "paseo-question-bridge", type: "module" });
-    expect(await readFile(path.join(pluginDirectory, "index.js"), "utf8")).toContain(
-      "paseo-question-bridge",
-    );
+    const plugin = await readFile(path.join(pluginDirectory, "index.js"), "utf8");
+    expect(plugin).toContain("paseo-question-bridge");
+    // The plugin also carries the guidance that tells an agent when to ask: a
+    // bridge that answers questions nobody is told to ask is half a feature.
+    expect(plugin).toContain("paseo:user-questions");
+    expect(plugin).toContain("Use ask_user_question for decisions that belong to the user");
 
     // The tool row matters as much as the plugin: the ACP composition has no
     // `ask_user_question`, so a bridge alone would answer only plan review.
