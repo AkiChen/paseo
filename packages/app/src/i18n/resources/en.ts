@@ -1958,6 +1958,8 @@ export const en = {
     used: "{{percentage}}% used",
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Session cost {{cost}}",
+    sessionTokens: "Session tokens {{total}}",
+    sessionCacheHit: "Cache hit {{percent}}%",
     accessibility: "Context window {{percentage}}% used",
   },
   review: {

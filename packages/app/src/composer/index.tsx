@@ -48,6 +48,8 @@ import {
   type DraftAgentControlsProps,
 } from "@/composer/agent-controls";
 import { ContextWindowMeter } from "@/components/context-window-meter";
+import type { SessionUsageBuckets } from "@/components/context-window-meter.utils";
+import type { AgentUsage } from "@getpaseo/protocol/agent-types";
 import { useImageAttachmentPicker } from "@/hooks/use-image-attachment-picker";
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { useFilePicker } from "@/hooks/use-file-picker";
@@ -265,6 +267,21 @@ function buildRealtimeVoiceButtonStyle(
   );
 }
 
+/**
+ * Session-cumulative buckets as flat primitives.
+ *
+ * The selector below is compared shallowly, and one `??` chain per bucket keeps
+ * the selector's own branch count low enough to stay readable.
+ */
+function sessionUsageFields(usage: AgentUsage | undefined) {
+  return {
+    sessionUncachedInputTokens: usage?.sessionUncachedInputTokens ?? null,
+    sessionCacheReadTokens: usage?.sessionCacheReadTokens ?? null,
+    sessionCacheWriteTokens: usage?.sessionCacheWriteTokens ?? null,
+    sessionOutputTokens: usage?.sessionOutputTokens ?? null,
+  };
+}
+
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
     const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
@@ -273,36 +290,41 @@ function buildAgentStateSelector(serverId: string, agentId: string) {
       contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
       contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
       totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
+      ...sessionUsageFields(agent?.lastUsage),
       model: agent?.model ?? null,
       provider: agent?.provider ?? null,
     };
   };
 }
 
-function renderContextWindowMeter(
-  contextWindowMaxTokens: number | null,
-  contextWindowUsedTokens: number | null,
-  totalCostUsd: number | null,
-  showPercentage: boolean,
-  serverId: string,
-  provider: string | null,
-  pending: boolean,
-  glyphSize: number,
-): ReactElement | null {
-  const hasData = contextWindowMaxTokens !== null && contextWindowUsedTokens !== null;
-  if (!hasData && !pending) {
+interface ContextWindowMeterArgs {
+  contextWindowMaxTokens: number | null;
+  contextWindowUsedTokens: number | null;
+  totalCostUsd: number | null;
+  sessionUsage: SessionUsageBuckets | null;
+  showPercentage: boolean;
+  serverId: string;
+  provider: string | null;
+  pending: boolean;
+  glyphSize: number;
+}
+
+function renderContextWindowMeter(args: ContextWindowMeterArgs): ReactElement | null {
+  const hasData = args.contextWindowMaxTokens !== null && args.contextWindowUsedTokens !== null;
+  if (!hasData && !args.pending) {
     return null;
   }
   return (
     <ContextWindowMeter
-      maxTokens={contextWindowMaxTokens}
-      usedTokens={contextWindowUsedTokens}
-      totalCostUsd={totalCostUsd}
-      showPercentage={showPercentage}
-      serverId={serverId}
-      provider={provider}
-      pending={pending}
-      glyphSize={glyphSize}
+      maxTokens={args.contextWindowMaxTokens}
+      usedTokens={args.contextWindowUsedTokens}
+      totalCostUsd={args.totalCostUsd}
+      sessionUsage={args.sessionUsage}
+      showPercentage={args.showPercentage}
+      serverId={args.serverId}
+      provider={args.provider}
+      pending={args.pending}
+      glyphSize={args.glyphSize}
     />
   );
 }
@@ -2078,22 +2100,39 @@ function ComposerContentImpl({
   const contextWindowPending = agentState.status === "initializing" || isAgentRunning;
   const contextWindowMeterGlyphSize = isCompactLayout ? ICON_SIZE.md : buttonIconSize;
 
+  const sessionUsage = useMemo<SessionUsageBuckets | null>(
+    () => ({
+      uncachedInputTokens: agentState.sessionUncachedInputTokens,
+      cacheReadTokens: agentState.sessionCacheReadTokens,
+      cacheWriteTokens: agentState.sessionCacheWriteTokens,
+      outputTokens: agentState.sessionOutputTokens,
+    }),
+    [
+      agentState.sessionUncachedInputTokens,
+      agentState.sessionCacheReadTokens,
+      agentState.sessionCacheWriteTokens,
+      agentState.sessionOutputTokens,
+    ],
+  );
+
   const contextWindowMeter = useMemo(
     () =>
-      renderContextWindowMeter(
+      renderContextWindowMeter({
         contextWindowMaxTokens,
         contextWindowUsedTokens,
-        agentState.totalCostUsd,
-        false,
+        totalCostUsd: agentState.totalCostUsd,
+        sessionUsage,
+        showPercentage: false,
         serverId,
-        agentState.provider,
-        contextWindowPending,
-        contextWindowMeterGlyphSize,
-      ),
+        provider: agentState.provider,
+        pending: contextWindowPending,
+        glyphSize: contextWindowMeterGlyphSize,
+      }),
     [
       contextWindowMaxTokens,
       contextWindowUsedTokens,
       agentState.totalCostUsd,
+      sessionUsage,
       serverId,
       agentState.provider,
       contextWindowPending,

@@ -1933,6 +1933,8 @@ export const ar: TranslationResources = {
     used: "تم استخدام{{percentage}}%",
     tokens: "رموز{{used}}/{{max}}",
     sessionCost: "تكلفة الجلسة{{cost}}",
+    sessionTokens: "رموز الجلسة{{total}}",
+    sessionCacheHit: "إصابة الذاكرة المؤقتة{{percent}}%",
     accessibility: "تم استخدام نافذة السياق{{percentage}}%",
   },
   review: {

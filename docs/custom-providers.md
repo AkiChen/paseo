@@ -632,6 +632,15 @@ shows the compaction while it runs and marks it completed only when DeepSeek
 Harness reports the history replacement it anchored, so "No compactable history
 yet." does not look like a compaction that happened.
 
+Usage splits in two. How full the context window is arrives over ACP itself —
+`usage_update`, which any agent may send, and which drives the context meter for
+every ACP provider. What the session has been _billed_ for does not exist on the
+wire, so the tooltip's session totals come from the bridge reading DeepSeek
+Harness's own `tokenUsage` session projection: the same cumulative buckets its
+usage pill renders, split into uncached input, cache read, cache write, and
+output. A plugin that predates that announcement leaves an agent with the window
+and no totals.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.

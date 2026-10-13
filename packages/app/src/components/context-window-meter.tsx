@@ -6,7 +6,11 @@ import { useTranslation } from "react-i18next";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProviderUsageTooltipSection } from "@/provider-usage/tooltip-section";
 import { useProviderUsage } from "@/provider-usage/use-provider-usage";
-import { formatTokenCount } from "./context-window-meter.utils";
+import {
+  formatTokenCount,
+  resolveSessionUsageSummary,
+  type SessionUsageBuckets,
+} from "./context-window-meter.utils";
 
 interface ContextWindowMeterProps {
   maxTokens: number | null;
@@ -20,6 +24,8 @@ interface ContextWindowMeterProps {
   pending?: boolean;
   /** Optional glyph envelope for icon-toolbar alignment. */
   glyphSize?: number;
+  /** Session-cumulative buckets, for providers that report a whole session. */
+  sessionUsage?: SessionUsageBuckets | null;
 }
 
 const SVG_SIZE = 14;
@@ -105,6 +111,7 @@ export function ContextWindowMeter({
   provider,
   pending = false,
   glyphSize,
+  sessionUsage,
 }: ContextWindowMeterProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -113,6 +120,7 @@ export function ContextWindowMeter({
     serverId ?? null,
     { enabled: isTooltipOpen },
   );
+  const sessionUsageSummary = resolveSessionUsageSummary(sessionUsage);
   const percentage =
     maxTokens !== null && usedTokens !== null ? getUsagePercentage(maxTokens, usedTokens) : null;
   const handleTooltipOpenChange = useCallback(
@@ -231,6 +239,21 @@ export function ContextWindowMeter({
           {formattedSessionCost ? (
             <Text style={styles.tooltipDetail}>
               {t("contextWindow.sessionCost", { cost: formattedSessionCost })}
+            </Text>
+          ) : null}
+          {sessionUsageSummary ? (
+            <Text style={styles.tooltipDetail}>
+              {t("contextWindow.sessionTokens", {
+                total: formatTokenCount(sessionUsageSummary.totalTokens),
+              })}
+            </Text>
+          ) : null}
+          {sessionUsageSummary?.cacheHitPercent !== null &&
+          sessionUsageSummary?.cacheHitPercent !== undefined ? (
+            <Text style={styles.tooltipDetail}>
+              {t("contextWindow.sessionCacheHit", {
+                percent: sessionUsageSummary.cacheHitPercent,
+              })}
             </Text>
           ) : null}
           <ProviderUsageTooltipSection view={providerUsageView} activeProviderId={provider} />

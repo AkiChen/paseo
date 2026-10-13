@@ -469,6 +469,10 @@ function sanitizeUsage(value: unknown): AgentUsage | undefined {
     "totalCostUsd",
     "contextWindowMaxTokens",
     "contextWindowUsedTokens",
+    "sessionUncachedInputTokens",
+    "sessionCacheReadTokens",
+    "sessionCacheWriteTokens",
+    "sessionOutputTokens",
   ];
   for (const field of fields) {
     if (!assignFiniteNumber(sanitized, result, field)) {

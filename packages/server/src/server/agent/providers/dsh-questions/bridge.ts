@@ -121,6 +121,22 @@ export type DshCommandOutcome =
   | { kind: "success"; text?: string; sourceEventSeq?: number }
   | { kind: "error"; text: string };
 
+/**
+ * The session's cumulative billing buckets, as DeepSeek Harness counts them.
+ *
+ * The three prompt-side buckets are disjoint and cover every billed prompt
+ * token; `outputTokens` covers everything the model produced. These are the
+ * numbers DSH's own usage pill renders, read from the same session projection.
+ */
+export const DshSessionUsageSchema = z.object({
+  uncachedInputTokens: z.number().min(0),
+  cacheReadTokens: z.number().min(0),
+  cacheWriteTokens: z.number().min(0),
+  outputTokens: z.number().min(0),
+});
+
+export type DshSessionUsage = z.infer<typeof DshSessionUsageSchema>;
+
 export interface DshQuestionBridgeLaunch {
   /** Channel the plugin inside the spawned process listens on. */
   channel: string;
@@ -141,6 +157,8 @@ export interface DshQuestionBridgeOptions {
   commandListTimeoutMs?: number;
   /** How long one command may run; compaction summarizes the whole history. */
   commandRunTimeoutMs?: number;
+  /** How long the session's token totals may take before Paseo gives up. */
+  usageTimeoutMs?: number;
 }
 
 const CHANNEL_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
@@ -150,6 +168,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
 const DEFAULT_RECONNECT_DELAY_MS = 250;
 const DEFAULT_COMMAND_LIST_TIMEOUT_MS = 5_000;
 const DEFAULT_COMMAND_RUN_TIMEOUT_MS = 300_000;
+const DEFAULT_USAGE_TIMEOUT_MS = 5_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 const PLUGIN_PACKAGE = `${JSON.stringify(
@@ -203,6 +222,15 @@ export interface DshQuestionBridgeConnection {
   listCommands(agentId: string): Promise<DshCommandDescriptor[] | null>;
   /** Run one complete slash line, or null when DSH was never asked. */
   runCommand(agentId: string, line: string): Promise<DshCommandOutcome | null>;
+  /**
+   * Whether the plugin announced it can report the session's token totals.
+   *
+   * A plugin materialized before this existed never says so, and then Paseo
+   * shows the context window it gets from ACP and nothing more.
+   */
+  supportsUsage(): boolean;
+  /** The session's cumulative buckets, or null when DSH could not answer. */
+  readUsage(agentId: string): Promise<DshSessionUsage | null>;
   close(): void;
 }
 
@@ -231,6 +259,7 @@ export class DshQuestionBridge {
   private readonly reconnectDelayMs: number;
   private readonly commandListTimeoutMs: number;
   private readonly commandRunTimeoutMs: number;
+  private readonly usageTimeoutMs: number;
   private artifacts: Promise<{ patchPath: string }> | null = null;
 
   constructor(options: DshQuestionBridgeOptions) {
@@ -241,6 +270,7 @@ export class DshQuestionBridge {
     this.reconnectDelayMs = options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS;
     this.commandListTimeoutMs = options.commandListTimeoutMs ?? DEFAULT_COMMAND_LIST_TIMEOUT_MS;
     this.commandRunTimeoutMs = options.commandRunTimeoutMs ?? DEFAULT_COMMAND_RUN_TIMEOUT_MS;
+    this.usageTimeoutMs = options.usageTimeoutMs ?? DEFAULT_USAGE_TIMEOUT_MS;
   }
 
   /** Write the plugin and its overlay, then name a channel for one process. */
@@ -316,6 +346,8 @@ export class DshQuestionBridge {
     let readySettled = false;
     /** Whether the plugin announced it can list and run DSH's commands. */
     let commandsSupported = false;
+    /** Whether the plugin announced it can report the session's token totals. */
+    let usageSupported = false;
     /** Questions DSH settled on its own; a reply to one of those would be refused. */
     const settled = new Set<string>();
     /** Requests waiting on a reply, keyed by the id this side minted. */
@@ -419,8 +451,13 @@ export class DshQuestionBridge {
       switch (message.op) {
         case "ready": {
           commandsSupported = message.commands === true;
+          usageSupported = message.usage === true;
           this.logger.debug(
-            { channel: options.channel, commands: commandsSupported },
+            {
+              channel: options.channel,
+              commands: commandsSupported,
+              usage: usageSupported,
+            },
             "The DSH bridge is ready",
           );
           return;
@@ -505,6 +542,33 @@ export class DshQuestionBridge {
         write({ op: "unavailable", requestId });
       },
       supportsCommands: () => commandsSupported,
+      supportsUsage: () => usageSupported,
+      readUsage: async (agentId) => {
+        if (!usageSupported) return null;
+        try {
+          const reply = await request({ op: "usage", agentId }, this.usageTimeoutMs);
+          if (!isRecord(reply) || reply.ok !== true) {
+            this.logger.warn(
+              { channel: options.channel, reply },
+              "The DSH bridge could not report this session's usage",
+            );
+            return null;
+          }
+          // A session with no billed request yet is an answer, not a failure:
+          // the plugin reports `usage: null` and Paseo keeps what it has.
+          if (reply.usage === null) return null;
+          const parsed = DshSessionUsageSchema.safeParse(reply.usage);
+          if (!parsed.success) {
+            this.logger.warn({ err: parsed.error }, "The DSH bridge sent malformed usage");
+            return null;
+          }
+          this.logger.debug({ usage: parsed.data }, "The DSH bridge reported session usage");
+          return parsed.data;
+        } catch (error) {
+          this.logger.warn({ err: error }, "Asking the DSH bridge for usage failed");
+          return null;
+        }
+      },
       listCommands: async (agentId) => {
         if (!commandsSupported) return null;
         try {

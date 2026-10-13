@@ -29,6 +29,12 @@
  * those commands: `dsh-acp` has no command method and never sends
  * `available_commands_update`.
  *
+ * It is also where the session's token totals live. ACP tells a client how full
+ * the context window is (`usage_update`) but nothing about billing, and the
+ * cumulative buckets only exist as the `tokenUsage` session projection the
+ * harness renders in its own usage pill — so the plugin reads that projection on
+ * request and answers with the same numbers.
+ *
  * It speaks newline-delimited JSON over the channel named by
  * `PASEO_QUESTION_BRIDGE_SOCKET` (`unix:<path>`, `pipe:<name>`,
  * `tcp:<host>:<port>`) and never writes to stdout, which belongs to the ACP
@@ -45,11 +51,11 @@ export const name = "paseo-question-bridge";
 /**
  * The seams this plugin answers on. A profile without them never activates us.
  *
- * `systemPrompt` is here for the guidance below; `commands` and `agents` are
- * here because the daemon runs this session's slash commands through the same
- * channel, and both the registry and the live agent are needed to do that.
+ * `systemPrompt` is here for the guidance below; `commands`, `agents`, and
+ * `sessionProjections` are here because the daemon runs this session's slash
+ * commands and reads its token totals through the same channel.
  */
-export const inject = ["userQuestions", "systemPrompt", "commands", "agents"];
+export const inject = ["userQuestions", "systemPrompt", "commands", "agents", "sessionProjections"];
 
 const SOCKET_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
 const LOG_ENV = "PASEO_QUESTION_BRIDGE_LOG";
@@ -367,6 +373,59 @@ function listCommands(bridge, message) {
   }
 }
 
+/** One finite non-negative token count, or zero when DSH did not report it. */
+function tokenCount(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * Answer one `usage` request with this session's cumulative billing buckets.
+ *
+ * These are the numbers DeepSeek Harness puts in its own usage pill: three
+ * disjoint prompt-side buckets (uncached input, cache read, cache write) over
+ * the whole durable log, plus output. They come from the session's `tokenUsage`
+ * projection — the same value its client UI reads — so Paseo cannot drift from
+ * what the harness itself reports. ACP carries none of it: `session/prompt`
+ * answers with a stop reason alone.
+ */
+function readUsage(bridge, message) {
+  const id = message.id ?? null;
+  const agent = resolveAgent(bridge.agents, message.agentId);
+  if (agent === null) {
+    return {
+      op: "usage",
+      id,
+      ok: false,
+      error: `no live agent "${String(message.agentId)}" in this process`,
+    };
+  }
+  try {
+    const snapshot = bridge.sessionProjections.snapshot(agent.session, ["tokenUsage"]);
+    const usage = isRecord(snapshot?.values) ? snapshot.values.tokenUsage : undefined;
+    log(
+      `usage for ${String(message.agentId)}: ${isRecord(usage) ? JSON.stringify(usage) : "none"}`,
+    );
+    if (!isRecord(usage)) {
+      // No billed request yet: a real answer, not a failure.
+      return { op: "usage", id, ok: true, usage: null };
+    }
+    return {
+      op: "usage",
+      id,
+      ok: true,
+      usage: {
+        uncachedInputTokens: tokenCount(usage.uncachedInputTokens),
+        cacheReadTokens: tokenCount(usage.cacheReadTokens),
+        cacheWriteTokens: tokenCount(usage.cacheWriteTokens),
+        outputTokens: tokenCount(usage.outputTokens),
+      },
+    };
+  } catch (error) {
+    log(`reading usage failed: ${describeError(error)}`);
+    return { op: "usage", id, ok: false, error: describeError(error) };
+  }
+}
+
 /**
  * Parse and run one complete slash-command line through the registry.
  *
@@ -526,6 +585,7 @@ function receive(bridge, socket, line) {
     return;
   }
   if (!isRecord(message)) return;
+  log(`received ${String(message.op)}`);
   switch (message.op) {
     case "ping":
       socket.write(
@@ -566,6 +626,9 @@ function receive(bridge, socket, line) {
     }
     case "commands":
       socket.write(`${JSON.stringify(listCommands(bridge, message))}\n`);
+      return;
+    case "usage":
+      socket.write(`${JSON.stringify(readUsage(bridge, message))}\n`);
       return;
     case "command":
       void runCommand(bridge, socket, message);
@@ -616,6 +679,7 @@ export function apply(ctx) {
     running,
     commands: ctx.commands,
     agents: ctx.agents,
+    sessionProjections: ctx.sessionProjections,
     write(message) {
       const socket = client.socket;
       if (socket === null || socket.destroyed === true) return false;
@@ -635,7 +699,13 @@ export function apply(ctx) {
     client.socket = socket;
     if (previous !== null && previous !== socket) previous.destroy();
     log(`client connected on ${channel}`);
-    bridge.write({ op: "ready", protocol: PROTOCOL, pid: process.pid, commands: true });
+    bridge.write({
+      op: "ready",
+      protocol: PROTOCOL,
+      pid: process.pid,
+      commands: true,
+      usage: true,
+    });
 
     let buffered = "";
     socket.on("data", (chunk) => {

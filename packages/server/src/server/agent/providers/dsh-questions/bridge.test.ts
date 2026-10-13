@@ -48,6 +48,7 @@ function createBridge(home: string): DshQuestionBridge {
     reconnectDelayMs: 10,
     commandListTimeoutMs: 1_000,
     commandRunTimeoutMs: 1_000,
+    usageTimeoutMs: 1_000,
   });
 }
 
@@ -162,6 +163,9 @@ describe("DshQuestionBridge.prepareLaunch", () => {
     // bridge that answers questions nobody is told to ask is half a feature.
     expect(plugin).toContain("paseo:user-questions");
     expect(plugin).toContain("Use ask_user_question for decisions that belong to the user");
+    // The session's token totals come from the same projection the harness's own
+    // usage pill reads, so the plugin has to name it.
+    expect(plugin).toContain("tokenUsage");
 
     // The tool row matters as much as the plugin: the ACP composition has no
     // `ask_user_question`, so a bridge alone would answer only plan review.
@@ -515,6 +519,144 @@ describe("DshQuestionBridge commands", () => {
     const running = connection.runCommand("session-1", "/compact");
     connection.close();
     await expect(running).resolves.toBeNull();
+  });
+});
+
+describe("DshQuestionBridge usage", () => {
+  const READY = { op: "ready", protocol: 1, pid: 4242, usage: true };
+  const USAGE = {
+    uncachedInputTokens: 120,
+    cacheReadTokens: 4_400,
+    cacheWriteTokens: 0,
+    outputTokens: 900,
+  };
+
+  test("reports the session totals the plugin knows", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "usage") {
+          socket.write(
+            `${JSON.stringify({ op: "usage", id: message.id, ok: true, usage: USAGE })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsUsage(), "the usage capability");
+
+    await expect(connection.readUsage("session-1")).resolves.toEqual(USAGE);
+    expect(plugin.received).toEqual([
+      { op: "usage", id: expect.any(String), agentId: "session-1" },
+    ]);
+    connection.close();
+  });
+
+  test("treats a session with nothing billed yet as no answer", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "usage") {
+          socket.write(
+            `${JSON.stringify({ op: "usage", id: message.id, ok: true, usage: null })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsUsage(), "the usage capability");
+
+    await expect(connection.readUsage("session-1")).resolves.toBeNull();
+    connection.close();
+  });
+
+  test("offers no usage to a plugin that never announced it", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin((socket) => {
+      socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242, commands: true })}\n`);
+    });
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsCommands(), "the command capability");
+
+    expect(connection.supportsUsage()).toBe(false);
+    await expect(connection.readUsage("session-1")).resolves.toBeNull();
+    expect(plugin.received).toEqual([]);
+    connection.close();
+  });
+
+  test("gives up on a usage request the plugin never answers", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin((socket) => {
+      socket.write(`${JSON.stringify(READY)}\n`);
+    });
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsUsage(), "the usage capability");
+
+    await expect(connection.readUsage("session-1")).resolves.toBeNull();
+    expect(plugin.received.map((message) => message.op)).toEqual(["usage"]);
+    connection.close();
+  });
+
+  test("rejects malformed usage instead of reporting it", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "usage") {
+          socket.write(
+            `${JSON.stringify({
+              op: "usage",
+              id: message.id,
+              ok: true,
+              usage: { ...USAGE, cacheReadTokens: -1 },
+            })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsUsage(), "the usage capability");
+
+    await expect(connection.readUsage("session-1")).resolves.toBeNull();
+    connection.close();
   });
 });
 

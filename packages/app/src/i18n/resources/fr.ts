@@ -1986,6 +1986,8 @@ export const fr: TranslationResources = {
     used: "{{percentage}}% utilisé",
     tokens: "Jetons{{used}}/{{max}}",
     sessionCost: "Coût de la séance{{cost}}",
+    sessionTokens: "Jetons de la séance{{total}}",
+    sessionCacheHit: "Cache touché{{percent}}%",
     accessibility: "Fenêtre contextuelle{{percentage}}% utilisé",
   },
   review: {

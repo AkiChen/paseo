@@ -2444,6 +2444,127 @@ describe("transformPiModels", () => {
   });
 });
 
+describe("ACPAgentSession usage reporting", () => {
+  function createUsageSession(): ACPAgentSession {
+    return new ACPAgentSession(
+      { provider: "claude-acp", cwd: "/tmp/paseo-acp-test" },
+      {
+        provider: "claude-acp",
+        logger: createTestLogger(),
+        defaultCommand: ["claude", "--acp"],
+        defaultModes: [],
+        capabilities: {
+          supportsStreaming: true,
+          supportsSessionPersistence: true,
+          supportsDynamicModes: true,
+          supportsMcpServers: true,
+          supportsReasoningStream: true,
+          supportsToolInvocations: true,
+        },
+      },
+    );
+  }
+
+  test("reports the context window an agent sends over ACP", () => {
+    const session = createUsageSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 12_000,
+      size: 64_000,
+    });
+
+    expect(events).toEqual([
+      {
+        type: "usage_updated",
+        provider: "claude-acp",
+        usage: { contextWindowUsedTokens: 12_000, contextWindowMaxTokens: 64_000 },
+      },
+    ]);
+  });
+
+  test("keeps a session that reprices itself on the latest window", () => {
+    const session = createUsageSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 1_000,
+      size: 64_000,
+    });
+    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 30_000,
+      size: 128_000,
+    });
+
+    expect(events.at(-1)).toEqual({
+      type: "usage_updated",
+      provider: "claude-acp",
+      usage: { contextWindowUsedTokens: 30_000, contextWindowMaxTokens: 128_000 },
+    });
+  });
+
+  test("carries cumulative cost priced in dollars", () => {
+    const session = createUsageSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 1_000,
+      size: 64_000,
+      cost: { amount: 0.25, currency: "USD" },
+    });
+
+    expect(events.at(-1)).toEqual({
+      type: "usage_updated",
+      provider: "claude-acp",
+      usage: {
+        contextWindowUsedTokens: 1_000,
+        contextWindowMaxTokens: 64_000,
+        totalCostUsd: 0.25,
+      },
+    });
+  });
+
+  test("drops a cost Paseo cannot price in dollars", () => {
+    const session = createUsageSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: 1_000,
+      size: 64_000,
+      cost: { amount: 5, currency: "EUR" },
+    });
+
+    expect(events.at(-1)).toEqual({
+      type: "usage_updated",
+      provider: "claude-acp",
+      usage: { contextWindowUsedTokens: 1_000, contextWindowMaxTokens: 64_000 },
+    });
+  });
+
+  test("says nothing when a usage update carries no numbers", () => {
+    const session = createUsageSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      used: Number.NaN,
+      size: 0,
+    });
+
+    expect(events).toEqual([]);
+  });
+});
+
 describe("ACPAgentSession slash commands", () => {
   test("returns immediately for ACP sessions that do not wait for async command discovery", async () => {
     const session = new ACPAgentSession(
@@ -4335,6 +4456,51 @@ function announceDshCommands(socket: Socket): void {
   socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242, commands: true })}\n`);
 }
 
+function announceDshUsage(socket: Socket): void {
+  socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242, usage: true })}\n`);
+}
+
+/**
+ * Callbacks the bridge tests hand to sessions and pollers.
+ *
+ * Named functions rather than inline arrows: a callback written inside a test
+ * is one nesting level deeper than the lint budget allows.
+ */
+function collectSessionEvents(events: AgentStreamEvent[]): (event: AgentStreamEvent) => void {
+  return (event) => {
+    events.push(event);
+  };
+}
+
+function isUsageUpdatedEvent(event: AgentStreamEvent): boolean {
+  return event.type === "usage_updated";
+}
+
+function hasSessionTotals(
+  usage: Extract<AgentStreamEvent, { type: "usage_updated" }>["usage"],
+): boolean {
+  return usage.sessionOutputTokens !== undefined;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Poll until the plugin has been asked for one operation. */
+async function waitForReceivedOp(
+  received: readonly Record<string, unknown>[],
+  op: string,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const started = Date.now();
+  while (!received.some((message) => message.op === op)) {
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(`timed out waiting for the plugin to receive ${op}`);
+    }
+    await delay(10);
+  }
+}
+
 function announceQuestionsOnly(socket: Socket): void {
   socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242 })}\n`);
 }
@@ -4639,6 +4805,24 @@ describe("ACPAgentSession question bridge", () => {
     expect(session.getPendingPermissions()).toEqual([]);
   });
 
+  /**
+   * A session whose launch is real up to the spawned process, with a bridge.
+   *
+   * The plugin's ready line and the daemon's first request are not ordered
+   * against each other, so callers wait for whatever they need rather than
+   * assume the capabilities are announced already.
+   */
+  async function connectedBridgeSession(bridge: DshQuestionBridge, pluginChannel: string) {
+    vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
+      channel: pluginChannel,
+      args: [],
+      env: { PASEO_QUESTION_BRIDGE_SOCKET: pluginChannel },
+    });
+    const session = createQuestionSession(bridge);
+    await session.initializeResumedSession();
+    return session;
+  }
+
   describe("slash commands", () => {
     const CATALOG = [
       { name: "compact", description: "Compact older conversation history", argumentHint: "" },
@@ -4675,22 +4859,10 @@ describe("ACPAgentSession question bridge", () => {
       }
     }
 
-    /** A session whose launch is real up to the spawned process, with a bridge. */
-    async function connectedCommandSession(bridge: DshQuestionBridge, pluginChannel: string) {
-      vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
-        channel: pluginChannel,
-        args: [],
-        env: { PASEO_QUESTION_BRIDGE_SOCKET: pluginChannel },
-      });
-      const session = createQuestionSession(bridge);
-      await session.initializeResumedSession();
-      return session;
-    }
-
     test("offers the commands DSH registered for this session", async () => {
       const bridge = createBridgeFor(await createHome());
       const plugin = await serveCommandPlugin({ ok: false, error: "unused" });
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
 
       await expect(waitForCatalog(session)).resolves.toEqual([
@@ -4725,7 +4897,7 @@ describe("ACPAgentSession question bridge", () => {
           sourceEventSeq: 42,
         },
       });
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
       await waitForCatalog(session);
 
@@ -4770,7 +4942,7 @@ describe("ACPAgentSession question bridge", () => {
         ok: true,
         result: { kind: "success", text: "No compactable history yet." },
       });
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
       await waitForCatalog(session);
 
@@ -4801,7 +4973,7 @@ describe("ACPAgentSession question bridge", () => {
           text: "Compaction is unavailable because this process has an active compaction.",
         },
       });
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
       await waitForCatalog(session);
 
@@ -4833,7 +5005,7 @@ describe("ACPAgentSession question bridge", () => {
         ok: true,
         result: { kind: "success", text: "Permission preset: workspace-write" },
       });
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
       await waitForCatalog(session);
 
@@ -4866,7 +5038,7 @@ describe("ACPAgentSession question bridge", () => {
       const bridge = createBridgeFor(await createHome());
       // An older plugin holds the channel open for questions only.
       const plugin = await servePlugin(announceQuestionsOnly);
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
 
       await expect(session.listCommands()).resolves.toEqual([]);
@@ -4878,12 +5050,135 @@ describe("ACPAgentSession question bridge", () => {
     test("leaves prose that merely starts with a slash to the model", async () => {
       const bridge = createBridgeFor(await createHome());
       const plugin = await serveCommandPlugin({ ok: false, error: "unused" });
-      const session = await connectedCommandSession(bridge, plugin.channel);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
       await waitFor(plugin.connected, "the channel connection");
       await waitForCatalog(session);
 
       expect(session.tryHandleOutOfBand?.("/tmp/notes.txt is stale")).toBeNull();
       expect(session.tryHandleOutOfBand?.("/Compact")).toBeNull();
+      await session.close();
+    });
+  });
+
+  describe("session usage", () => {
+    const BRIDGED_USAGE = {
+      uncachedInputTokens: 1_200,
+      cacheReadTokens: 44_000,
+      cacheWriteTokens: 300,
+      outputTokens: 900,
+    };
+
+    /** Answer usage requests the way the plugin does, after announcing them. */
+    function serveUsagePlugin(usage: Record<string, unknown> | null) {
+      return servePlugin(announceDshUsage, (message, socket) => {
+        if (message.op === "usage") {
+          socket.write(`${JSON.stringify({ op: "usage", id: message.id, ok: true, usage })}\n`);
+        }
+      });
+    }
+
+    /** Wait for the session to report the bridged session totals. */
+    async function waitForUsageEvents(
+      events: AgentStreamEvent[],
+      predicate: (usage: AgentUsage) => boolean,
+    ) {
+      const started = Date.now();
+      for (;;) {
+        const match = events.find(
+          (event) => event.type === "usage_updated" && predicate(event.usage),
+        );
+        if (match) return match;
+        if (Date.now() - started > 2_000) {
+          throw new Error(`timed out waiting for usage; saw ${JSON.stringify(events)}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    test("reports the harness's own session totals beside the ACP window", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveUsagePlugin(BRIDGED_USAGE);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      const events: AgentStreamEvent[] = [];
+      session.subscribe(collectSessionEvents(events));
+
+      asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+        sessionUpdate: "usage_update",
+        used: 45_700,
+        size: 128_000,
+      });
+
+      const usage = (await waitForUsageEvents(events, hasSessionTotals)).usage;
+      expect(usage).toEqual({
+        contextWindowUsedTokens: 45_700,
+        contextWindowMaxTokens: 128_000,
+        sessionUncachedInputTokens: 1_200,
+        sessionCacheReadTokens: 44_000,
+        sessionCacheWriteTokens: 300,
+        sessionOutputTokens: 900,
+      });
+      expect(plugin.received).toContainEqual({
+        op: "usage",
+        id: expect.any(String),
+        agentId: "session-1",
+      });
+      await session.close();
+    });
+
+    test("shows the window alone when the plugin reports nothing billed", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveUsagePlugin(null);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      const events: AgentStreamEvent[] = [];
+      session.subscribe(collectSessionEvents(events));
+
+      asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+        sessionUpdate: "usage_update",
+        used: 45_700,
+        size: 128_000,
+      });
+
+      await waitForReceivedOp(plugin.received, "usage");
+      await delay(50);
+      // `usage: null` means "nothing billed yet": the window stands alone and no
+      // second report replaces it.
+      expect(events.filter(isUsageUpdatedEvent)).toEqual([
+        {
+          type: "usage_updated",
+          provider: "dsh",
+          usage: { contextWindowUsedTokens: 45_700, contextWindowMaxTokens: 128_000 },
+        },
+      ]);
+      await session.close();
+    });
+
+    test("keeps the window when the plugin predates usage reporting", async () => {
+      const bridge = createBridgeFor(await createHome());
+      // Announces commands only: a plugin materialized before usage existed.
+      const plugin = await servePlugin(announceDshCommands);
+      const session = await connectedBridgeSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      const events: AgentStreamEvent[] = [];
+      session.subscribe(collectSessionEvents(events));
+
+      asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+        sessionUpdate: "usage_update",
+        used: 45_700,
+        size: 128_000,
+      });
+
+      // The resumed session's bootstrap thread event comes first; only the usage
+      // reports are under test here.
+      expect(events.filter(isUsageUpdatedEvent)).toEqual([
+        {
+          type: "usage_updated",
+          provider: "dsh",
+          usage: { contextWindowUsedTokens: 45_700, contextWindowMaxTokens: 128_000 },
+        },
+      ]);
+      expect(plugin.received).toEqual([]);
       await session.close();
     });
   });

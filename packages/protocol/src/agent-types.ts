@@ -193,6 +193,16 @@ export interface AgentUsage {
   totalCostUsd?: number;
   contextWindowMaxTokens?: number;
   contextWindowUsedTokens?: number;
+  /**
+   * Session-cumulative prompt-side buckets, when the provider can report the
+   * whole session rather than one turn. The three input buckets are disjoint and
+   * sum to every prompt token the session has been billed for.
+   */
+  sessionUncachedInputTokens?: number;
+  sessionCacheReadTokens?: number;
+  sessionCacheWriteTokens?: number;
+  /** Session-cumulative output tokens. */
+  sessionOutputTokens?: number;
 }
 
 export const TOOL_CALL_ICON_NAMES = [

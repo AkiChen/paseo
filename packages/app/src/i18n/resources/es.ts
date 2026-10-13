@@ -1984,6 +1984,8 @@ export const es: TranslationResources = {
     used: "{{percentage}}% utilizado",
     tokens: "Fichas{{used}}/{{max}}",
     sessionCost: "Costo de la sesión{{cost}}",
+    sessionTokens: "Fichas de la sesión{{total}}",
+    sessionCacheHit: "Aciertos de caché{{percent}}%",
     accessibility: "Ventana de contexto{{percentage}}% utilizada",
   },
   review: {

@@ -1969,6 +1969,8 @@ export const ru: TranslationResources = {
     used: "Использовано: {{percentage}}%",
     tokens: "Токены: {{used}} / {{max}}",
     sessionCost: "Стоимость сессии: {{cost}}",
+    sessionTokens: "Токены сессии: {{total}}",
+    sessionCacheHit: "Попадания в кэш: {{percent}}%",
     accessibility: "Использовано {{percentage}}% контекстного окна",
   },
   review: {

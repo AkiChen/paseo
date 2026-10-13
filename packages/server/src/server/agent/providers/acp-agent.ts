@@ -114,6 +114,7 @@ import {
   type DshQuestionBridgeSource,
   type DshQuestionOutcome,
   type DshQuestionRequest,
+  type DshSessionUsage,
 } from "./dsh-questions/bridge.js";
 import {
   mapDshQuestionRequest,
@@ -1771,6 +1772,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private cachedCommands: AgentSlashCommand[] = [];
   /** The command catalog the plugin inside this process reported, once asked. */
   private bridgedCommands: AgentSlashCommand[] | null = null;
+  /** The session's cumulative token buckets, as last reported by the plugin. */
+  private bridgedSessionUsage: DshSessionUsage | null = null;
+  /** Occupancy and cost facts the agent itself reported over ACP. */
+  private sessionContextUsage: AgentUsage = {};
+  private bridgedUsageRefresh: Promise<void> | null = null;
+  private bridgedUsageRefreshPending = false;
   private commandsReadyDeferred: { promise: Promise<void>; resolve: () => void } | null = null;
   private commandsReadySettled = false;
   private waitForInitialCommands: boolean;
@@ -1840,6 +1847,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.bootstrapThreadEventPending = true;
       this.applySessionState(response);
       await this.applyConfiguredOverrides();
+      // A resumed session already has a log worth reporting; a new one answers
+      // "nothing billed yet" and costs one round trip.
+      this.refreshBridgedSessionUsage();
     } catch (error) {
       await this.closeAfterInitializationFailure(error);
     }
@@ -1894,6 +1904,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       }
 
       await this.applyConfiguredOverrides();
+      // The plugin reports the whole durable log, so a resumed session shows its
+      // real totals before the next turn commits anything.
+      this.refreshBridgedSessionUsage();
     } catch (error) {
       await this.closeAfterInitializationFailure(error);
     }
@@ -3496,8 +3509,97 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  /**
+   * Report how full the context window is, and fold in what the bridge knows.
+   *
+   * ACP is the standard source for occupancy: an agent that sends
+   * `usage_update` is telling the client how much of its window the session
+   * currently occupies. Only DeepSeek Harness reports cumulative billing, and
+   * only through its own session projection, so the bridge answer is layered on
+   * top — a provider without a bridge keeps exactly the ACP numbers.
+   */
   private handleUsageUpdate(update: UsageUpdate): void {
-    void update;
+    const usage: AgentUsage = {};
+    if (Number.isFinite(update.used) && update.used >= 0) {
+      usage.contextWindowUsedTokens = update.used;
+    }
+    if (Number.isFinite(update.size) && update.size > 0) {
+      usage.contextWindowMaxTokens = update.size;
+    }
+    // ACP defines `cost` as cumulative for the session; Paseo models cost in
+    // dollars, so a different currency is left to a client that can show it.
+    if (update.cost && update.cost.currency.toUpperCase() === "USD") {
+      usage.totalCostUsd = update.cost.amount;
+    }
+    if (Object.keys(usage).length === 0) {
+      return;
+    }
+    this.sessionContextUsage = { ...this.sessionContextUsage, ...usage };
+    this.emitUsageSnapshot();
+    this.refreshBridgedSessionUsage();
+  }
+
+  /**
+   * Everything known about this session's usage, in one value.
+   *
+   * `usage_updated` replaces the client's `lastUsage` outright, so the snapshot
+   * carries the turn's numbers, the context window, and the bridged session
+   * totals together rather than dropping whatever is not in play right now.
+   */
+  private sessionUsageSnapshot(): AgentUsage {
+    const usage: AgentUsage = { ...this.currentTurnUsage, ...this.sessionContextUsage };
+    if (this.bridgedSessionUsage !== null) {
+      usage.sessionUncachedInputTokens = this.bridgedSessionUsage.uncachedInputTokens;
+      usage.sessionCacheReadTokens = this.bridgedSessionUsage.cacheReadTokens;
+      usage.sessionCacheWriteTokens = this.bridgedSessionUsage.cacheWriteTokens;
+      usage.sessionOutputTokens = this.bridgedSessionUsage.outputTokens;
+    }
+    return usage;
+  }
+
+  private emitUsageSnapshot(): void {
+    this.pushEvent({
+      type: "usage_updated",
+      provider: this.provider,
+      usage: this.sessionUsageSnapshot(),
+    });
+  }
+
+  /**
+   * Ask the plugin for the session's cumulative buckets.
+   *
+   * Refreshes coalesce: a turn that commits several assistant messages would
+   * otherwise stack one round trip per message, so a request that arrives while
+   * one is in flight is served by a single follow-up. A bridge that cannot
+   * answer leaves the last known totals in place.
+   */
+  private refreshBridgedSessionUsage(): void {
+    const connection = this.questionBridgeConnection;
+    const sessionId = this.sessionId;
+    if (connection === null || sessionId === null || !connection.supportsUsage()) {
+      return;
+    }
+    if (this.bridgedUsageRefresh !== null) {
+      this.bridgedUsageRefreshPending = true;
+      return;
+    }
+    this.bridgedUsageRefresh = (async () => {
+      const usage = await connection.readUsage(sessionId);
+      if (usage !== null && !this.closed) {
+        this.bridgedSessionUsage = usage;
+        this.emitUsageSnapshot();
+      }
+    })()
+      .catch((error: unknown) => {
+        this.logger.warn({ err: error }, "Reading the DSH session usage failed");
+      })
+      .finally(() => {
+        this.bridgedUsageRefresh = null;
+        if (this.bridgedUsageRefreshPending) {
+          this.bridgedUsageRefreshPending = false;
+          this.refreshBridgedSessionUsage();
+        }
+      });
   }
 
   private handlePromptResponse(response: PromptResponse, turnId: string): void {

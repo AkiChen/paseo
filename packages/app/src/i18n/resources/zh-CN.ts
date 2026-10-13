@@ -1912,6 +1912,8 @@ export const zhCN: TranslationResources = {
     used: "已使用 {{percentage}}%",
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "会话费用 {{cost}}",
+    sessionTokens: "会话 token {{total}}",
+    sessionCacheHit: "缓存命中 {{percent}}%",
     accessibility: "上下文窗口已使用 {{percentage}}%",
   },
   review: {

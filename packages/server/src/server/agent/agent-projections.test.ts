@@ -285,6 +285,10 @@ describe("toAgentPayload", () => {
       "totalCostUsd",
       "contextWindowMaxTokens",
       "contextWindowUsedTokens",
+      "sessionUncachedInputTokens",
+      "sessionCacheReadTokens",
+      "sessionCacheWriteTokens",
+      "sessionOutputTokens",
     ] as const;
 
     for (const field of fields) {
@@ -296,6 +300,10 @@ describe("toAgentPayload", () => {
           totalCostUsd: 0.5,
           contextWindowMaxTokens: 200_000,
           contextWindowUsedTokens: 100_000,
+          sessionUncachedInputTokens: 1_200,
+          sessionCacheReadTokens: 44_000,
+          sessionCacheWriteTokens: 0,
+          sessionOutputTokens: 900,
           [field]: Number.NaN,
         },
       });
@@ -428,6 +436,30 @@ describe("toAgentPayload", () => {
       inputTokens: 10,
       contextWindowMaxTokens: 200_000,
       contextWindowUsedTokens: 42_000,
+    });
+  });
+
+  it("preserves session-cumulative usage fields when they are valid numbers", () => {
+    const agent = createManagedAgent({
+      lastUsage: {
+        contextWindowMaxTokens: 1_000_000,
+        contextWindowUsedTokens: 49_900,
+        sessionUncachedInputTokens: 2_700,
+        sessionCacheReadTokens: 93_700,
+        sessionCacheWriteTokens: 0,
+        sessionOutputTokens: 1_500,
+      },
+    });
+
+    const payload = toAgentPayload(agent);
+
+    expect(payload.lastUsage).toEqual({
+      contextWindowMaxTokens: 1_000_000,
+      contextWindowUsedTokens: 49_900,
+      sessionUncachedInputTokens: 2_700,
+      sessionCacheReadTokens: 93_700,
+      sessionCacheWriteTokens: 0,
+      sessionOutputTokens: 1_500,
     });
   });
 
