@@ -121,6 +121,11 @@ import {
   type DshQuestionMapping,
 } from "./dsh-questions/questions.js";
 import {
+  type DshSlashCommandInvocation,
+  mapDshSlashCommands,
+  parseDshSlashCommandLine,
+} from "./dsh-questions/commands.js";
+import {
   createSessionMetadataReader,
   mergeSessionMetadata,
   type SessionMetadataReader,
@@ -154,6 +159,21 @@ function assertChildWithPipes(
   if (!child.stdin || !child.stdout || !child.stderr) {
     throw new Error("Child process did not expose stdio pipes");
   }
+}
+
+/**
+ * One command per name, ACP's own definition winning over a bridged one.
+ *
+ * A provider that advertises commands over ACP describes them better than any
+ * side channel can (skills, custom prompts, per-session variants), so the
+ * bridged catalog only fills names ACP left out.
+ */
+function mergeSlashCommands(
+  native: readonly AgentSlashCommand[],
+  bridged: readonly AgentSlashCommand[],
+): AgentSlashCommand[] {
+  const names = new Set(native.map((command) => command.name));
+  return [...native, ...bridged.filter((command) => !names.has(command.name))];
 }
 
 // Node reports a failed spawn (missing binary or missing cwd) as a child
@@ -1749,6 +1769,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private lastActivityAt: string | null = null;
   private configOptions: SessionConfigOption[] = [];
   private cachedCommands: AgentSlashCommand[] = [];
+  /** The command catalog the plugin inside this process reported, once asked. */
+  private bridgedCommands: AgentSlashCommand[] | null = null;
   private commandsReadyDeferred: { promise: Promise<void>; resolve: () => void } | null = null;
   private commandsReadySettled = false;
   private waitForInitialCommands: boolean;
@@ -2043,6 +2065,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   async listCommands(): Promise<AgentSlashCommand[]> {
+    const bridged = await this.listBridgedCommands();
+    if (bridged !== null && bridged.length > 0) {
+      return mergeSlashCommands(this.cachedCommands, bridged);
+    }
     if (this.cachedCommands.length > 0) {
       return this.cachedCommands;
     }
@@ -2054,6 +2080,142 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     await this.waitForCommandsReady();
     this.settleCommandsReady();
     return this.cachedCommands;
+  }
+
+  /**
+   * The slash commands the plugin inside this process offers for this agent.
+   *
+   * DeepSeek Harness's ACP has no command method and never sends
+   * `available_commands_update`, so the catalog only exists on the bridge. A
+   * provider whose ACP does advertise commands keeps them: this returns null
+   * without a command-capable bridge, and the caller falls back to the ACP
+   * batch it always used.
+   */
+  private async listBridgedCommands(): Promise<AgentSlashCommand[] | null> {
+    if (this.bridgedCommands !== null) {
+      return this.bridgedCommands;
+    }
+    const connection = this.questionBridgeConnection;
+    const sessionId = this.sessionId;
+    if (connection === null || sessionId === null || !connection.supportsCommands()) {
+      return null;
+    }
+    const descriptors = await connection.listCommands(sessionId);
+    if (descriptors === null) {
+      return null;
+    }
+    this.bridgedCommands = mapDshSlashCommands(descriptors);
+    return this.bridgedCommands;
+  }
+
+  /**
+   * Run a DeepSeek Harness slash command instead of prompting the model with it.
+   *
+   * DSH registers `/compact`, `/goal`, `/plan`, `/permission`, and `/feedback`
+   * on a registry that only its own client UI executes; the ACP composition
+   * carries the registry but no executor at all. The plugin runs the line and
+   * reports DSH's own result, which is the only truthful source for what
+   * happened. Without a command-capable bridge this returns null, and the line
+   * is an ordinary prompt exactly as it was before.
+   */
+  tryHandleOutOfBand(
+    prompt: AgentPromptInput,
+  ): { run(ctx: { emit: (event: AgentStreamEvent) => void }): Promise<void> } | null {
+    if (typeof prompt !== "string") {
+      return null;
+    }
+    const connection = this.questionBridgeConnection;
+    if (connection === null || !connection.supportsCommands()) {
+      return null;
+    }
+    const parsed = parseDshSlashCommandLine(prompt);
+    if (parsed === null) {
+      return null;
+    }
+    return {
+      run: async ({ emit }) => {
+        await this.runBridgedCommand(parsed, emit);
+      },
+    };
+  }
+
+  /** Run one bridged command and show what DSH said about it. */
+  private async runBridgedCommand(
+    command: DshSlashCommandInvocation,
+    emit: (event: AgentStreamEvent) => void,
+  ): Promise<void> {
+    const connection = this.questionBridgeConnection;
+    const sessionId = this.sessionId;
+    if (connection === null || sessionId === null) {
+      this.emitBridgedCommandNotice(
+        emit,
+        "error",
+        `${command.line} did not run: the DeepSeek Harness bridge is not connected`,
+      );
+      return;
+    }
+
+    // Compaction is the one command that changes what the model can see, and it
+    // is slow enough that doing it silently looks like nothing happened. The
+    // marker is only completed when DSH reports the history replacement it
+    // anchored; a no-op or a refusal leaves the result text to say so.
+    const compaction = command.name === "compact";
+    if (compaction) {
+      emit({
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "compaction", status: "loading", trigger: "manual" },
+      });
+    }
+
+    const outcome = await connection.runCommand(sessionId, command.line);
+
+    if (outcome === null) {
+      this.logger.warn(
+        { command: command.line, sessionId },
+        "The DSH command bridge did not answer; the command may still be running",
+      );
+      this.emitBridgedCommandNotice(
+        emit,
+        "error",
+        `${command.line} did not report a result: the DeepSeek Harness bridge did not answer`,
+      );
+      return;
+    }
+
+    if (outcome.kind === "error") {
+      this.emitBridgedCommandNotice(emit, "error", outcome.text);
+      return;
+    }
+
+    if (compaction && outcome.sourceEventSeq !== undefined) {
+      emit({
+        type: "timeline",
+        provider: this.provider,
+        item: { type: "compaction", status: "completed", trigger: "manual" },
+      });
+    }
+    if (outcome.text !== undefined && outcome.text.length > 0) {
+      this.emitBridgedCommandNotice(emit, "info", outcome.text);
+    }
+  }
+
+  /**
+   * Say what a command settled to, in DSH's own words.
+   *
+   * A notification, not an assistant message: the model did not say this, and
+   * attributing DSH's status text to it would misrepresent the turn.
+   */
+  private emitBridgedCommandNotice(
+    emit: (event: AgentStreamEvent) => void,
+    level: "info" | "error",
+    message: string,
+  ): void {
+    emit({
+      type: "timeline",
+      provider: this.provider,
+      item: { type: "notification", level, message },
+    });
   }
 
   async setMode(modeId: string): Promise<void> {

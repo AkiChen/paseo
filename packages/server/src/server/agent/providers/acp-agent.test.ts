@@ -4324,6 +4324,21 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
   });
 });
 
+/**
+ * The plugin's greeting, in both the shapes that matter to a test.
+ *
+ * Named functions rather than inline arrows: the channel helpers take them as
+ * callbacks, and a callback written inside a test is one nesting level deeper
+ * than the lint budget allows.
+ */
+function announceDshCommands(socket: Socket): void {
+  socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242, commands: true })}\n`);
+}
+
+function announceQuestionsOnly(socket: Socket): void {
+  socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242 })}\n`);
+}
+
 describe("ACPAgentSession question bridge", () => {
   const homes: string[] = [];
   const servers: Server[] = [];
@@ -4351,7 +4366,10 @@ describe("ACPAgentSession question bridge", () => {
   }
 
   /** The plugin's side of the channel: one connection, newline-delimited JSON. */
-  async function servePlugin() {
+  async function servePlugin(
+    onConnect?: (socket: Socket) => void,
+    onLine?: (message: Record<string, unknown>, socket: Socket) => void,
+  ) {
     const received: Record<string, unknown>[] = [];
     const server = createServer((socket) => {
       sockets.add(socket);
@@ -4364,11 +4382,16 @@ describe("ACPAgentSession question bridge", () => {
           const line = buffered.slice(0, index);
           buffered = buffered.slice(index + 1);
           index = buffered.indexOf("\n");
-          if (line.trim().length > 0) received.push(JSON.parse(line) as Record<string, unknown>);
+          if (line.trim().length > 0) {
+            const message = JSON.parse(line) as Record<string, unknown>;
+            received.push(message);
+            onLine?.(message, socket);
+          }
         }
       });
       socket.on("close", () => sockets.delete(socket));
       socket.on("error", () => sockets.delete(socket));
+      onConnect?.(socket);
     });
     servers.push(server);
     await new Promise<void>((resolve, reject) => {
@@ -4465,6 +4488,8 @@ describe("ACPAgentSession question bridge", () => {
       platform: "linux",
       connectTimeoutMs: 2_000,
       reconnectDelayMs: 10,
+      commandListTimeoutMs: 1_000,
+      commandRunTimeoutMs: 1_000,
     });
   }
 
@@ -4612,5 +4637,254 @@ describe("ACPAgentSession question bridge", () => {
     );
 
     expect(session.getPendingPermissions()).toEqual([]);
+  });
+
+  describe("slash commands", () => {
+    const CATALOG = [
+      { name: "compact", description: "Compact older conversation history", argumentHint: "" },
+      { name: "permission", description: "Switch the permission preset", argumentHint: "<preset>" },
+    ];
+
+    /** Answer command requests the way the plugin does, after announcing them. */
+    function serveCommandPlugin(result: Record<string, unknown>) {
+      return servePlugin(announceDshCommands, (message, socket) => {
+        if (message.op === "commands") {
+          socket.write(
+            `${JSON.stringify({ op: "commands", id: message.id, ok: true, list: CATALOG })}\n`,
+          );
+        }
+        if (message.op === "command") {
+          socket.write(`${JSON.stringify({ op: "command", id: message.id, ...result })}\n`);
+        }
+      });
+    }
+
+    /**
+     * The plugin's ready line and the daemon's first question are not ordered
+     * against each other, so wait for the catalog rather than assume it.
+     */
+    async function waitForCatalog(session: ACPAgentSession) {
+      const started = Date.now();
+      for (;;) {
+        const commands = await session.listCommands();
+        if (commands.length > 0) return commands;
+        if (Date.now() - started > 2_000) {
+          throw new Error("timed out waiting for the bridged command catalog");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    /** A session whose launch is real up to the spawned process, with a bridge. */
+    async function connectedCommandSession(bridge: DshQuestionBridge, pluginChannel: string) {
+      vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
+        channel: pluginChannel,
+        args: [],
+        env: { PASEO_QUESTION_BRIDGE_SOCKET: pluginChannel },
+      });
+      const session = createQuestionSession(bridge);
+      await session.initializeResumedSession();
+      return session;
+    }
+
+    test("offers the commands DSH registered for this session", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveCommandPlugin({ ok: false, error: "unused" });
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+
+      await expect(waitForCatalog(session)).resolves.toEqual([
+        {
+          name: "compact",
+          description: "Compact older conversation history",
+          argumentHint: "",
+          kind: "command",
+        },
+        {
+          name: "permission",
+          description: "Switch the permission preset",
+          argumentHint: "<preset>",
+          kind: "command",
+        },
+      ]);
+      expect(plugin.received).toContainEqual({
+        op: "commands",
+        id: expect.any(String),
+        agentId: "session-1",
+      });
+      await session.close();
+    });
+
+    test("runs /compact through DSH and shows the compaction it anchored", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveCommandPlugin({
+        ok: true,
+        result: {
+          kind: "success",
+          text: "Compacted 3 history items (~120 tokens).",
+          sourceEventSeq: 42,
+        },
+      });
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      await waitForCatalog(session);
+
+      const handler = session.tryHandleOutOfBand?.("/compact");
+      expect(handler).not.toBeNull();
+      const events: AgentStreamEvent[] = [];
+      await handler!.run({ emit: (event) => events.push(event) });
+
+      expect(events).toEqual([
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: { type: "compaction", status: "loading", trigger: "manual" },
+        },
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: { type: "compaction", status: "completed", trigger: "manual" },
+        },
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: {
+            type: "notification",
+            level: "info",
+            message: "Compacted 3 history items (~120 tokens).",
+          },
+        },
+      ]);
+      expect(plugin.received).toContainEqual({
+        op: "command",
+        id: expect.any(String),
+        agentId: "session-1",
+        line: "/compact",
+      });
+      await session.close();
+    });
+
+    test("claims no compaction when DSH had no history to replace", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveCommandPlugin({
+        ok: true,
+        result: { kind: "success", text: "No compactable history yet." },
+      });
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      await waitForCatalog(session);
+
+      const events: AgentStreamEvent[] = [];
+      await session.tryHandleOutOfBand?.("/compact")?.run({ emit: (event) => events.push(event) });
+
+      expect(events).toEqual([
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: { type: "compaction", status: "loading", trigger: "manual" },
+        },
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: { type: "notification", level: "info", message: "No compactable history yet." },
+        },
+      ]);
+      await session.close();
+    });
+
+    test("reports a command DSH refused without claiming it ran", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveCommandPlugin({
+        ok: true,
+        result: {
+          kind: "error",
+          text: "Compaction is unavailable because this process has an active compaction.",
+        },
+      });
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      await waitForCatalog(session);
+
+      const events: AgentStreamEvent[] = [];
+      await session.tryHandleOutOfBand?.("/compact")?.run({ emit: (event) => events.push(event) });
+
+      expect(events).toEqual([
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: { type: "compaction", status: "loading", trigger: "manual" },
+        },
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: {
+            type: "notification",
+            level: "error",
+            message: "Compaction is unavailable because this process has an active compaction.",
+          },
+        },
+      ]);
+      await session.close();
+    });
+
+    test("runs a non-compaction command without a compaction marker", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveCommandPlugin({
+        ok: true,
+        result: { kind: "success", text: "Permission preset: workspace-write" },
+      });
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      await waitForCatalog(session);
+
+      const events: AgentStreamEvent[] = [];
+      await session
+        .tryHandleOutOfBand?.("/permission workspace-write")
+        ?.run({ emit: (event) => events.push(event) });
+
+      expect(events).toEqual([
+        {
+          type: "timeline",
+          provider: "dsh",
+          item: {
+            type: "notification",
+            level: "info",
+            message: "Permission preset: workspace-write",
+          },
+        },
+      ]);
+      expect(plugin.received).toContainEqual({
+        op: "command",
+        id: expect.any(String),
+        agentId: "session-1",
+        line: "/permission workspace-write",
+      });
+      await session.close();
+    });
+
+    test("leaves slash lines to the model when the plugin has no commands", async () => {
+      const bridge = createBridgeFor(await createHome());
+      // An older plugin holds the channel open for questions only.
+      const plugin = await servePlugin(announceQuestionsOnly);
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+
+      await expect(session.listCommands()).resolves.toEqual([]);
+      expect(session.tryHandleOutOfBand?.("/compact")).toBeNull();
+      expect(plugin.received).toEqual([]);
+      await session.close();
+    });
+
+    test("leaves prose that merely starts with a slash to the model", async () => {
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveCommandPlugin({ ok: false, error: "unused" });
+      const session = await connectedCommandSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      await waitForCatalog(session);
+
+      expect(session.tryHandleOutOfBand?.("/tmp/notes.txt is stale")).toBeNull();
+      expect(session.tryHandleOutOfBand?.("/Compact")).toBeNull();
+      await session.close();
+    });
   });
 });

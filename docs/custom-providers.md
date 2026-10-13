@@ -571,7 +571,7 @@ that is missing, stale, or reformatted costs the extra fields and nothing else.
 The store format is private to the provider and versioned, so treat this as a
 bridge rather than the way sessions should be described.
 
-### Questions from a DeepSeek Harness agent
+### Questions and slash commands from a DeepSeek Harness agent
 
 `ask_user_question` and the plan review behind `exit_plan_mode` both ask the
 human through DeepSeek Harness's own client UI, on a channel an ACP client
@@ -616,6 +616,21 @@ tool description covers what the tool does, and the presets that ship
 agent-facing policy are not mounted here. A question asked while no daemon is
 connected is still declined, so an agent on an unwired machine keeps its
 previous behavior.
+
+The same bridge carries DeepSeek Harness's slash commands. `/compact`, `/goal`,
+`/plan`, `/permission`, and `/feedback` are registered on a command registry
+that only its own client UI executes, and its ACP has no command method at all —
+so without the bridge the slash menu for such an agent is empty. With it, the
+menu is that registry: names, descriptions, and argument hints as the process
+itself reports them. Running one goes through DeepSeek Harness, not the model,
+and the transcript gets a notification with its result. A plugin that predates
+this announces no command support, and a slash line is an ordinary prompt again
+— the same fallback as a provider whose ACP carries commands of its own.
+
+`/compact` is the one command Paseo renders as more than its result text: it
+shows the compaction while it runs and marks it completed only when DeepSeek
+Harness reports the history replacement it anchored, so "No compactable history
+yet." does not look like a compaction that happened.
 
 ### Generic ACP diagnostics
 

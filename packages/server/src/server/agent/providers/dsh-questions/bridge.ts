@@ -93,6 +93,34 @@ export type DshQuestionOutcome =
   | { kind: "dismiss" }
   | { kind: "unavailable" };
 
+/**
+ * One slash command the plugin's DSH process offers for an agent.
+ *
+ * The catalog is DSH's own registry, so the names and descriptions a slash menu
+ * renders are the ones the process can actually run.
+ */
+export const DshCommandDescriptorSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  argumentHint: z.string(),
+});
+
+export type DshCommandDescriptor = z.infer<typeof DshCommandDescriptorSchema>;
+
+/**
+ * What running one command settled to, in DSH's own words.
+ *
+ * `success` may carry the text DSH shows its own user ("Compacted 12 history
+ * items (~3,400 tokens).") and the session event DSH anchored the result at.
+ * For `/compact` that event exists only when history was actually replaced, so
+ * its absence is what separates a real compaction from a no-op. The plugin
+ * reports DSH's expected failures — an unknown name, a busy agent, a cancelled
+ * compaction — as `error` with the text DSH already composed for them.
+ */
+export type DshCommandOutcome =
+  | { kind: "success"; text?: string; sourceEventSeq?: number }
+  | { kind: "error"; text: string };
+
 export interface DshQuestionBridgeLaunch {
   /** Channel the plugin inside the spawned process listens on. */
   channel: string;
@@ -109,6 +137,10 @@ export interface DshQuestionBridgeOptions {
   platform?: NodeJS.Platform;
   connectTimeoutMs?: number;
   reconnectDelayMs?: number;
+  /** How long the command catalog may take before Paseo falls back to ACP. */
+  commandListTimeoutMs?: number;
+  /** How long one command may run; compaction summarizes the whole history. */
+  commandRunTimeoutMs?: number;
 }
 
 const CHANNEL_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
@@ -116,6 +148,8 @@ const PLUGIN_DIRECTORY = "paseo-question-bridge";
 const PATCH_FILENAME = "paseo-question-bridge.yml";
 const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
 const DEFAULT_RECONNECT_DELAY_MS = 250;
+const DEFAULT_COMMAND_LIST_TIMEOUT_MS = 5_000;
+const DEFAULT_COMMAND_RUN_TIMEOUT_MS = 300_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 const PLUGIN_PACKAGE = `${JSON.stringify(
@@ -158,6 +192,17 @@ export interface DshQuestionBridgeConnection {
   dismiss(requestId: string, message?: string): void;
   /** Tell DSH this question was never shown, so it looks for another answerer. */
   decline(requestId: string): void;
+  /**
+   * Whether the plugin announced it can run DSH's slash commands.
+   *
+   * A plugin materialized by an older daemon never says so, and then commands
+   * are not offered at all — the same behavior as before this existed.
+   */
+  supportsCommands(): boolean;
+  /** This agent's command catalog, or null when the plugin cannot answer. */
+  listCommands(agentId: string): Promise<DshCommandDescriptor[] | null>;
+  /** Run one complete slash line, or null when DSH was never asked. */
+  runCommand(agentId: string, line: string): Promise<DshCommandOutcome | null>;
   close(): void;
 }
 
@@ -184,6 +229,8 @@ export class DshQuestionBridge {
   private readonly platform: NodeJS.Platform;
   private readonly connectTimeoutMs: number;
   private readonly reconnectDelayMs: number;
+  private readonly commandListTimeoutMs: number;
+  private readonly commandRunTimeoutMs: number;
   private artifacts: Promise<{ patchPath: string }> | null = null;
 
   constructor(options: DshQuestionBridgeOptions) {
@@ -192,6 +239,8 @@ export class DshQuestionBridge {
     this.platform = options.platform ?? process.platform;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.reconnectDelayMs = options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS;
+    this.commandListTimeoutMs = options.commandListTimeoutMs ?? DEFAULT_COMMAND_LIST_TIMEOUT_MS;
+    this.commandRunTimeoutMs = options.commandRunTimeoutMs ?? DEFAULT_COMMAND_RUN_TIMEOUT_MS;
   }
 
   /** Write the plugin and its overlay, then name a channel for one process. */
@@ -265,8 +314,16 @@ export class DshQuestionBridge {
     let buffered = "";
     let timer: NodeJS.Timeout | null = null;
     let readySettled = false;
+    /** Whether the plugin announced it can list and run DSH's commands. */
+    let commandsSupported = false;
     /** Questions DSH settled on its own; a reply to one of those would be refused. */
     const settled = new Set<string>();
+    /** Requests waiting on a reply, keyed by the id this side minted. */
+    const requests = new Map<
+      string,
+      { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+    >();
+    let requestSeq = 0;
     let resolveReady: () => void = () => {};
     let rejectReady: (error: Error) => void = () => {};
     const ready = new Promise<void>((resolve, reject) => {
@@ -303,6 +360,52 @@ export class DshQuestionBridge {
       timer.unref();
     };
 
+    /**
+     * Send one request that expects a reply, keyed by an id this side minted.
+     *
+     * Commands are the only request/reply pair on this channel — questions and
+     * their answers flow the other way — so the id namespace stays this side's.
+     * A reply that never comes is a rejection the caller turns into "Paseo could
+     * not ask DSH", never a hang.
+     */
+    const request = (message: Record<string, unknown>, timeoutMs: number): Promise<unknown> => {
+      const id = `paseo-${++requestSeq}`;
+      return new Promise<unknown>((resolve, reject) => {
+        const forget = () => {
+          requests.delete(id);
+        };
+        const expiry = setTimeout(() => {
+          forget();
+          reject(new Error(`${String(message.op)} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        expiry.unref();
+        requests.set(id, {
+          resolve: (value) => {
+            forget();
+            resolve(value);
+          },
+          reject: (error) => {
+            forget();
+            reject(error);
+          },
+          timer: expiry,
+        });
+        if (!write({ ...message, id })) {
+          const entry = requests.get(id);
+          if (entry !== undefined) entry.reject(new Error("the DSH bridge is disconnected"));
+        }
+      });
+    };
+
+    const settleRequest = (message: Record<string, unknown>): boolean => {
+      if (typeof message.id !== "string") return false;
+      const entry = requests.get(message.id);
+      if (entry === undefined) return false;
+      clearTimeout(entry.timer);
+      entry.resolve(message);
+      return true;
+    };
+
     const handle = (line: string) => {
       let message: unknown;
       try {
@@ -312,7 +415,16 @@ export class DshQuestionBridge {
         return;
       }
       if (!isRecord(message)) return;
+      if (settleRequest(message)) return;
       switch (message.op) {
+        case "ready": {
+          commandsSupported = message.commands === true;
+          this.logger.debug(
+            { channel: options.channel, commands: commandsSupported },
+            "The DSH bridge is ready",
+          );
+          return;
+        }
         case "ask": {
           const parsed = DshQuestionRequestSchema.safeParse(message);
           if (!parsed.success) {
@@ -392,6 +504,63 @@ export class DshQuestionBridge {
       decline: (requestId) => {
         write({ op: "unavailable", requestId });
       },
+      supportsCommands: () => commandsSupported,
+      listCommands: async (agentId) => {
+        if (!commandsSupported) return null;
+        try {
+          const reply = await request({ op: "commands", agentId }, this.commandListTimeoutMs);
+          if (!isRecord(reply) || reply.ok !== true) {
+            this.logger.warn(
+              { channel: options.channel, reply },
+              "The DSH bridge could not list this agent's commands",
+            );
+            return null;
+          }
+          const parsed = z.array(DshCommandDescriptorSchema).safeParse(reply.list);
+          if (!parsed.success) {
+            this.logger.warn(
+              { err: parsed.error },
+              "The DSH bridge sent a malformed command catalog",
+            );
+            return null;
+          }
+          return parsed.data;
+        } catch (error) {
+          this.logger.warn({ err: error }, "Asking the DSH bridge for commands failed");
+          return null;
+        }
+      },
+      runCommand: async (agentId, line) => {
+        if (!commandsSupported) return null;
+        try {
+          const reply = await request({ op: "command", agentId, line }, this.commandRunTimeoutMs);
+          if (!isRecord(reply)) return null;
+          if (reply.ok !== true) {
+            return {
+              kind: "error",
+              text: typeof reply.error === "string" ? reply.error : `${line} failed`,
+            };
+          }
+          const result = isRecord(reply.result) ? reply.result : null;
+          if (result === null) return { kind: "error", text: `${line} returned no result` };
+          if (result.kind === "success") {
+            const sourceEventSeq =
+              typeof result.sourceEventSeq === "number" ? result.sourceEventSeq : undefined;
+            return {
+              kind: "success",
+              ...(typeof result.text === "string" ? { text: result.text } : {}),
+              ...(sourceEventSeq === undefined ? {} : { sourceEventSeq }),
+            };
+          }
+          return {
+            kind: "error",
+            text: typeof result.text === "string" ? result.text : `${line} failed`,
+          };
+        } catch (error) {
+          this.logger.warn({ err: error }, "Running a DSH command through the bridge failed");
+          return null;
+        }
+      },
       close: () => {
         closed = true;
         if (timer !== null) {
@@ -401,6 +570,11 @@ export class DshQuestionBridge {
         const open = socket;
         socket = null;
         open?.destroy();
+        for (const entry of requests.values()) {
+          clearTimeout(entry.timer);
+          entry.reject(new Error("the DSH bridge closed"));
+        }
+        requests.clear();
       },
     };
   }

@@ -46,6 +46,8 @@ function createBridge(home: string): DshQuestionBridge {
     platform: "linux",
     connectTimeoutMs: 2_000,
     reconnectDelayMs: 10,
+    commandListTimeoutMs: 1_000,
+    commandRunTimeoutMs: 1_000,
   });
 }
 
@@ -60,7 +62,10 @@ interface FakePlugin {
 }
 
 /** A channel that behaves like the plugin: it holds one connection and talks NDJSON. */
-async function serveFakePlugin(onConnect?: (socket: Socket) => void): Promise<FakePlugin> {
+async function serveFakePlugin(
+  onConnect?: (socket: Socket) => void,
+  onLine?: (message: Record<string, unknown>, socket: Socket) => void,
+): Promise<FakePlugin> {
   const received: Record<string, unknown>[] = [];
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
@@ -74,10 +79,15 @@ async function serveFakePlugin(onConnect?: (socket: Socket) => void): Promise<Fa
         const line = buffered.slice(0, index);
         buffered = buffered.slice(index + 1);
         index = buffered.indexOf("\n");
-        if (line.trim().length > 0) received.push(JSON.parse(line) as Record<string, unknown>);
+        if (line.trim().length > 0) {
+          const message = JSON.parse(line) as Record<string, unknown>;
+          received.push(message);
+          onLine?.(message, socket);
+        }
       }
     });
     socket.on("close", () => sockets.delete(socket));
+    socket.on("error", () => sockets.delete(socket));
     onConnect?.(socket);
   });
   openServers.push(server);
@@ -323,6 +333,188 @@ describe("DshQuestionBridge.connect", () => {
 
     expect(plugin.received).toEqual([]);
     connection.close();
+  });
+});
+
+describe("DshQuestionBridge commands", () => {
+  const READY = { op: "ready", protocol: 1, pid: 4242, commands: true };
+  const CATALOG = [
+    { name: "compact", description: "Compact older conversation history", argumentHint: "" },
+    { name: "goal", description: "set or view the goal", argumentHint: "[<objective>|clear]" },
+  ];
+
+  test("lists this agent's commands and runs one, reporting DSH's own result", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "commands") {
+          socket.write(
+            `${JSON.stringify({ op: "commands", id: message.id, ok: true, list: CATALOG })}\n`,
+          );
+        }
+        if (message.op === "command") {
+          socket.write(
+            `${JSON.stringify({
+              op: "command",
+              id: message.id,
+              ok: true,
+              result: {
+                kind: "success",
+                text: "Compacted 3 history items (~120 tokens).",
+                sourceEventSeq: 42,
+              },
+            })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsCommands(), "the command capability");
+
+    await expect(connection.listCommands("session-1")).resolves.toEqual(CATALOG);
+    await expect(connection.runCommand("session-1", "/compact")).resolves.toEqual({
+      kind: "success",
+      text: "Compacted 3 history items (~120 tokens).",
+      sourceEventSeq: 42,
+    });
+    expect(plugin.received).toEqual([
+      { op: "commands", id: expect.any(String), agentId: "session-1" },
+      { op: "command", id: expect.any(String), agentId: "session-1", line: "/compact" },
+    ]);
+    connection.close();
+  });
+
+  test("reports a command DSH refused with the text DSH composed", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "command") {
+          socket.write(
+            `${JSON.stringify({
+              op: "command",
+              id: message.id,
+              ok: false,
+              error: "Compaction is unavailable because the agent is not idle.",
+            })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsCommands(), "the command capability");
+
+    await expect(connection.runCommand("session-1", "/compact")).resolves.toEqual({
+      kind: "error",
+      text: "Compaction is unavailable because the agent is not idle.",
+    });
+    connection.close();
+  });
+
+  test("offers no commands to a plugin that never announced them", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin((socket) => {
+      socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242 })}\n`);
+    });
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => plugin.received.length === 0, "the channel to stay quiet");
+
+    expect(connection.supportsCommands()).toBe(false);
+    await expect(connection.listCommands("session-1")).resolves.toBeNull();
+    await expect(connection.runCommand("session-1", "/compact")).resolves.toBeNull();
+    // An older plugin holds the channel open for questions; commands must not
+    // put a request on it that nothing will ever answer.
+    expect(plugin.received).toEqual([]);
+    connection.close();
+  });
+
+  test("gives up on a request the plugin never answers", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin((socket) => {
+      socket.write(`${JSON.stringify(READY)}\n`);
+    });
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsCommands(), "the command capability");
+
+    await expect(connection.listCommands("session-1")).resolves.toBeNull();
+    await expect(connection.runCommand("session-1", "/compact")).resolves.toBeNull();
+    expect(plugin.received.map((message) => message.op)).toEqual(["commands", "command"]);
+    connection.close();
+  });
+
+  test("rejects a malformed catalog instead of offering it", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "commands") {
+          socket.write(
+            `${JSON.stringify({ op: "commands", id: message.id, ok: true, list: [{ description: "no name" }] })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsCommands(), "the command capability");
+
+    await expect(connection.listCommands("session-1")).resolves.toBeNull();
+    connection.close();
+  });
+
+  test("fails pending command requests when the connection closes", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin((socket) => {
+      socket.write(`${JSON.stringify(READY)}\n`);
+    });
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsCommands(), "the command capability");
+
+    const running = connection.runCommand("session-1", "/compact");
+    connection.close();
+    await expect(running).resolves.toBeNull();
   });
 });
 

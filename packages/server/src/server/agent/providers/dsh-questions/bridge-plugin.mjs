@@ -21,6 +21,14 @@
  * over deciding for the user, and the ACP profile mounts no agent preset that
  * would say so.
  *
+ * The same process is where DeepSeek Harness's slash commands live — `/compact`,
+ * `/goal`, `/plan`, `/permission`, `/feedback` are registered on `ctx.commands`
+ * and only its own client UI ever runs them. The ACP profile composes the
+ * registry, so the plugin lists it and runs a line on the daemon's behalf,
+ * reporting DSH's own result text back. That is the only way Paseo can offer
+ * those commands: `dsh-acp` has no command method and never sends
+ * `available_commands_update`.
+ *
  * It speaks newline-delimited JSON over the channel named by
  * `PASEO_QUESTION_BRIDGE_SOCKET` (`unix:<path>`, `pipe:<name>`,
  * `tcp:<host>:<port>`) and never writes to stdout, which belongs to the ACP
@@ -37,12 +45,11 @@ export const name = "paseo-question-bridge";
 /**
  * The seams this plugin answers on. A profile without them never activates us.
  *
- * `systemPrompt` is here for the guidance below: the shipped tool description
- * says what `ask_user_question` does, not when a coding agent should prefer it
- * over deciding for the user, and the ACP profile mounts no agent preset to say
- * so either.
+ * `systemPrompt` is here for the guidance below; `commands` and `agents` are
+ * here because the daemon runs this session's slash commands through the same
+ * channel, and both the registry and the live agent are needed to do that.
  */
-export const inject = ["userQuestions", "systemPrompt"];
+export const inject = ["userQuestions", "systemPrompt", "commands", "agents"];
 
 const SOCKET_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
 const LOG_ENV = "PASEO_QUESTION_BRIDGE_LOG";
@@ -51,6 +58,12 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 const GUIDANCE_SECTION = "paseo:user-questions";
 /** Where the plan policy sits, used when the section order table is unavailable. */
 const GUIDANCE_ORDER_FALLBACK = 500;
+/**
+ * One complete slash-command line, exactly as DSH's own registry parses it: a
+ * name, then either the end of the line or the input it takes. Anything else is
+ * prose that happens to start with a slash, and belongs to the model.
+ */
+const COMMAND_LINE = /^\/[a-z][a-z0-9_-]*(?=$|[\t\n\r ])/u;
 
 /**
  * When to ask instead of deciding.
@@ -128,15 +141,18 @@ function normalizeQuestion(question, index) {
   const options = Array.isArray(question.options)
     ? question.options
         .filter((option) => isRecord(option) && typeof option.label === "string")
-        .map((option) => ({
-          label: option.label,
-          ...(typeof option.description === "string" ? { description: option.description } : {}),
-        }))
+        .map((option) =>
+          typeof option.description === "string"
+            ? { label: option.label, description: option.description }
+            : { label: option.label },
+        )
     : [];
   const intent = isRecord(question.intent)
     ? {
         ...(typeof question.intent.kind === "string" ? { kind: question.intent.kind } : {}),
-        ...(typeof question.intent.approve === "string" ? { approve: question.intent.approve } : {}),
+        ...(typeof question.intent.approve === "string"
+          ? { approve: question.intent.approve }
+          : {}),
       }
     : {};
   const header = optionalString(question, "header");
@@ -242,7 +258,9 @@ function dismissQuestion(bridge, requestId, message) {
  * report an answer that no human gave.
  */
 function declineQuestion(bridge, requestId) {
-  return settleQuestion(bridge, requestId, "declined", (entry) => entry.resolve({ declined: true }));
+  return settleQuestion(bridge, requestId, "declined", (entry) =>
+    entry.resolve({ declined: true }),
+  );
 }
 
 /**
@@ -287,6 +305,136 @@ function claimQuestion(bridge, request) {
       ...(agent === undefined ? {} : { agent }),
     });
   });
+}
+
+/**
+ * One live agent, or null when the id names none.
+ *
+ * The ACP session id and the agent id are the same string, which is what lets
+ * the daemon address an agent it already owns without a second lookup table.
+ * A missing agent is normal: the process outlives a closed session, and a
+ * resumed one is looked up by the id it was resumed with.
+ */
+function resolveAgent(agents, agentId) {
+  if (typeof agentId !== "string" || agentId.length === 0) return null;
+  try {
+    return agents.get(agentId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Copy one registry descriptor into the wire shape a slash menu renders. */
+function normalizeCommand(descriptor) {
+  const commandName = optionalString(descriptor, "name");
+  if (commandName === undefined) return null;
+  const input = isRecord(descriptor.input) ? descriptor.input : undefined;
+  return {
+    name: commandName,
+    description: typeof descriptor.description === "string" ? descriptor.description : "",
+    argumentHint: input !== undefined && typeof input.hint === "string" ? input.hint : "",
+  };
+}
+
+/**
+ * Answer one `commands` request with this agent's effective command catalog.
+ *
+ * The registry is DSH's own: the names, descriptions, and argument hints are
+ * exactly what its client UI would offer, so the menu Paseo renders cannot
+ * drift from the commands the process can actually run.
+ */
+function listCommands(bridge, message) {
+  const id = message.id ?? null;
+  const agent = resolveAgent(bridge.agents, message.agentId);
+  if (agent === null) {
+    return {
+      op: "commands",
+      id,
+      ok: false,
+      error: `no live agent "${String(message.agentId)}" in this process`,
+    };
+  }
+  try {
+    const list = [];
+    for (const descriptor of bridge.commands.list(agent)) {
+      const command = normalizeCommand(descriptor);
+      if (command !== null) list.push(command);
+    }
+    return { op: "commands", id, ok: true, list };
+  } catch (error) {
+    log(`listing commands failed: ${describeError(error)}`);
+    return { op: "commands", id, ok: false, error: describeError(error) };
+  }
+}
+
+/**
+ * Parse and run one complete slash-command line through the registry.
+ *
+ * `execute` is DSH's own entry point: it logs the `command/run` and
+ * `command/done` pair into the session, resolves agent-scoped commands, and
+ * yields the same result text its client UI shows. An unknown or malformed name
+ * comes back as `undefined`, which is reported as a failure rather than
+ * silently swallowed.
+ */
+async function runCommand(bridge, socket, message) {
+  const id = message.id ?? null;
+  const respond = (payload) => {
+    try {
+      socket.write(`${JSON.stringify(payload)}\n`);
+    } catch (error) {
+      log(`reply failed: ${describeError(error)}`);
+    }
+  };
+  const line = typeof message.line === "string" ? message.line.trim() : "";
+  if (!COMMAND_LINE.test(line)) {
+    respond({ op: "command", id, ok: false, error: `"${line}" is not a slash command` });
+    return;
+  }
+  const agent = resolveAgent(bridge.agents, message.agentId);
+  if (agent === null) {
+    respond({
+      op: "command",
+      id,
+      ok: false,
+      error: `no live agent "${String(message.agentId)}" in this process`,
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  bridge.running.add(controller);
+  try {
+    const executed = await bridge.commands.execute(agent, line, [], controller.signal);
+    if (executed === undefined) {
+      respond({ op: "command", id, ok: false, error: `unknown command "${line}"` });
+      return;
+    }
+    const result = executed.result;
+    respond({
+      op: "command",
+      id,
+      ok: true,
+      result:
+        result.kind === "success"
+          ? {
+              kind: "success",
+              ...(result.text === undefined ? {} : { text: result.text }),
+              // DSH anchors a command result at the session event it produced.
+              // For `/compact` that event exists only when history was actually
+              // replaced, which is how the daemon can tell a real compaction
+              // from "No compactable history yet."
+              ...(result.sourceEventSeq === undefined
+                ? {}
+                : { sourceEventSeq: result.sourceEventSeq }),
+            }
+          : { kind: "error", text: result.text },
+    });
+  } catch (error) {
+    log(`running ${line} failed: ${describeError(error)}`);
+    respond({ op: "command", id, ok: false, error: describeError(error) });
+  } finally {
+    bridge.running.delete(controller);
+  }
 }
 
 /**
@@ -372,7 +520,9 @@ function receive(bridge, socket, line) {
   try {
     message = JSON.parse(line);
   } catch {
-    socket.write(`${JSON.stringify({ op: "error", code: "bad-request", error: "invalid JSON" })}\n`);
+    socket.write(
+      `${JSON.stringify({ op: "error", code: "bad-request", error: "invalid JSON" })}\n`,
+    );
     return;
   }
   if (!isRecord(message)) return;
@@ -414,6 +564,12 @@ function receive(bridge, socket, line) {
       }
       return;
     }
+    case "commands":
+      socket.write(`${JSON.stringify(listCommands(bridge, message))}\n`);
+      return;
+    case "command":
+      void runCommand(bridge, socket, message);
+      return;
     case "unavailable": {
       const handled =
         typeof message.requestId === "string" && declineQuestion(bridge, message.requestId);
@@ -450,11 +606,16 @@ export function apply(ctx) {
   /** The daemon connection questions are relayed over; the newest one wins. */
   const client = { socket: null };
   const pending = new Map();
+  /** Slash commands still running, so teardown can abort each one. */
+  const running = new Set();
   const bridge = {
     get client() {
       return client.socket;
     },
     pending,
+    running,
+    commands: ctx.commands,
+    agents: ctx.agents,
     write(message) {
       const socket = client.socket;
       if (socket === null || socket.destroyed === true) return false;
@@ -474,7 +635,7 @@ export function apply(ctx) {
     client.socket = socket;
     if (previous !== null && previous !== socket) previous.destroy();
     log(`client connected on ${channel}`);
-    bridge.write({ op: "ready", protocol: PROTOCOL, pid: process.pid });
+    bridge.write({ op: "ready", protocol: PROTOCOL, pid: process.pid, commands: true });
 
     let buffered = "";
     socket.on("data", (chunk) => {
@@ -526,26 +687,30 @@ export function apply(ctx) {
 
   ctx.effect(() => {
     let server = null;
-    void startChannel(channel)
-      .then((started) => {
+    void (async () => {
+      try {
+        const started = await startChannel(channel);
         server = started;
         started.on("connection", serveConnection);
         started.unref();
         log(`listening on ${channel}`);
-      })
-      .catch((error) => {
+      } catch (error) {
         log(`bridge unavailable: ${describeError(error)}`);
-      });
+      }
+    })();
 
     return () => {
       const closing = server;
       server = null;
       if (closing !== null) closing.close();
-      for (const requestId of [...pending.keys()]) {
+      for (const requestId of Array.from(pending.keys())) {
         settleQuestion(bridge, requestId, "aborted", (entry) =>
           entry.reject(questionError("the question bridge was disposed", "ASK_ABORTED")),
         );
       }
+      // A command handler keeps running after its client is gone; its DSH-side
+      // cancellation signal is the only way to stop the work it started.
+      for (const controller of Array.from(running)) controller.abort();
       log("channel closed");
     };
   }, "paseo-question-bridge");
