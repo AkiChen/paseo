@@ -8,6 +8,7 @@ import {
 
 function state(overrides: Partial<ClientPresenceState>): ClientPresenceState {
   return {
+    deviceType: "web",
     appVisible: true,
     focusedAgentId: null,
     focusedTerminalId: null,
@@ -57,8 +58,9 @@ describe("computeNotificationPlan", () => {
     ).toEqual({ inAppRecipientIndex: null, shouldPush: false });
   });
 
-  it("does not suppress notifications when a focused client is backgrounded", () => {
+  it("pushes when a focused mobile client is backgrounded", () => {
     const backgroundFocused = state({
+      deviceType: "mobile",
       appVisible: false,
       focusedAgentId: "agent-1",
       lastActivityAtMs: presentAtMs,
@@ -67,6 +69,17 @@ describe("computeNotificationPlan", () => {
     expect(
       computeNotificationPlan({
         allStates: [backgroundFocused],
+        focusTarget: { kind: "agent", id: "agent-1" },
+        pushEligible: true,
+        nowMs,
+      }),
+    ).toEqual({ inAppRecipientIndex: 0, shouldPush: true });
+  });
+
+  it("keeps push disabled for a background web client", () => {
+    expect(
+      computeNotificationPlan({
+        allStates: [state({ appVisible: false, lastActivityAtMs: presentAtMs, deviceType: "web" })],
         focusTarget: { kind: "agent", id: "agent-1" },
         pushEligible: true,
         nowMs,

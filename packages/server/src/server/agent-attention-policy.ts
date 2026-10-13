@@ -3,6 +3,7 @@ import type { AgentAttentionReason } from "@getpaseo/protocol/agent-attention-no
 export const PRESENCE_THRESHOLD_MS = 180_000;
 
 export interface ClientPresenceState {
+  deviceType: "web" | "mobile";
   appVisible: boolean;
   lastActivityAtMs: number | null;
   focusedAgentId: string | null;
@@ -47,6 +48,7 @@ export function computeNotificationPlan({
 }: ComputeNotificationPlanInput): NotificationPlan {
   let mostRecentPresentIndex: number | null = null;
   let mostRecentPresentAtMs = Number.NEGATIVE_INFINITY;
+  let hasBackgroundMobileClient = false;
 
   for (const [clientIndex, state] of allStates.entries()) {
     const clampedActivityAtMs =
@@ -56,6 +58,10 @@ export function computeNotificationPlan({
 
     if (!isPresent) {
       continue;
+    }
+
+    if (state.deviceType === "mobile" && !state.appVisible) {
+      hasBackgroundMobileClient = true;
     }
 
     if (state.appVisible && isFocusedOnTarget(state, focusTarget)) {
@@ -69,7 +75,10 @@ export function computeNotificationPlan({
   }
 
   if (mostRecentPresentIndex !== null) {
-    return { inAppRecipientIndex: mostRecentPresentIndex, shouldPush: false };
+    return {
+      inAppRecipientIndex: mostRecentPresentIndex,
+      shouldPush: pushEligible && hasBackgroundMobileClient,
+    };
   }
 
   return { inAppRecipientIndex: null, shouldPush: pushEligible };
