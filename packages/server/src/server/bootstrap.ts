@@ -191,6 +191,7 @@ import {
   type PersistedConfig,
 } from "./persisted-config.js";
 import { configureFileAccessRoots } from "./file-explorer/service.js";
+import { getProviderImageAttachmentDir } from "./agent/providers/provider-image-output.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
@@ -574,6 +575,16 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
   return initialConfig;
 }
 
+/**
+ * The roots a client may read files through, which is the configured list plus the
+ * daemon's own provider-image directory: that is where an image an agent handed to
+ * the user lands, and a client on another machine fetches it back through this
+ * same file API.
+ */
+function daemonFileAccessRoots(paseoHome: string): string[] {
+  return [...readFileAccessRoots(paseoHome), getProviderImageAttachmentDir()];
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -604,7 +615,7 @@ export async function createPaseoDaemon(
         });
         // File access roots are read from persisted config, so a `paseo reload`
         // is what applies an edit to an already running daemon.
-        configureFileAccessRoots(readFileAccessRoots(config.paseoHome));
+        configureFileAccessRoots(daemonFileAccessRoots(config.paseoHome));
         return {
           mutable: createInitialMutableDaemonConfig(reloaded),
           overrideControlledPaths: reloaded.configReload?.overrideControlledPaths ?? [],
@@ -612,7 +623,7 @@ export async function createPaseoDaemon(
       },
     },
   });
-  configureFileAccessRoots(readFileAccessRoots(config.paseoHome));
+  configureFileAccessRoots(daemonFileAccessRoots(config.paseoHome));
   const orchestrationSkills = createOrchestrationSkills(daemonConfigStore);
   void orchestrationSkills.autoUpdate().catch((error) => {
     logger.error({ err: error }, "Failed to maintain orchestration skills at startup");

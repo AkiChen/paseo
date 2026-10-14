@@ -171,6 +171,9 @@ describe("DshQuestionBridge.prepareLaunch", () => {
     // `ask_user_question`, so a bridge alone would answer only plan review.
     const patch = await readFile(patchPath, "utf8");
     expect(patch).toContain("'@deepseek-ai/dsh-tool-ask-user'");
+    // `present` is missing from the same composition, and it is how an agent hands
+    // a file to the user instead of reading it into its own context.
+    expect(patch).toContain("'@deepseek-ai/dsh-tool-present'");
     expect(patch).toContain("name: paseo-question-bridge");
   });
 

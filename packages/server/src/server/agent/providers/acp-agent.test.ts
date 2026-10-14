@@ -1,6 +1,6 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -5272,5 +5272,62 @@ describe("ACPAgentSession provider image output", () => {
     ]);
 
     expect(imageMarkdown(items)).toHaveLength(0);
+  });
+
+  test("shows a picture the agent presented as a deliverable", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "paseo-present-"));
+    const imagePath = path.join(workspace, "chart.png");
+    await writeFile(imagePath, Buffer.from(PNG_BASE64, "base64"));
+    try {
+      // A present call arrives twice: the call itself, then its update. The picture
+      // belongs in the transcript once.
+      const items = await collectTimeline([
+        {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-present",
+          title: "present",
+          kind: "other",
+          status: "in_progress",
+          rawInput: { files: [{ path: imagePath, description: "the chart" }] },
+        } as SessionUpdate,
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call-present",
+          status: "completed",
+        } as SessionUpdate,
+      ]);
+
+      const rendered = imageMarkdown(items);
+      expect(rendered).toHaveLength(1);
+      // The file name becomes the alt text, so the transcript names the deliverable
+      // before the picture is even fetched.
+      expect(rendered[0]).toContain("![chart.png](file://");
+      expect(rendered[0]).toMatch(/paseo-attachments[^)]*[0-9a-f]{64}\.png\)$/);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test("leaves a presented file that is not an image to the tool card", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "paseo-present-"));
+    const reportPath = path.join(workspace, "report.csv");
+    await writeFile(reportPath, "a,b\n1,2\n");
+    try {
+      const items = await collectTimeline([
+        {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-present-text",
+          title: "present",
+          kind: "other",
+          status: "completed",
+          rawInput: { files: [{ path: reportPath }] },
+        } as SessionUpdate,
+      ]);
+
+      expect(imageMarkdown(items)).toHaveLength(0);
+      expect(items.some((item) => item.type === "tool_call")).toBe(true);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 });

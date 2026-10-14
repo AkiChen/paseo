@@ -190,12 +190,17 @@ const PLUGIN_PACKAGE = `${JSON.stringify(
  * resolves out of the profile's `node_modules`, which is where the plugin
  * directory is written. `tool-ask-user` is one of those rows because the ACP
  * composition has no `ask_user_question` tool at all: the shipped agent presets
- * own it, and the ACP profile mounts none of them.
+ * own it, and the ACP profile mounts none of them. `tool-present` is missing for
+ * the same reason, and it is how an agent hands a file to the user: with it, a
+ * picture reaches the transcript without being read into the agent's context.
  */
 const PATCH_CONTENT = `# Paseo's question bridge, loaded into \`dsh --profile acp\` at launch.
 - insert:
     - id: tool-ask-user
       name: '@deepseek-ai/dsh-tool-ask-user'
+
+    - id: tool-present
+      name: '@deepseek-ai/dsh-tool-present'
 
     - id: ${PLUGIN_DIRECTORY}
       name: ${PLUGIN_DIRECTORY}

@@ -1,5 +1,6 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -3434,6 +3435,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     return [
       this.wrapTimeline(mapToolSnapshotToTimeline(snapshot, this.terminalEntries)),
       ...extractToolImageItems(snapshot.content).map((item) => this.wrapTimeline(item)),
+      ...presentedImageItems(snapshot, this.config.cwd, previous).map((item) =>
+        this.wrapTimeline(item),
+      ),
     ];
   }
 
@@ -4416,6 +4420,89 @@ function extractToolImageItems(content: ToolCallContent[] | null | undefined): A
       continue;
     }
     const rendered = providerImageTimelineItem(item.content);
+    if (rendered) {
+      items.push(rendered);
+    }
+  }
+  return items;
+}
+
+/**
+ * Tool names an agent uses to hand files to the user rather than to itself. DSH
+ * calls it `present`, and its wire name arrives as the tool title, sometimes
+ * namespaced.
+ */
+const PRESENTED_TOOL_NAMES = new Set(["present", "dsh__present"]);
+
+/** Past this size a "deliverable" is a file, not a picture worth drawing inline. */
+const PRESENTED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+const PRESENTED_IMAGE_MIME_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+};
+
+function presentedFilePaths(snapshot: ACPToolSnapshot | undefined): string[] {
+  if (!snapshot || !PRESENTED_TOOL_NAMES.has(snapshot.title)) {
+    return [];
+  }
+  const files = readRecord(snapshot.rawInput)?.files;
+  if (!Array.isArray(files)) {
+    return [];
+  }
+  const paths: string[] = [];
+  for (const entry of files) {
+    const value = readString(readRecord(entry), ["path"]);
+    if (value) {
+      paths.push(value.trim());
+    }
+  }
+  return paths;
+}
+
+/**
+ * A presented image is read by the daemon and materialized for the client, so the
+ * user sees it without the agent spending context on the picture. Everything else
+ * the agent presented stays with the tool card and its file link.
+ *
+ * `previous` is the snapshot the same call had one update ago: a `present` call
+ * arrives first as `tool_call` and then as `tool_call_update`, and the picture
+ * belongs in the transcript once.
+ */
+function presentedImageItems(
+  snapshot: ACPToolSnapshot,
+  cwd: string,
+  previous: ACPToolSnapshot | undefined,
+): AgentTimelineItem[] {
+  const alreadyShown = new Set(presentedFilePaths(previous));
+  const items: AgentTimelineItem[] = [];
+  for (const rawPath of presentedFilePaths(snapshot)) {
+    if (alreadyShown.has(rawPath)) {
+      continue;
+    }
+    const mimeType = PRESENTED_IMAGE_MIME_TYPES[path.extname(rawPath).toLowerCase()];
+    if (!mimeType) {
+      continue;
+    }
+    const resolved = path.isAbsolute(rawPath) ? rawPath : path.resolve(cwd, rawPath);
+    let bytes: Buffer;
+    try {
+      const stats = fsSync.statSync(resolved);
+      if (!stats.isFile() || stats.size === 0 || stats.size > PRESENTED_IMAGE_MAX_BYTES) {
+        continue;
+      }
+      bytes = fsSync.readFileSync(resolved);
+    } catch {
+      continue;
+    }
+    const rendered = renderProviderImageOutputAsAssistantMarkdown(
+      { data: bytes.toString("base64"), mimeType, altText: path.basename(resolved) },
+      { materialize: materializeProviderImage },
+    );
     if (rendered) {
       items.push(rendered);
     }
