@@ -5183,3 +5183,94 @@ describe("ACPAgentSession question bridge", () => {
     });
   });
 });
+
+describe("ACPAgentSession provider image output", () => {
+  // 1x1 transparent PNG: enough for the attachment pipeline to hash and write it.
+  const PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  function imageMarkdown(items: AgentTimelineItem[]): string[] {
+    return items
+      .filter(
+        (item): item is Extract<AgentTimelineItem, { type: "assistant_message" }> =>
+          item.type === "assistant_message",
+      )
+      .map((item) => item.text)
+      .filter((text) => text.includes("paseo-attachments"));
+  }
+
+  async function collectTimeline(updates: SessionUpdate[]): Promise<AgentTimelineItem[]> {
+    const session = createSession();
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    for (const update of updates) {
+      await session.sessionUpdate({ sessionId: "session-1", update });
+    }
+    return events
+      .map((event) => (event.type === "timeline" ? event.item : null))
+      .filter((item): item is AgentTimelineItem => item !== null);
+  }
+
+  test("renders an image a tool result hands back, without the placeholder", async () => {
+    const items = await collectTimeline([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-image",
+        title: "read_image",
+        kind: "other",
+        status: "completed",
+        content: [
+          // DSH reports a read_image result exactly like this: a text summary of the
+          // file, then the image block itself.
+          { type: "content", content: { type: "text", text: "image/png image, 1x1 px, 70 bytes" } },
+          { type: "content", content: { type: "image", data: PNG_BASE64, mimeType: "image/png" } },
+        ],
+      } as SessionUpdate,
+    ]);
+
+    const rendered = imageMarkdown(items);
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0]).toMatch(
+      /^!\[Image\]\(file:\/\/.*paseo-attachments[^)]*[0-9a-f]{64}\.png\)$/,
+    );
+
+    // The call still renders, with the text the agent sent and no placeholder.
+    const call = items.find(
+      (item): item is Extract<AgentTimelineItem, { type: "tool_call" }> =>
+        item.type === "tool_call",
+    );
+    expect(call?.detail).toBeDefined();
+    expect(JSON.stringify(call)).toContain("1x1 px");
+    expect(JSON.stringify(call)).not.toContain("[image]");
+  });
+
+  test("renders an image an agent sends as message content without the placeholder", async () => {
+    const items = await collectTimeline([
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "image", data: PNG_BASE64, mimeType: "image/png" },
+      } as SessionUpdate,
+    ]);
+
+    expect(imageMarkdown(items)).toHaveLength(1);
+    expect(items.some((item) => item.type === "assistant_message" && item.text === "[image]")).toBe(
+      false,
+    );
+  });
+
+  test("leaves a text-only tool result without an image", async () => {
+    const items = await collectTimeline([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-text",
+        title: "read",
+        kind: "other",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "file body" } }],
+      } as SessionUpdate,
+    ]);
+
+    expect(imageMarkdown(items)).toHaveLength(0);
+  });
+});

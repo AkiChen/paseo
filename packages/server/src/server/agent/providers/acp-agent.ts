@@ -139,6 +139,10 @@ import {
   type ProviderRuntimeSettings,
 } from "../provider-launch-config.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import {
+  materializeProviderImage,
+  renderProviderImageOutputAsAssistantMarkdown,
+} from "./provider-image-output.js";
 import { appendOrReplaceGrowingAssistantMessage, runProviderTurn } from "./provider-runner.js";
 import {
   buildStringCommandShellInvocation,
@@ -3306,7 +3310,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         const item = this.createMessageTimelineItem("assistant_message", update);
-        return item ? [...pendingUserEvents, this.wrapTimeline(item)] : pendingUserEvents;
+        const image = providerImageTimelineItem(update.content);
+        const events = item ? [this.wrapTimeline(item)] : [];
+        if (image) {
+          events.push(this.wrapTimeline(image));
+        }
+        return [...pendingUserEvents, ...events];
       }
       case "agent_thought_chunk": {
         this.fallbackAssistantMessageId = null;
@@ -3422,7 +3431,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       snapshot = this.toolSnapshotTransformer(snapshot);
     }
     this.toolCalls.set(toolCallId, snapshot);
-    return [this.wrapTimeline(mapToolSnapshotToTimeline(snapshot, this.terminalEntries))];
+    return [
+      this.wrapTimeline(mapToolSnapshotToTimeline(snapshot, this.terminalEntries)),
+      ...extractToolImageItems(snapshot.content).map((item) => this.wrapTimeline(item)),
+    ];
   }
 
   private createMessageTimelineItem(
@@ -3435,7 +3447,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     | { type: "assistant_message"; text: string; messageId: string }
     | { type: "reasoning"; text: string }
     | null {
-    const chunkText = contentBlockToText(update.content);
+    // An image chunk carries its own timeline item (see `providerImageTimelineItem`),
+    // so it contributes no text here.
+    const chunkText = update.content.type === "image" ? "" : contentBlockToText(update.content);
     if (!chunkText) {
       return null;
     }
@@ -4360,14 +4374,53 @@ function extractToolText(content: ToolCallContent[] | null | undefined): string 
   }
   const parts: string[] = [];
   for (const item of content) {
-    if (item.type === "content") {
-      const text = contentBlockToText(item.content);
-      if (text) {
-        parts.push(text);
-      }
+    if (item.type !== "content") {
+      continue;
+    }
+    // An image becomes its own timeline item, so `[image]` in the tool card would
+    // only repeat it.
+    if (item.content.type === "image") {
+      continue;
+    }
+    const text = contentBlockToText(item.content);
+    if (text) {
+      parts.push(text);
     }
   }
   return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+/**
+ * An image an agent hands back — in a tool result, or as message content — becomes
+ * its own assistant markdown image, the way Claude and Codex already report one:
+ * the bytes are materialized into the attachment directory and the picture renders
+ * inline in the transcript. Anything else returns null.
+ */
+function providerImageTimelineItem(content: ContentBlock): AgentTimelineItem | null {
+  if (content.type !== "image") {
+    return null;
+  }
+  return renderProviderImageOutputAsAssistantMarkdown(
+    { data: content.data, mimeType: content.mimeType },
+    { materialize: materializeProviderImage },
+  );
+}
+
+function extractToolImageItems(content: ToolCallContent[] | null | undefined): AgentTimelineItem[] {
+  if (!content) {
+    return [];
+  }
+  const items: AgentTimelineItem[] = [];
+  for (const item of content) {
+    if (item.type !== "content") {
+      continue;
+    }
+    const rendered = providerImageTimelineItem(item.content);
+    if (rendered) {
+      items.push(rendered);
+    }
+  }
+  return items;
 }
 
 function extractDiffContent(
