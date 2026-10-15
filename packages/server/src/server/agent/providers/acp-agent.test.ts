@@ -138,9 +138,10 @@ function createSession(
   options: {
     terminateProcess?: ProcessTerminator;
     launchEnv?: Record<string, string>;
+    sessionMetadataReader?: SessionMetadataReader;
   } = {},
 ): ACPAgentSession {
-  const { terminateProcess, launchEnv } = options;
+  const { terminateProcess, launchEnv, sessionMetadataReader } = options;
   return new ACPAgentSession(
     {
       provider: "claude-acp",
@@ -161,6 +162,7 @@ function createSession(
       },
       ...(terminateProcess ? { terminateProcess } : {}),
       ...(launchEnv ? { launchEnv } : {}),
+      ...(sessionMetadataReader ? { sessionMetadataReader } : {}),
     },
   );
 }
@@ -4476,6 +4478,10 @@ function isUsageUpdatedEvent(event: AgentStreamEvent): boolean {
   return event.type === "usage_updated";
 }
 
+function isTitleUpdatedEvent(event: AgentStreamEvent): boolean {
+  return event.type === "title_updated";
+}
+
 function hasSessionTotals(
   usage: Extract<AgentStreamEvent, { type: "usage_updated" }>["usage"],
 ): boolean {
@@ -5365,5 +5371,29 @@ describe("ACPAgentSession session titles", () => {
         { sessionUpdate: "session_info_update", updatedAt: "2026-10-14T00:00:00.000Z" },
       ] as SessionUpdate[]),
     ).toHaveLength(1);
+  });
+
+  test("reports a title only the provider's store knows", async () => {
+    const session = createSession({
+      sessionMetadataReader: async () => ({ title: "Cohort retention by month" }),
+    });
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    const events: AgentStreamEvent[] = [];
+    session.subscribe(collectSessionEvents(events));
+
+    asInternals<ACPSessionInternals>(session).refreshSessionTitle();
+    await vi.waitFor(() => {
+      expect(events.filter(isTitleUpdatedEvent)).toHaveLength(1);
+    });
+    expect(events.find(isTitleUpdatedEvent)).toEqual({
+      type: "title_updated",
+      provider: "claude-acp",
+      title: "Cohort retention by month",
+    });
+
+    // The same store answer again is not a change.
+    asInternals<ACPSessionInternals>(session).refreshSessionTitle();
+    await delay(20);
+    expect(events.filter(isTitleUpdatedEvent)).toHaveLength(1);
   });
 });

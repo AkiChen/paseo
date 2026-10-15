@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -175,6 +175,33 @@ describe("DshQuestionBridge.prepareLaunch", () => {
     // a file to the user instead of reading it into its own context.
     expect(patch).toContain("'@deepseek-ai/dsh-tool-present'");
     expect(patch).toContain("name: paseo-question-bridge");
+    // The title swap is the operator's install, so a profile without the package
+    // keeps the composition it had.
+    expect(patch).not.toContain("session-title-all-prompts");
+  });
+
+  test("swaps in the per-prompt title provider when the profile has it", async () => {
+    const home = await createTemporaryDirectory();
+    const titleProvider = path.join(
+      home,
+      "profiles",
+      "acp",
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-session-title-all-prompts-llm",
+    );
+    await mkdir(titleProvider, { recursive: true });
+    const bridge = createBridge(home);
+
+    await bridge.prepareLaunch();
+
+    const patch = await readFile(path.join(home, "profiles", "paseo-question-bridge.yml"), "utf8");
+    // The first-prompt provider titles a session once, so it has to step aside for
+    // the one that retitles after every prompt; the generation limits belong to the
+    // entry, which is why they travel with it.
+    expect(patch).toContain("- id: session-title-llm\n  disabled: true");
+    expect(patch).toContain("name: '@deepseek-ai/dsh-session-title-all-prompts-llm'");
+    expect(patch).toContain("targetWords: 5");
   });
 
   test("names a fresh channel per launch so two processes never share one", async () => {

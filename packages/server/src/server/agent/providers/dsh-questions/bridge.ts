@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -206,6 +206,34 @@ const PATCH_CONTENT = `# Paseo's question bridge, loaded into \`dsh --profile ac
       name: ${PLUGIN_DIRECTORY}
 `;
 
+/**
+ * The title provider Paseo swaps in for the first-prompt one, when the profile has
+ * it installed.
+ *
+ * The ACP composition mounts `@deepseek-ai/dsh-session-title-first-prompt-llm`,
+ * which titles a session once and never revisits it. `all-prompts` regenerates a
+ * title after every human prompt, so a sidebar entry keeps up with the
+ * conversation. The swap is conditional — a profile without the package must keep
+ * composing exactly as before — and the generation limits travel with it, because
+ * they belong to the provider entry rather than to the shared policy.
+ */
+const TITLE_PROVIDER_PACKAGE = "@deepseek-ai/dsh-session-title-all-prompts-llm";
+const TITLE_PROVIDER_SWAP = `
+# Retitle the session after every prompt instead of only the first one.
+- id: session-title-llm
+  disabled: true
+
+- insert:
+    - id: session-title-all-prompts
+      name: '${TITLE_PROVIDER_PACKAGE}'
+      config:
+        targetWords: 5
+        targetCjkCharacters: 10
+        maxInputBytes: 4096
+        maxOutputTokens: 64
+        timeoutMs: 60000
+`;
+
 /** A live channel connection that speaks the plugin's newline-delimited JSON. */
 export interface DshQuestionBridgeConnection {
   /** Resolves when the plugin first answers on the channel. */
@@ -307,9 +335,29 @@ export class DshQuestionBridge {
     const patchPath = path.join(this.home, "profiles", PATCH_FILENAME);
     await this.writeIfChanged(path.join(pluginDirectory, "package.json"), PLUGIN_PACKAGE);
     await this.writeIfChanged(path.join(pluginDirectory, "index.js"), artifact);
-    await this.writeIfChanged(patchPath, PATCH_CONTENT);
+    await this.writeIfChanged(patchPath, await this.patchContent());
     this.logger.debug({ pluginDirectory, patchPath }, "Materialized the DSH question bridge");
     return { patchPath };
+  }
+
+  /**
+   * The overlay, plus the per-prompt title provider when the profile can resolve it.
+   * Installing a package is the operator's call, so this only ever adds.
+   */
+  private async patchContent(): Promise<string> {
+    const profilesDirectory = path.join(this.home, "profiles");
+    const profileNames = await readdir(profilesDirectory).catch(() => [] as string[]);
+    for (const profileName of profileNames) {
+      const installed = await stat(
+        path.join(profilesDirectory, profileName, "node_modules", TITLE_PROVIDER_PACKAGE),
+      )
+        .then((entry) => entry.isDirectory())
+        .catch(() => false);
+      if (installed) {
+        return `${PATCH_CONTENT}${TITLE_PROVIDER_SWAP}`;
+      }
+    }
+    return PATCH_CONTENT;
   }
 
   private async writeIfChanged(filePath: string, data: string | Uint8Array): Promise<void> {

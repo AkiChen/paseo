@@ -130,6 +130,7 @@ import {
 import {
   createSessionMetadataReader,
   mergeSessionMetadata,
+  type SessionMetadata,
   type SessionMetadataReader,
   type SessionMetadataSource,
 } from "./session-metadata.js";
@@ -539,6 +540,11 @@ interface ACPAgentSessionOptions {
   launchEnv?: Record<string, string>;
   /** Bridge that answers this provider's user questions from Paseo. */
   questionBridge?: DshQuestionBridge | null;
+  /**
+   * Reads the provider's own store for a session. Only the store knows a title a
+   * provider regenerates without mentioning it over ACP.
+   */
+  sessionMetadataReader?: SessionMetadataReader | null;
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
@@ -1051,6 +1057,7 @@ export class ACPAgentClient implements AgentClient {
         extensionCommandsParser: this.extensionCommandsParser,
         waitForInitialCommands: this.waitForInitialCommands,
         initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+        sessionMetadataReader: this.sessionMetadataReader,
       },
     );
     await session.initializeNewSession();
@@ -1103,6 +1110,7 @@ export class ACPAgentClient implements AgentClient {
       extensionCommandsParser: this.extensionCommandsParser,
       waitForInitialCommands: this.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+      sessionMetadataReader: this.sessionMetadataReader,
     });
     await session.initializeResumedSession();
     return session;
@@ -1748,6 +1756,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly agentId?: string;
   private readonly launchEnv?: Record<string, string>;
   private readonly questionBridge: DshQuestionBridge | null;
+  /** The provider's own store, where a title ACP never mentions is written. */
+  private readonly sessionMetadataReader: SessionMetadataReader | null;
   /** Channel the plugin inside this process answers on, once it is spawned. */
   private questionBridgeChannel: string | null = null;
   private questionBridgeConnection: DshQuestionBridgeConnection | null = null;
@@ -1829,6 +1839,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
+    this.sessionMetadataReader = options.sessionMetadataReader ?? null;
   }
 
   get id(): string | null {
@@ -1855,6 +1866,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       // A resumed session already has a log worth reporting; a new one answers
       // "nothing billed yet" and costs one round trip.
       this.refreshBridgedSessionUsage();
+      this.refreshSessionTitle();
     } catch (error) {
       await this.closeAfterInitializationFailure(error);
     }
@@ -1912,6 +1924,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       // The plugin reports the whole durable log, so a resumed session shows its
       // real totals before the next turn commits anything.
       this.refreshBridgedSessionUsage();
+      this.refreshSessionTitle();
     } catch (error) {
       await this.closeAfterInitializationFailure(error);
     }
@@ -3565,6 +3578,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.sessionContextUsage = { ...this.sessionContextUsage, ...usage };
     this.emitUsageSnapshot();
     this.refreshBridgedSessionUsage();
+    this.refreshSessionTitle();
   }
 
   /**
@@ -3628,6 +3642,32 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           this.refreshBridgedSessionUsage();
         }
       });
+  }
+
+  /**
+   * A provider store can hold a title ACP never mentions.
+   *
+   * DeepSeek Harness regenerates a title after each prompt and writes it to its
+   * project cache; nothing on the ACP wire carries that, so reading the store is
+   * what keeps an agent's title current. A provider without a store is untouched.
+   */
+  private refreshSessionTitle(): void {
+    const reader = this.sessionMetadataReader;
+    const sessionId = this.sessionId;
+    if (reader === null || sessionId === null) {
+      return;
+    }
+    void (async () => {
+      const metadata: SessionMetadata | null = await reader(sessionId).catch(() => null);
+      const title = metadata?.title ?? null;
+      if (title === null || title === this.currentTitle || this.closed) {
+        return;
+      }
+      this.currentTitle = title;
+      this.deliverTranslatedEvents([{ type: "title_updated", provider: this.provider, title }]);
+    })().catch((error: unknown) => {
+      this.logger.warn({ err: error }, "Reading the provider session title failed");
+    });
   }
 
   private handlePromptResponse(response: PromptResponse, turnId: string): void {
