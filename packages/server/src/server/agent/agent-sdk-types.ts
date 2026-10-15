@@ -431,6 +431,11 @@ export type AgentStreamEvent =
   | { type: "turn_started"; provider: AgentProvider; turnId?: string }
   | { type: "turn_completed"; provider: AgentProvider; usage?: AgentUsage; turnId?: string }
   | { type: "usage_updated"; provider: AgentProvider; usage: AgentUsage; turnId?: string }
+  /**
+   * A provider that retitles its own session, e.g. DeepSeek Harness regenerating a
+   * title after each prompt. Null clears nothing: a title is only ever replaced.
+   */
+  | { type: "title_updated"; provider: AgentProvider; title: string | null }
   | {
       type: "mode_changed";
       provider: AgentProvider;

@@ -5331,3 +5331,39 @@ describe("ACPAgentSession provider image output", () => {
     }
   });
 });
+
+describe("ACPAgentSession session titles", () => {
+  async function collectTitleEvents(updates: SessionUpdate[]): Promise<AgentStreamEvent[]> {
+    const session = createSession();
+    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
+    const events: AgentStreamEvent[] = [];
+    session.subscribe(collectSessionEvents(events));
+    for (const update of updates) {
+      await session.sessionUpdate({ sessionId: "session-1", update });
+    }
+    return events.filter((event) => event.type === "title_updated");
+  }
+
+  test("reports a session the provider retitled", async () => {
+    const events = await collectTitleEvents([
+      { sessionUpdate: "session_info_update", title: "Cohort retention by month" },
+    ] as SessionUpdate[]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "title_updated",
+      provider: "claude-acp",
+      title: "Cohort retention by month",
+    });
+  });
+
+  test("reports a title once, not on every session info update", async () => {
+    expect(
+      await collectTitleEvents([
+        { sessionUpdate: "session_info_update", title: "Same title" },
+        { sessionUpdate: "session_info_update", title: "Same title" },
+        { sessionUpdate: "session_info_update", updatedAt: "2026-10-14T00:00:00.000Z" },
+      ] as SessionUpdate[]),
+    ).toHaveLength(1);
+  });
+});

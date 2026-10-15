@@ -2014,6 +2014,35 @@ export class AgentManager {
     this.emitState(agent, { persist: false });
   }
 
+  /**
+   * A provider retitling its own session reports it on the stream — DeepSeek
+   * Harness regenerates a title after each prompt. The result is the same as a
+   * user rename, minus a caller: the stored title changes and every client sees it.
+   */
+  private async onStreamTitleUpdated(
+    agent: ActiveManagedAgent,
+    title: string | null,
+  ): Promise<void> {
+    const normalizedTitle = title?.trim();
+    if (!normalizedTitle) {
+      return;
+    }
+    const record = this.registry ? await this.registry.get(agent.id) : null;
+    if (record?.title === normalizedTitle) {
+      return;
+    }
+    if (
+      this.agentsAwaitingInitialSnapshotPersist.has(agent.id) &&
+      this.registry &&
+      record === null
+    ) {
+      return;
+    }
+    this.touchUpdatedAt(agent);
+    await this.persistSnapshot(agent, { title: normalizedTitle });
+    this.emitState(agent, { persist: false });
+  }
+
   async setLabels(agentId: string, labels: Record<string, string>): Promise<void> {
     await this.runLifecycleMutation(agentId, async () => {
       const agent = this.requireAgent(agentId);
@@ -4301,6 +4330,8 @@ export class AgentManager {
         agent.lastUsage = event.usage;
         this.emitState(agent);
         return undefined;
+      case "title_updated":
+        return this.onStreamTitleUpdated(agent, event.title);
       case "mode_changed":
         agent.currentModeId = event.currentModeId;
         agent.availableModes = event.availableModes;

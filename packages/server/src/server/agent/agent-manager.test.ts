@@ -4859,6 +4859,40 @@ test("setTitle bumps updatedAt and persists title in the same snapshot write", a
   expect(live!.updatedAt.getTime()).toBeGreaterThan(Date.parse(before!.updatedAt));
 });
 
+test("a provider-reported title becomes the stored title without a rename", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-title-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new TestAgentClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000128",
+  });
+  const providerSessions: TestAgentSession[] = [];
+  vi.spyOn(client, "createSession").mockImplementation(async (config) => {
+    const session = new TestAgentSession(config);
+    providerSessions.push(session);
+    return session;
+  });
+
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  // A title the provider regenerated for itself, like DeepSeek Harness does after
+  // each prompt: the client should see it without anyone calling setTitle.
+  providerSessions[0]!.pushEvent({
+    type: "title_updated",
+    provider: "codex",
+    title: "Cohort retention by month",
+  });
+
+  await vi.waitFor(async () => {
+    expect((await storage.get(snapshot.id))?.title).toBe("Cohort retention by month");
+  });
+  expect(manager.getAgent(snapshot.id)?.config.title).toBeUndefined();
+});
+
 test("updateAgentMetadata bumps updatedAt for stored agents", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stored-metadata-updated-at-"));
   const storagePath = join(workdir, "agents");

@@ -3355,8 +3355,14 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       case "config_option_update":
         return [...pendingUserEvents, ...this.handleConfigOptionUpdate(update)];
       case "session_info_update":
-        this.handleSessionInfoUpdate(update);
-        return pendingUserEvents;
+        // A retitled session is client-visible state, not history: the manager
+        // stores it and pushes the agent again.
+        return this.handleSessionInfoUpdate(update)
+          ? [
+              ...pendingUserEvents,
+              { type: "title_updated", provider: this.provider, title: this.currentTitle },
+            ]
+          : pendingUserEvents;
       case "usage_update":
         this.handleUsageUpdate(update);
         return pendingUserEvents;
@@ -3518,13 +3524,17 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     return events;
   }
 
-  private handleSessionInfoUpdate(update: SessionInfoUpdate): void {
+  private handleSessionInfoUpdate(update: SessionInfoUpdate): boolean {
+    let titleChanged = false;
     if ("title" in update) {
-      this.currentTitle = update.title ?? null;
+      const nextTitle = update.title ?? null;
+      titleChanged = nextTitle !== this.currentTitle;
+      this.currentTitle = nextTitle;
     }
     if ("updatedAt" in update) {
       this.lastActivityAt = update.updatedAt ?? null;
     }
+    return titleChanged;
   }
 
   /**
