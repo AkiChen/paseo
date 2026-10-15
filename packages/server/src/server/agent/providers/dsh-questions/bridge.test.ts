@@ -202,6 +202,9 @@ describe("DshQuestionBridge.prepareLaunch", () => {
     expect(patch).toContain("- id: session-title-llm\n  disabled: true");
     expect(patch).toContain("name: '@deepseek-ai/dsh-session-title-all-prompts-llm'");
     expect(patch).toContain("targetWords: 5");
+    // All-prompts frames the whole conversation and fails instead of truncating, so
+    // the shipped 4096 (sized for a single message) would never generate a title.
+    expect(patch).toContain("maxInputBytes: 262144");
   });
 
   test("names a fresh channel per launch so two processes never share one", async () => {
@@ -686,6 +689,94 @@ describe("DshQuestionBridge usage", () => {
     await waitFor(() => connection.supportsUsage(), "the usage capability");
 
     await expect(connection.readUsage("session-1")).resolves.toBeNull();
+    connection.close();
+  });
+});
+
+describe("DshQuestionBridge title", () => {
+  const READY = { op: "ready", protocol: 1, pid: 4242, title: true };
+
+  test("asks the plugin to regenerate and reports the title it returns", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op === "refreshTitle") {
+          socket.write(
+            `${JSON.stringify({
+              op: "refreshTitle",
+              id: message.id,
+              ok: true,
+              title: "Cohort retention by month",
+            })}\n`,
+          );
+        }
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsTitle(), "the title capability");
+
+    await expect(connection.refreshTitle("session-1")).resolves.toBe("Cohort retention by month");
+    expect(plugin.received).toEqual([
+      { op: "refreshTitle", id: expect.any(String), agentId: "session-1" },
+    ]);
+    connection.close();
+  });
+
+  test("stays quiet for a plugin that never claimed the capability", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 4242, usage: true })}\n`);
+      },
+      () => undefined,
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsUsage(), "the usage capability");
+
+    expect(connection.supportsTitle()).toBe(false);
+    await expect(connection.refreshTitle("session-1")).resolves.toBeNull();
+    expect(plugin.received).toEqual([]);
+    connection.close();
+  });
+
+  test("reports no title when regeneration failed or answered with nothing", async () => {
+    const home = await createTemporaryDirectory();
+    const bridge = createBridge(home);
+    const plugin = await serveFakePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify(READY)}\n`);
+      },
+      (message, socket) => {
+        if (message.op !== "refreshTitle") return;
+        socket.write(
+          `${JSON.stringify({ op: "refreshTitle", id: message.id, ok: false, error: "boom" })}\n`,
+        );
+      },
+    );
+
+    const connection = bridge.connect({
+      channel: plugin.channel,
+      onAsk: async (): Promise<DshQuestionOutcome> => ({ kind: "dismiss" }),
+    });
+    await connection.ready;
+    await waitFor(() => connection.supportsTitle(), "the title capability");
+
+    await expect(connection.refreshTitle("session-1")).resolves.toBeNull();
     connection.close();
   });
 });

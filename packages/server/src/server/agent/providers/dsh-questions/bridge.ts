@@ -159,6 +159,8 @@ export interface DshQuestionBridgeOptions {
   commandRunTimeoutMs?: number;
   /** How long the session's token totals may take before Paseo gives up. */
   usageTimeoutMs?: number;
+  /** Regeneration is a model call, so this budget is the largest of the reads. */
+  titleTimeoutMs?: number;
 }
 
 const CHANNEL_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
@@ -169,6 +171,12 @@ const DEFAULT_RECONNECT_DELAY_MS = 250;
 const DEFAULT_COMMAND_LIST_TIMEOUT_MS = 5_000;
 const DEFAULT_COMMAND_RUN_TIMEOUT_MS = 300_000;
 const DEFAULT_USAGE_TIMEOUT_MS = 5_000;
+/**
+ * Regeneration runs a model call under the title service's own 60s deadline, so
+ * Paseo waits past that rather than reporting a timeout the service was still
+ * working through.
+ */
+const DEFAULT_TITLE_TIMEOUT_MS = 75_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 const PLUGIN_PACKAGE = `${JSON.stringify(
@@ -216,6 +224,11 @@ const PATCH_CONTENT = `# Paseo's question bridge, loaded into \`dsh --profile ac
  * conversation. The swap is conditional — a profile without the package must keep
  * composing exactly as before — and the generation limits travel with it, because
  * they belong to the provider entry rather than to the shared policy.
+ *
+ * `maxInputBytes` is the one limit that differs from the shipped entry: 4096 suits
+ * a provider that sends a single message, while all-prompts frames the whole human
+ * conversation and fails rather than truncating it. A session longer than this
+ * keeps the title it had.
  */
 const TITLE_PROVIDER_PACKAGE = "@deepseek-ai/dsh-session-title-all-prompts-llm";
 const TITLE_PROVIDER_SWAP = `
@@ -229,7 +242,7 @@ const TITLE_PROVIDER_SWAP = `
       config:
         targetWords: 5
         targetCjkCharacters: 10
-        maxInputBytes: 4096
+        maxInputBytes: 262144
         maxOutputTokens: 64
         timeoutMs: 60000
 `;
@@ -264,6 +277,15 @@ export interface DshQuestionBridgeConnection {
   supportsUsage(): boolean;
   /** The session's cumulative buckets, or null when DSH could not answer. */
   readUsage(agentId: string): Promise<DshSessionUsage | null>;
+  /**
+   * Whether the plugin announced it can regenerate the session's title.
+   *
+   * ACP carries no title update and DSH only titles a session when something asks
+   * it to, so without this an agent keeps the title its first prompt produced.
+   */
+  supportsTitle(): boolean;
+  /** The regenerated title, or null when DSH could not answer. */
+  refreshTitle(agentId: string): Promise<string | null>;
   close(): void;
 }
 
@@ -293,6 +315,7 @@ export class DshQuestionBridge {
   private readonly commandListTimeoutMs: number;
   private readonly commandRunTimeoutMs: number;
   private readonly usageTimeoutMs: number;
+  private readonly titleTimeoutMs: number;
   private artifacts: Promise<{ patchPath: string }> | null = null;
 
   constructor(options: DshQuestionBridgeOptions) {
@@ -304,6 +327,7 @@ export class DshQuestionBridge {
     this.commandListTimeoutMs = options.commandListTimeoutMs ?? DEFAULT_COMMAND_LIST_TIMEOUT_MS;
     this.commandRunTimeoutMs = options.commandRunTimeoutMs ?? DEFAULT_COMMAND_RUN_TIMEOUT_MS;
     this.usageTimeoutMs = options.usageTimeoutMs ?? DEFAULT_USAGE_TIMEOUT_MS;
+    this.titleTimeoutMs = options.titleTimeoutMs ?? DEFAULT_TITLE_TIMEOUT_MS;
   }
 
   /** Write the plugin and its overlay, then name a channel for one process. */
@@ -401,6 +425,8 @@ export class DshQuestionBridge {
     let commandsSupported = false;
     /** Whether the plugin announced it can report the session's token totals. */
     let usageSupported = false;
+    /** Whether the plugin announced it can regenerate the session's title. */
+    let titleSupported = false;
     /** Questions DSH settled on its own; a reply to one of those would be refused. */
     const settled = new Set<string>();
     /** Requests waiting on a reply, keyed by the id this side minted. */
@@ -505,11 +531,13 @@ export class DshQuestionBridge {
         case "ready": {
           commandsSupported = message.commands === true;
           usageSupported = message.usage === true;
+          titleSupported = message.title === true;
           this.logger.debug(
             {
               channel: options.channel,
               commands: commandsSupported,
               usage: usageSupported,
+              title: titleSupported,
             },
             "The DSH bridge is ready",
           );
@@ -596,6 +624,32 @@ export class DshQuestionBridge {
       },
       supportsCommands: () => commandsSupported,
       supportsUsage: () => usageSupported,
+      supportsTitle: () => titleSupported,
+      refreshTitle: async (agentId) => {
+        if (!titleSupported) return null;
+        try {
+          // Regeneration is a model call with the service's own deadline, so this
+          // waits longer than the projection reads above.
+          const reply = await request({ op: "refreshTitle", agentId }, this.titleTimeoutMs);
+          if (!isRecord(reply) || reply.ok !== true) {
+            this.logger.warn(
+              { channel: options.channel, reply },
+              "The DSH bridge could not regenerate this session's title",
+            );
+            return null;
+          }
+          if (reply.title === null) return null;
+          if (typeof reply.title !== "string") {
+            this.logger.warn({ reply }, "The DSH bridge sent a malformed title");
+            return null;
+          }
+          this.logger.debug({ title: reply.title }, "The DSH bridge regenerated the title");
+          return reply.title;
+        } catch (error) {
+          this.logger.warn({ err: error }, "Asking the DSH bridge to retitle failed");
+          return null;
+        }
+      },
       readUsage: async (agentId) => {
         if (!usageSupported) return null;
         try {

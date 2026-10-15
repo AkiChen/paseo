@@ -55,7 +55,17 @@ export const name = "paseo-question-bridge";
  * `sessionProjections` are here because the daemon runs this session's slash
  * commands and reads its token totals through the same channel.
  */
-export const inject = ["userQuestions", "systemPrompt", "commands", "agents", "sessionProjections"];
+export const inject = [
+  "userQuestions",
+  "systemPrompt",
+  "commands",
+  "agents",
+  "sessionProjections",
+  // Required, not optional: a service is only reachable from a fiber that declared
+  // it, and the ACP composition disables the title *provider* while keeping the
+  // service. Regeneration is useless without this.
+  "sessionTitle",
+];
 
 const SOCKET_ENV = "PASEO_QUESTION_BRIDGE_SOCKET";
 const LOG_ENV = "PASEO_QUESTION_BRIDGE_LOG";
@@ -427,6 +437,46 @@ function readUsage(bridge, message) {
 }
 
 /**
+ * Regenerate this session's title and answer with it.
+ *
+ * ACP never triggers title generation: the shipped provider runs only when a fresh
+ * session creates its fallback, which this composition never does, so a session
+ * keeps whatever its first prompt produced however new the conversation gets.
+ * `refresh` is the service's own deliberate regeneration path — the one a cadence
+ * like `all-prompts` needs in order to be observable at all.
+ *
+ * The answer can be slow (the regeneration is a model call with the service's own
+ * deadline), which is why Paseo asks for it off the turn's critical path.
+ */
+async function refreshTitle(bridge, socket, message) {
+  const id = message.id ?? null;
+  const agent = resolveAgent(bridge.agents, message.agentId);
+  if (agent === null) {
+    socket.write(
+      `${JSON.stringify({
+        op: "refreshTitle",
+        id,
+        ok: false,
+        error: `no live agent "${String(message.agentId)}" in this process`,
+      })}\n`,
+    );
+    return;
+  }
+  try {
+    const snapshot = await bridge.sessionTitle.refresh(agent.session);
+    const title =
+      typeof snapshot?.title === "string" && snapshot.title.trim() ? snapshot.title : null;
+    log(`title for ${String(message.agentId)}: ${title === null ? "none" : JSON.stringify(title)}`);
+    socket.write(`${JSON.stringify({ op: "refreshTitle", id, ok: true, title })}\n`);
+  } catch (error) {
+    log(`refreshing the title failed: ${describeError(error)}`);
+    socket.write(
+      `${JSON.stringify({ op: "refreshTitle", id, ok: false, error: describeError(error) })}\n`,
+    );
+  }
+}
+
+/**
  * Parse and run one complete slash-command line through the registry.
  *
  * `execute` is DSH's own entry point: it logs the `command/run` and
@@ -574,6 +624,26 @@ async function startChannel(channel) {
   return server;
 }
 
+/** Refuse one request whose id matches nothing this process is waiting on. */
+function refuseRequest(socket, message, error) {
+  socket.write(
+    `${JSON.stringify({
+      op: "error",
+      code: "unknown-request",
+      requestId: message.requestId ?? null,
+      error,
+    })}\n`,
+  );
+}
+
+/** Settle one request by id, refusing an id that matches nothing pending. */
+function settleRequest(socket, message, settle, error) {
+  const handled = typeof message.requestId === "string" && settle(message.requestId);
+  if (!handled) {
+    refuseRequest(socket, message, error);
+  }
+}
+
 function receive(bridge, socket, line) {
   let message;
   try {
@@ -586,44 +656,34 @@ function receive(bridge, socket, line) {
   }
   if (!isRecord(message)) return;
   log(`received ${String(message.op)}`);
+  // Regeneration answers later than a projection read, so it is dispatched before
+  // the switch rather than growing it.
+  if (message.op === "refreshTitle") {
+    void refreshTitle(bridge, socket, message);
+    return;
+  }
   switch (message.op) {
     case "ping":
       socket.write(
         `${JSON.stringify({ op: "pong", id: message.id ?? null, protocol: PROTOCOL, pid: process.pid })}\n`,
       );
       return;
-    case "answer": {
-      const handled =
-        typeof message.requestId === "string" &&
-        answerQuestion(bridge, message.requestId, message.answers);
-      if (!handled) {
-        socket.write(
-          `${JSON.stringify({
-            op: "error",
-            code: "unknown-request",
-            requestId: message.requestId ?? null,
-            error: "no pending question accepts this answer",
-          })}\n`,
-        );
-      }
+    case "answer":
+      settleRequest(
+        socket,
+        message,
+        (requestId) => answerQuestion(bridge, requestId, message.answers),
+        "no pending question accepts this answer",
+      );
       return;
-    }
-    case "dismiss": {
-      const handled =
-        typeof message.requestId === "string" &&
-        dismissQuestion(bridge, message.requestId, message.message);
-      if (!handled) {
-        socket.write(
-          `${JSON.stringify({
-            op: "error",
-            code: "unknown-request",
-            requestId: message.requestId ?? null,
-            error: "no pending question matches this dismissal",
-          })}\n`,
-        );
-      }
+    case "dismiss":
+      settleRequest(
+        socket,
+        message,
+        (requestId) => dismissQuestion(bridge, requestId, message.message),
+        "no pending question matches this dismissal",
+      );
       return;
-    }
     case "commands":
       socket.write(`${JSON.stringify(listCommands(bridge, message))}\n`);
       return;
@@ -633,21 +693,14 @@ function receive(bridge, socket, line) {
     case "command":
       void runCommand(bridge, socket, message);
       return;
-    case "unavailable": {
-      const handled =
-        typeof message.requestId === "string" && declineQuestion(bridge, message.requestId);
-      if (!handled) {
-        socket.write(
-          `${JSON.stringify({
-            op: "error",
-            code: "unknown-request",
-            requestId: message.requestId ?? null,
-            error: "no pending question matches this decline",
-          })}\n`,
-        );
-      }
+    case "unavailable":
+      settleRequest(
+        socket,
+        message,
+        (requestId) => declineQuestion(bridge, requestId),
+        "no pending question matches this decline",
+      );
       return;
-    }
     default:
       socket.write(
         `${JSON.stringify({
@@ -680,6 +733,7 @@ export function apply(ctx) {
     commands: ctx.commands,
     agents: ctx.agents,
     sessionProjections: ctx.sessionProjections,
+    sessionTitle: ctx.sessionTitle,
     write(message) {
       const socket = client.socket;
       if (socket === null || socket.destroyed === true) return false;
@@ -705,6 +759,7 @@ export function apply(ctx) {
       pid: process.pid,
       commands: true,
       usage: true,
+      title: true,
     });
 
     let buffered = "";

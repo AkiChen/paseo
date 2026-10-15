@@ -3652,22 +3652,44 @@ export class ACPAgentSession implements AgentSession, ACPClient {
    * what keeps an agent's title current. A provider without a store is untouched.
    */
   private refreshSessionTitle(): void {
+    const connection = this.questionBridgeConnection;
+    const bridgeSessionId = this.sessionId;
+    if (connection !== null && bridgeSessionId !== null && connection.supportsTitle()) {
+      // ACP never asks a provider to title itself, so the bridge does: this is what
+      // makes a per-prompt cadence observable. It is a model call, so it runs off
+      // the turn's path and the store read below stays as the fallback.
+      void (async () => {
+        const title = await connection.refreshTitle(bridgeSessionId);
+        if (title !== null) {
+          this.applyProviderTitle(title);
+        }
+      })().catch((error: unknown) => {
+        this.logger.warn({ err: error }, "Regenerating the session title failed");
+      });
+    }
+
     const reader = this.sessionMetadataReader;
-    const sessionId = this.sessionId;
-    if (reader === null || sessionId === null) {
+    if (reader === null || bridgeSessionId === null) {
       return;
     }
     void (async () => {
-      const metadata: SessionMetadata | null = await reader(sessionId).catch(() => null);
+      const metadata: SessionMetadata | null = await reader(bridgeSessionId).catch(() => null);
       const title = metadata?.title ?? null;
-      if (title === null || title === this.currentTitle || this.closed) {
-        return;
+      if (title !== null) {
+        this.applyProviderTitle(title);
       }
-      this.currentTitle = title;
-      this.deliverTranslatedEvents([{ type: "title_updated", provider: this.provider, title }]);
     })().catch((error: unknown) => {
       this.logger.warn({ err: error }, "Reading the provider session title failed");
     });
+  }
+
+  /** Report a title the provider settled on, once, as the provider's own update. */
+  private applyProviderTitle(title: string): void {
+    if (title === this.currentTitle || this.closed) {
+      return;
+    }
+    this.currentTitle = title;
+    this.deliverTranslatedEvents([{ type: "title_updated", provider: this.provider, title }]);
   }
 
   private handlePromptResponse(response: PromptResponse, turnId: string): void {

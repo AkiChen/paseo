@@ -4665,6 +4665,51 @@ describe("ACPAgentSession question bridge", () => {
     });
   }
 
+  test("regenerates the session title over the channel and reports it", async () => {
+    const bridge = createBridgeFor(await createHome());
+    const plugin = await servePlugin(
+      (socket) => {
+        socket.write(`${JSON.stringify({ op: "ready", protocol: 1, pid: 1, title: true })}\n`);
+      },
+      (message, socket) => {
+        if (message.op !== "refreshTitle") return;
+        socket.write(
+          `${JSON.stringify({
+            op: "refreshTitle",
+            id: message.id,
+            ok: true,
+            title: "Cohort retention by month",
+          })}\n`,
+        );
+      },
+    );
+    vi.spyOn(bridge, "prepareLaunch").mockResolvedValue({
+      channel: plugin.channel,
+      args: ["--patch", "paseo-question-bridge.yml"],
+      env: { PASEO_QUESTION_BRIDGE_SOCKET: plugin.channel },
+    });
+    const session = createQuestionSession(bridge);
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await session.initializeResumedSession();
+    await waitFor(plugin.connected, "the channel connection");
+    // The title capability arrives with the plugin's ready line, which can land
+    // after the resume call; ask again the way a later turn would.
+    await vi.waitFor(() => {
+      asInternals<ACPSessionInternals>(session).refreshSessionTitle();
+      expect(events.filter(isTitleUpdatedEvent)).toHaveLength(1);
+    });
+    expect(events.find(isTitleUpdatedEvent)).toEqual({
+      type: "title_updated",
+      provider: "dsh",
+      title: "Cohort retention by month",
+    });
+    expect(plugin.received).toContainEqual(
+      expect.objectContaining({ op: "refreshTitle", agentId: "session-1" }),
+    );
+  });
+
   test("shows a DSH question as a question card and answers it over the channel", async () => {
     const bridge = createBridgeFor(await createHome());
     const plugin = await servePlugin();
