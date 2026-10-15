@@ -641,6 +641,28 @@ usage pill renders, split into uncached input, cache read, cache write, and
 output. A plugin that predates that announcement leaves an agent with the window
 and no totals.
 
+Titles also come from the bridge. That composition turns title generation off on
+purpose — its patch disables the title provider, since the ACP application exists
+for automation — and nothing on the wire asks for a regeneration, so an agent
+keeps the title its first prompt produced however far the conversation moves. The
+bridge asks the title service to regenerate after each turn, which is the
+service's own deliberate path for it, and Paseo reports the result as the agent's
+title. A title change arrives with no transcript row: it is state, like usage.
+
+A regenerated title describes the whole conversation rather than the first message
+when the provider is `all-prompts`. Paseo's overlay swaps that provider in only
+when the profile already has the package, so nothing changes on a machine without
+it:
+
+```bash
+dsh plugin --profile acp add @deepseek-ai/dsh-session-title-all-prompts-llm
+```
+
+That provider frames every human message instead of one, and the shared policy
+fails rather than truncating an oversized frame, which is why the overlay carries
+a 256 KiB input limit where the shipped first-prompt entry carries 4 KiB. A
+conversation longer than that keeps the title it had.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.
