@@ -60,6 +60,23 @@ if (Test-Path -LiteralPath $outputDirectory) {
   throw "Build output already exists: $outputDirectory"
 }
 
+# Two things have to be arranged from outside this script when it runs inside a
+# DSH sandbox session, and both of them follow from the sandbox's Low integrity
+# label on the workspace tree:
+#
+#   * TEMP/TMP must point inside this checkout. app-builder.exe ships in the
+#     workspace, so it inherits that label and cannot create its staging directory
+#     under a medium-integrity %TEMP% ("Access is denied"). The staging root below
+#     follows GetTempPath(), so exporting TEMP/TMP to a workspace directory first
+#     is enough.
+#
+#   * The packaged tree inherits the label too, and an Electron app launched from
+#     where it was built dies about a second in, faulting in its own exe
+#     (0x80000003), because Chromium's sandboxed children run with a low-integrity
+#     token. Install the finished directory under a medium-integrity root before
+#     running it; the fork's working client lives in %LOCALAPPDATA%\Programs. A
+#     recursive icacls repair of the build root does not cover the one renderer
+#     asset whose path passes MAX_PATH.
 $stagingRoot = Join-Path ([IO.Path]::GetTempPath()) "paseo-windows-x64-$([guid]::NewGuid().ToString('N'))"
 
 function Invoke-BuildStep {
