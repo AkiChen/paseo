@@ -119,11 +119,8 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: "#000000",
-        foregroundImage: "./assets/images/android-icon-foreground.png",
-        // Themed icons: Android tints this layer, so it is the mark's shape on
-        // transparency. No slot existed before the new icon set.
-        monochromeImage: "./assets/images/android-icon-monochrome.png",
+        backgroundColor: "#ffffff",
+        foregroundImage: "./assets/images/android-icon-foreground-light.png",
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
@@ -144,6 +141,7 @@ export default {
     },
     plugins: [
       "expo-router",
+      "./plugins/with-paseo-adaptive-icon-theme",
       withPasteInput,
       withAndroidScroll,
       [withAndroidAsyncStorageSize, 64],
