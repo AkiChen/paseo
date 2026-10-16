@@ -32,6 +32,9 @@ export const TurnProcessFoldView = memo(function TurnProcessFoldView({
       label={label}
       icon={TURN_PROCESS_ICON}
       isExpanded={expanded}
+      // A live control row shimmers while the turn is still inside it, the same
+      // signal a running tool call carries.
+      isLoading={fold.counts.live}
       isLastInSequence={isLastInSequence}
       onToggle={handleToggle}
     />

@@ -235,6 +235,8 @@ export const ru: TranslationResources = {
     messageCapped: "Это сообщение было обрезано ({{bytes}} байт).",
     turnProcess: {
       thought: "Подумал немного",
+      running: "Выполняет инструменты",
+      thinking: "Обдумывает",
       toolCalls: {
         one: "{{count}} вызов инструмента",
         other: "{{count}} вызовов инструментов",
@@ -2153,8 +2155,7 @@ export const ru: TranslationResources = {
       },
       turnProcessFolding: {
         label: "Процесс хода",
-        description:
-          "Сворачивает рассуждения и вызовы инструментов завершённого хода DeepSeek Harness",
+        description: "Сворачивает рассуждения и вызовы инструментов хода DeepSeek Harness",
         accessibilityLabel: "Выбрать отображение процесса хода ({{value}})",
         options: {
           compact: "Компактно",

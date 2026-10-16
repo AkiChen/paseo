@@ -233,6 +233,8 @@ export const ar: TranslationResources = {
     messageCapped: "تم اقتطاع هذه الرسالة ({{bytes}} بايت).",
     turnProcess: {
       thought: "فكّر لبعض الوقت",
+      running: "يشغّل الأدوات",
+      thinking: "يفكّر الآن",
       toolCalls: { one: "{{count}} استدعاء أداة", other: "{{count}} استدعاءات أدوات" },
       subAgents: { one: "{{count}} وكيل فرعي", other: "{{count}} وكلاء فرعيون" },
     },
@@ -2114,7 +2116,7 @@ export const ar: TranslationResources = {
       },
       turnProcessFolding: {
         label: "سير الدور",
-        description: "يطوي تفكير دور DeepSeek Harness المنتهي واستدعاءات الأدوات",
+        description: "يطوي تفكير دور DeepSeek Harness واستدعاءات الأدوات",
         accessibilityLabel: "اختر عرض سير الدور ({{value}})",
         options: {
           compact: "مضغوط",

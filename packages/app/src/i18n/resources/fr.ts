@@ -237,6 +237,8 @@ export const fr: TranslationResources = {
     messageCapped: "Ce message a été tronqué ({{bytes}} octets).",
     turnProcess: {
       thought: "A réfléchi un moment",
+      running: "Exécution des outils",
+      thinking: "Réflexion en cours",
       toolCalls: { one: "{{count}} appel d’outil", other: "{{count}} appels d’outils" },
       subAgents: { one: "{{count}} sous-agent", other: "{{count}} sous-agents" },
     },
@@ -2169,8 +2171,7 @@ export const fr: TranslationResources = {
       },
       turnProcessFolding: {
         label: "Processus du tour",
-        description:
-          "Replie la réflexion et les appels d’outils d’un tour DeepSeek Harness terminé",
+        description: "Replie la réflexion et les appels d’outils d’un tour DeepSeek Harness",
         accessibilityLabel: "Sélectionner l’affichage du processus du tour ({{value}})",
         options: {
           compact: "Compact",

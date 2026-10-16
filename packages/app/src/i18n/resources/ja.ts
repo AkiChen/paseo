@@ -235,6 +235,8 @@ export const ja: TranslationResources = {
     messageCapped: "このメッセージは上限で切り詰められました（{{bytes}}バイト）。",
     turnProcess: {
       thought: "しばらく考えました",
+      running: "ツールを実行中",
+      thinking: "考えています",
       toolCalls: { one: "ツール呼び出し {{count}} 件", other: "ツール呼び出し {{count}} 件" },
       subAgents: {
         one: "サブエージェント {{count}} 件",
@@ -2136,7 +2138,7 @@ export const ja: TranslationResources = {
       },
       turnProcessFolding: {
         label: "ターンの過程",
-        description: "終了した DeepSeek Harness のターンの思考とツール呼び出しを折りたたみます",
+        description: "DeepSeek Harness のターンの思考とツール呼び出しを折りたたみます",
         accessibilityLabel: "ターンの過程の表示を選択（{{value}}）",
         options: {
           compact: "コンパクト",

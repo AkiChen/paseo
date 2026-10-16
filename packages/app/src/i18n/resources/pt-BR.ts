@@ -234,6 +234,8 @@ export const ptBR: TranslationResources = {
     messageCapped: "Esta mensagem foi truncada ({{bytes}} bytes).",
     turnProcess: {
       thought: "Pensou por um tempo",
+      running: "Executando ferramentas",
+      thinking: "Pensando",
       toolCalls: {
         one: "{{count}} chamada de ferramenta",
         other: "{{count}} chamadas de ferramentas",
@@ -2153,7 +2155,7 @@ export const ptBR: TranslationResources = {
       turnProcessFolding: {
         label: "Processo do turno",
         description:
-          "Recolhe o raciocínio e as chamadas de ferramentas de um turno concluído do DeepSeek Harness",
+          "Recolhe o raciocínio e as chamadas de ferramentas de um turno do DeepSeek Harness",
         accessibilityLabel: "Selecionar a exibição do processo do turno ({{value}})",
         options: {
           compact: "Compacta",

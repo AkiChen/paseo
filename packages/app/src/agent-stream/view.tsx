@@ -564,8 +564,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
 
-    // A finished turn hides its reasoning and tool rows behind one control row. The
-    // pass only runs for the agents it was built for, and never folds a reply.
+    // A turn hides its reasoning and tool rows behind one control row per run —
+    // including the run a turn that is still running is inside. The pass only
+    // runs for the agents it was built for, and never folds a reply.
     const foldedTurnProcesses = useMemo(() => {
       if (turnProcessFolding === "standard" || !canFoldTurnProcess(context.provider)) {
         return {
@@ -584,7 +585,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         expandedFoldIds: expandedTurnProcessFoldIds,
         toolCallsIn,
       };
-      const tail = foldTurnProcesses({ items: presentation.tail, ...foldInput });
+      const tail = foldTurnProcesses({
+        items: presentation.tail,
+        ...foldInput,
+        // The settled list owns the run a running turn is inside, so the reader
+        // sees one control row instead of the wall of rows still arriving.
+        foldActiveTurn: true,
+      });
       const head = foldTurnProcesses({ items: presentation.head, ...foldInput });
       return {
         tail: tail.items,

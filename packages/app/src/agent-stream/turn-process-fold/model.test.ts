@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import type { StreamItem, ToolCallItem } from "@/types/stream";
+import type { AgentToolCallStatus, StreamItem, ToolCallItem } from "@/types/stream";
 import { canFoldTurnProcess, foldTurnProcesses, turnProcessFoldHostId } from "./model";
 
 const timestamp = new Date(0);
@@ -16,7 +16,11 @@ function assistant(id: string, turnId: string, text: string): StreamItem {
 function toolCall(
   id: string,
   turnId: string,
-  options: { detail?: ToolCallDetail; name?: string } = {},
+  options: {
+    detail?: ToolCallDetail;
+    name?: string;
+    status?: AgentToolCallStatus;
+  } = {},
 ): ToolCallItem {
   return {
     kind: "tool_call",
@@ -29,7 +33,7 @@ function toolCall(
         provider: "claude",
         callId: id,
         name: options.name ?? "bash",
-        status: "completed",
+        status: options.status ?? "completed",
         error: null,
         detail: options.detail ?? { type: "shell", command: "npm test" },
       },
@@ -42,6 +46,7 @@ function fold(
   options: {
     provider?: string | undefined;
     activeTurnId?: string | null;
+    foldActiveTurn?: boolean;
     expandedFoldIds?: ReadonlySet<string>;
     toolCallsIn?: (item: ToolCallItem) => readonly ToolCallItem[];
   } = {},
@@ -51,6 +56,7 @@ function fold(
     provider: "provider" in options ? options.provider : "dsh",
     activeTurnId: options.activeTurnId ?? null,
     expandedFoldIds: options.expandedFoldIds ?? new Set<string>(),
+    ...(options.foldActiveTurn ? { foldActiveTurn: true } : {}),
     ...(options.toolCallsIn ? { toolCallsIn: options.toolCallsIn } : {}),
   });
 }
@@ -94,7 +100,7 @@ describe("foldTurnProcesses", () => {
   });
 
   // A reply is written content the reader keeps: it is never a member, and it
-  // ends the block of process rows in front of the answer.
+  // ends the run of process rows above it.
   it("keeps every reply visible", () => {
     const items = [
       thought("t1", "turn-1"),
@@ -108,8 +114,7 @@ describe("foldTurnProcesses", () => {
     const result = fold(items);
 
     expect(result.items.map((item) => item.id)).toEqual([
-      "t1",
-      "c1",
+      turnProcessFoldHostId("t1"),
       "a1",
       turnProcessFoldHostId("t2"),
       "a2",
@@ -133,9 +138,13 @@ describe("foldTurnProcesses", () => {
     const hostId = turnProcessFoldHostId("c1");
     const foldEntry = result.foldsByHostId.get(hostId);
 
-    expect(foldEntry?.counts).toEqual({ toolCalls: 2, subAgents: 1 });
-    // The interim reply is not a member, so the run in front of the answer
-    // starts after it.
+    expect(foldEntry?.counts).toEqual({
+      toolCalls: 2,
+      subAgents: 1,
+      live: false,
+      running: false,
+    });
+    // The interim reply is not a member, so the run starts after it.
     expect(foldEntry?.members.map((item) => item.id)).toEqual(["c1", "c2", "c3"]);
   });
 
@@ -153,10 +162,50 @@ describe("foldTurnProcesses", () => {
     expect(result.foldsByHostId.get(turnProcessFoldHostId("t1"))?.counts).toEqual({
       toolCalls: 1,
       subAgents: 1,
+      live: false,
+      running: false,
     });
   });
 
-  it("never folds the turn that is still running", () => {
+  // The wall the reader complains about is the turn that is still running, so
+  // its trailing run folds like any other — the control row tracks it live.
+  it("folds the run a running turn is inside", () => {
+    const items = [
+      thought("t1", "turn-1"),
+      toolCall("c1", "turn-1", { status: "running" }),
+      toolCall("c2", "turn-1", { status: "running" }),
+    ];
+
+    const result = fold(items, { activeTurnId: "turn-1", foldActiveTurn: true });
+
+    expect(result.items.map((item) => item.id)).toEqual([turnProcessFoldHostId("t1")]);
+    expect(result.foldsByHostId.get(turnProcessFoldHostId("t1"))?.counts).toEqual({
+      toolCalls: 2,
+      subAgents: 0,
+      live: true,
+      running: true,
+    });
+    expect(
+      result.foldsByHostId.get(turnProcessFoldHostId("t1"))?.members.map((item) => item.id),
+    ).toEqual(["t1", "c1", "c2"]);
+  });
+
+  it("reports a live trailing run that is only thinking", () => {
+    const items = [toolCall("c1", "turn-1"), thought("t1", "turn-1")];
+
+    const result = fold(items, { activeTurnId: "turn-1", foldActiveTurn: true });
+
+    expect(result.foldsByHostId.get(turnProcessFoldHostId("c1"))?.counts).toEqual({
+      toolCalls: 1,
+      subAgents: 0,
+      live: true,
+      running: false,
+    });
+  });
+
+  // The streaming head keeps its rows: the live assistant text and the thought
+  // being written are never replaced by a control row.
+  it("leaves the running turn alone in a lane that does not own it", () => {
     const items = [thought("t1", "turn-1"), assistant("a1", "turn-1", "Partial answer.")];
 
     const result = fold(items, { activeTurnId: "turn-1" });
@@ -165,16 +214,58 @@ describe("foldTurnProcesses", () => {
     expect(result.foldsByHostId.size).toBe(0);
   });
 
-  it("keeps every process row when the turn has no final answer", () => {
-    const items = [thought("t1", "turn-1"), toolCall("c1", "turn-1")];
+  it("keeps the finished label on a run a live turn already left behind", () => {
+    const items = [
+      thought("t1", "turn-1"),
+      toolCall("c1", "turn-1"),
+      assistant("a1", "turn-1", "Interim note."),
+      thought("t2", "turn-1"),
+      toolCall("c2", "turn-1", { status: "running" }),
+    ];
+
+    const result = fold(items, { activeTurnId: "turn-1", foldActiveTurn: true });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      turnProcessFoldHostId("t1"),
+      "a1",
+      turnProcessFoldHostId("t2"),
+    ]);
+    expect(result.foldsByHostId.get(turnProcessFoldHostId("t1"))?.counts).toEqual({
+      toolCalls: 1,
+      subAgents: 0,
+      live: false,
+      running: false,
+    });
+    expect(result.foldsByHostId.get(turnProcessFoldHostId("t2"))?.counts).toEqual({
+      toolCalls: 1,
+      subAgents: 0,
+      live: true,
+      running: true,
+    });
+  });
+
+  it("keeps a row that is not process work where the reader saw it", () => {
+    const notice: StreamItem = {
+      kind: "notification",
+      id: "n1",
+      turnId: "turn-1",
+      sourceType: "error",
+      level: "error",
+      message: "boom",
+      timestamp,
+    };
+    const items = [thought("t1", "turn-1"), notice, toolCall("c1", "turn-1")];
 
     const result = fold(items);
 
-    expect(result.items).toEqual(items);
-    expect(result.foldsByHostId.size).toBe(0);
+    expect(result.items.map((item) => item.id)).toEqual([
+      turnProcessFoldHostId("t1"),
+      "n1",
+      turnProcessFoldHostId("c1"),
+    ]);
   });
 
-  it("keeps a turn whose closing step still runs tools", () => {
+  it("folds a finished turn that ends with work", () => {
     const items = [
       thought("t1", "turn-1"),
       assistant("a1", "turn-1", "Interim note."),
@@ -183,8 +274,11 @@ describe("foldTurnProcesses", () => {
 
     const result = fold(items);
 
-    expect(result.items).toEqual(items);
-    expect(result.foldsByHostId.size).toBe(0);
+    expect(result.items.map((item) => item.id)).toEqual([
+      turnProcessFoldHostId("t1"),
+      "a1",
+      turnProcessFoldHostId("c1"),
+    ]);
   });
 
   it("leaves a turn that is only a final answer alone", () => {
