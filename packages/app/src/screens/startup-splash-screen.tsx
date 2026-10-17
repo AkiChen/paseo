@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Image, ScrollView, Text, View } from "react-native";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -35,6 +35,7 @@ const DOCS_URL = "https://paseo.sh/docs";
 const LOGO_SIZE = 96;
 const SHIMMER_PEAK_WIDTH = 120;
 const SHIMMER_DURATION_MS = 1800;
+const STARTUP_ICON = require("../../assets/images/android-icon-foreground.png");
 
 function openGithubIssue(): void {
   void openExternalUrl(GITHUB_ISSUE_URL);
@@ -150,7 +151,11 @@ function NativeLogoShimmer({ color }: { color: string }) {
   const maskElement = useMemo(
     () => (
       <View style={styles.shimmerMask}>
-        <PaseoLogo size={LOGO_SIZE} color="#000000" />
+        <Image
+          source={STARTUP_ICON}
+          resizeMode="contain"
+          style={{ width: LOGO_SIZE, height: LOGO_SIZE, tintColor: "#000000" }}
+        />
       </View>
     ),
     [],
@@ -160,7 +165,11 @@ function NativeLogoShimmer({ color }: { color: string }) {
     <MaskedView style={trackStyle} maskElement={maskElement}>
       <View style={trackStyle}>
         <View style={styles.nativeShimmerBase}>
-          <PaseoLogo size={LOGO_SIZE} color={color} />
+          <Image
+            source={STARTUP_ICON}
+            resizeMode="contain"
+            style={{ width: LOGO_SIZE, height: LOGO_SIZE, tintColor: color }}
+          />
         </View>
         <Animated.View style={peakCombinedStyle}>
           <Svg width="100%" height="100%" preserveAspectRatio="none">

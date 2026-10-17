@@ -149,11 +149,12 @@ export default {
       [
         "expo-splash-screen",
         {
-          image: "./assets/images/splash-icon.png",
+          image: "./assets/images/android-icon-foreground-light.png",
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
           dark: {
+            image: "./assets/images/android-icon-foreground.png",
             backgroundColor: "#000000",
           },
         },
