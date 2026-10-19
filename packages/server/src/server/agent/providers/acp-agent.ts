@@ -1,6 +1,5 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -3451,13 +3450,11 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       snapshot = this.toolSnapshotTransformer(snapshot);
     }
     this.toolCalls.set(toolCallId, snapshot);
-    return [
-      this.wrapTimeline(mapToolSnapshotToTimeline(snapshot, this.terminalEntries)),
-      ...extractToolImageItems(snapshot.content).map((item) => this.wrapTimeline(item)),
-      ...presentedImageItems(snapshot, this.config.cwd, previous).map((item) =>
-        this.wrapTimeline(item),
-      ),
-    ];
+    // A tool result that carries a picture does not draw it: the agent read the
+    // file for itself, and the answer it writes is what shows the user a picture.
+    // A `present` call is the same: the deliverable reaches the client as the path
+    // the tool card names, and the picture is whatever the final answer embeds.
+    return [this.wrapTimeline(mapToolSnapshotToTimeline(snapshot, this.terminalEntries))];
   }
 
   private createMessageTimelineItem(
@@ -4453,8 +4450,8 @@ function extractToolText(content: ToolCallContent[] | null | undefined): string 
     if (item.type !== "content") {
       continue;
     }
-    // An image becomes its own timeline item, so `[image]` in the tool card would
-    // only repeat it.
+    // A picture in a tool result is not drawn anywhere, so `[image]` here would be
+    // the only trace of it: the card keeps the text the agent sent instead.
     if (item.content.type === "image") {
       continue;
     }
@@ -4467,10 +4464,10 @@ function extractToolText(content: ToolCallContent[] | null | undefined): string 
 }
 
 /**
- * An image an agent hands back — in a tool result, or as message content — becomes
- * its own assistant markdown image, the way Claude and Codex already report one:
- * the bytes are materialized into the attachment directory and the picture renders
- * inline in the transcript. Anything else returns null.
+ * An image the agent writes into a message of its own becomes an assistant markdown
+ * image, the way Claude and Codex already report one. This is the only picture path
+ * ACP keeps: a picture in a tool result, and one a `present` call names, are the
+ * agent's own material and reach the transcript through the answer instead.
  */
 function providerImageTimelineItem(content: ContentBlock): AgentTimelineItem | null {
   if (content.type !== "image") {
@@ -4480,106 +4477,6 @@ function providerImageTimelineItem(content: ContentBlock): AgentTimelineItem | n
     { data: content.data, mimeType: content.mimeType },
     { materialize: materializeProviderImage },
   );
-}
-
-function extractToolImageItems(content: ToolCallContent[] | null | undefined): AgentTimelineItem[] {
-  if (!content) {
-    return [];
-  }
-  const items: AgentTimelineItem[] = [];
-  for (const item of content) {
-    if (item.type !== "content") {
-      continue;
-    }
-    const rendered = providerImageTimelineItem(item.content);
-    if (rendered) {
-      items.push(rendered);
-    }
-  }
-  return items;
-}
-
-/**
- * Tool names an agent uses to hand files to the user rather than to itself. DSH
- * calls it `present`, and its wire name arrives as the tool title, sometimes
- * namespaced.
- */
-const PRESENTED_TOOL_NAMES = new Set(["present", "dsh__present"]);
-
-/** Past this size a "deliverable" is a file, not a picture worth drawing inline. */
-const PRESENTED_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
-
-const PRESENTED_IMAGE_MIME_TYPES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".bmp": "image/bmp",
-};
-
-function presentedFilePaths(snapshot: ACPToolSnapshot | undefined): string[] {
-  if (!snapshot || !PRESENTED_TOOL_NAMES.has(snapshot.title)) {
-    return [];
-  }
-  const files = readRecord(snapshot.rawInput)?.files;
-  if (!Array.isArray(files)) {
-    return [];
-  }
-  const paths: string[] = [];
-  for (const entry of files) {
-    const value = readString(readRecord(entry), ["path"]);
-    if (value) {
-      paths.push(value.trim());
-    }
-  }
-  return paths;
-}
-
-/**
- * A presented image is read by the daemon and materialized for the client, so the
- * user sees it without the agent spending context on the picture. Everything else
- * the agent presented stays with the tool card and its file link.
- *
- * `previous` is the snapshot the same call had one update ago: a `present` call
- * arrives first as `tool_call` and then as `tool_call_update`, and the picture
- * belongs in the transcript once.
- */
-function presentedImageItems(
-  snapshot: ACPToolSnapshot,
-  cwd: string,
-  previous: ACPToolSnapshot | undefined,
-): AgentTimelineItem[] {
-  const alreadyShown = new Set(presentedFilePaths(previous));
-  const items: AgentTimelineItem[] = [];
-  for (const rawPath of presentedFilePaths(snapshot)) {
-    if (alreadyShown.has(rawPath)) {
-      continue;
-    }
-    const mimeType = PRESENTED_IMAGE_MIME_TYPES[path.extname(rawPath).toLowerCase()];
-    if (!mimeType) {
-      continue;
-    }
-    const resolved = path.isAbsolute(rawPath) ? rawPath : path.resolve(cwd, rawPath);
-    let bytes: Buffer;
-    try {
-      const stats = fsSync.statSync(resolved);
-      if (!stats.isFile() || stats.size === 0 || stats.size > PRESENTED_IMAGE_MAX_BYTES) {
-        continue;
-      }
-      bytes = fsSync.readFileSync(resolved);
-    } catch {
-      continue;
-    }
-    const rendered = renderProviderImageOutputAsAssistantMarkdown(
-      { data: bytes.toString("base64"), mimeType, altText: path.basename(resolved) },
-      { materialize: materializeProviderImage },
-    );
-    if (rendered) {
-      items.push(rendered);
-    }
-  }
-  return items;
 }
 
 function extractDiffContent(

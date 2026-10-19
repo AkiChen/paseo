@@ -5263,7 +5263,7 @@ describe("ACPAgentSession provider image output", () => {
       .filter((item): item is AgentTimelineItem => item !== null);
   }
 
-  test("renders an image a tool result hands back, without the placeholder", async () => {
+  test("does not draw a picture a tool result hands back", async () => {
     const items = await collectTimeline([
       {
         sessionUpdate: "tool_call",
@@ -5280,13 +5280,11 @@ describe("ACPAgentSession provider image output", () => {
       } as SessionUpdate,
     ]);
 
-    const rendered = imageMarkdown(items);
-    expect(rendered).toHaveLength(1);
-    expect(rendered[0]).toMatch(
-      /^!\[Image\]\(file:\/\/.*paseo-attachments[^)]*[0-9a-f]{64}\.png\)$/,
-    );
+    expect(imageMarkdown(items)).toHaveLength(0);
 
-    // The call still renders, with the text the agent sent and no placeholder.
+    // The call still renders, with the text the agent sent and no placeholder: a
+    // `read_image` result names the file and its size, and the picture the agent
+    // took from it belongs to the answer, not to the tool card.
     const call = items.find(
       (item): item is Extract<AgentTimelineItem, { type: "tool_call" }> =>
         item.type === "tool_call",
@@ -5325,13 +5323,13 @@ describe("ACPAgentSession provider image output", () => {
     expect(imageMarkdown(items)).toHaveLength(0);
   });
 
-  test("shows a picture the agent presented as a deliverable", async () => {
+  test("does not draw a picture a present call names", async () => {
     const workspace = await mkdtemp(path.join(tmpdir(), "paseo-present-"));
     const imagePath = path.join(workspace, "chart.png");
     await writeFile(imagePath, Buffer.from(PNG_BASE64, "base64"));
     try {
-      // A present call arrives twice: the call itself, then its update. The picture
-      // belongs in the transcript once.
+      // A present call arrives twice: the call itself, then its update. Neither
+      // draws the file, which the user sees where the answer embeds it.
       const items = await collectTimeline([
         {
           sessionUpdate: "tool_call",
@@ -5348,34 +5346,8 @@ describe("ACPAgentSession provider image output", () => {
         } as SessionUpdate,
       ]);
 
-      const rendered = imageMarkdown(items);
-      expect(rendered).toHaveLength(1);
-      // The file name becomes the alt text, so the transcript names the deliverable
-      // before the picture is even fetched.
-      expect(rendered[0]).toContain("![chart.png](file://");
-      expect(rendered[0]).toMatch(/paseo-attachments[^)]*[0-9a-f]{64}\.png\)$/);
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  test("leaves a presented file that is not an image to the tool card", async () => {
-    const workspace = await mkdtemp(path.join(tmpdir(), "paseo-present-"));
-    const reportPath = path.join(workspace, "report.csv");
-    await writeFile(reportPath, "a,b\n1,2\n");
-    try {
-      const items = await collectTimeline([
-        {
-          sessionUpdate: "tool_call",
-          toolCallId: "call-present-text",
-          title: "present",
-          kind: "other",
-          status: "completed",
-          rawInput: { files: [{ path: reportPath }] },
-        } as SessionUpdate,
-      ]);
-
       expect(imageMarkdown(items)).toHaveLength(0);
+      // The deliverable keeps its place in the transcript as the call that named it.
       expect(items.some((item) => item.type === "tool_call")).toBe(true);
     } finally {
       await rm(workspace, { recursive: true, force: true });

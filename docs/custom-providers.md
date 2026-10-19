@@ -600,8 +600,14 @@ composition. Name a bridge and Paseo answers both from its question card:
 `home` is the DeepSeek Harness home holding `profiles/`, and defaults to
 `~/.dsh`. Paseo materializes a plugin into that home and passes a generated
 `--patch` overlay on the provider command, so only the processes Paseo launches
-load it. The overlay also inserts the `ask_user_question` tool row, which the
-ACP composition does not carry.
+load it. The overlay also inserts the `ask_user_question` and `present` tool rows,
+which the ACP composition does not carry.
+
+A picture is never drawn on its own. An image block in a tool result, and a file a
+`present` call names, keep their place as the call that produced them — the card
+carries the text and the path — and the picture reaches the transcript where the
+agent writes it into a message of its own. An agent that reads a chart to reason
+about it therefore shows it once, in the answer, instead of once per look.
 
 The card carries DSH's own options, its multi-select and free-text behavior, and
 its question headers. Answers go back as DSH shapes them: the labels the user
