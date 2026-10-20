@@ -9,7 +9,9 @@ import {
   useWorkspaceAttachmentsStore,
 } from "./workspace-attachments-store";
 
-function reviewAttachment(body: string): WorkspaceComposerAttachment {
+type ReviewWorkspaceAttachment = Extract<WorkspaceComposerAttachment, { kind: "review" }>;
+
+function reviewAttachment(body: string): ReviewWorkspaceAttachment {
   return {
     kind: "review",
     reviewDraftKey: `review:${body}`,
@@ -147,6 +149,110 @@ describe("workspace attachments store", () => {
     const replacement = chatHistoryAttachment("chat_history:draft-1", "Updated chat.");
 
     expect(appendWorkspaceAttachment([original], replacement)).toEqual([replacement]);
+  });
+
+  it("keeps another review draft when a review surface publishes without comments", () => {
+    resetWorkspaceAttachmentsStore();
+    const scopeKey = buildWorkspaceAttachmentScopeKey({
+      serverId: "local",
+      workspaceId: "workspace-1",
+      cwd: "/repo",
+    });
+    const commitReview = reviewAttachment("commit comment");
+
+    // A commit review panel publishes the comments written on that commit.
+    useWorkspaceAttachmentsStore.getState().setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: commitReview.reviewDraftKey,
+      attachment: commitReview,
+    });
+
+    // The working diff surface publishes with no comments of its own.
+    useWorkspaceAttachmentsStore.getState().setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: "review:working-diff",
+      attachment: null,
+    });
+
+    expect(useWorkspaceAttachmentsStore.getState().attachmentsByScope[scopeKey]).toEqual([
+      commitReview,
+    ]);
+  });
+
+  it("replaces a review draft in place when its comments change", () => {
+    resetWorkspaceAttachmentsStore();
+    const scopeKey = buildWorkspaceAttachmentScopeKey({
+      serverId: "local",
+      workspaceId: "workspace-1",
+      cwd: "/repo",
+    });
+    const workingDiffReview = reviewAttachment("working diff comment");
+    const commitReview = reviewAttachment("commit comment");
+    const editedReview: WorkspaceComposerAttachment = {
+      ...commitReview,
+      commentCount: 2,
+      attachment: {
+        ...commitReview.attachment,
+        comments: [
+          ...commitReview.attachment.comments,
+          { ...commitReview.attachment.comments[0]!, body: "second comment" },
+        ],
+      },
+    };
+    const store = useWorkspaceAttachmentsStore.getState();
+
+    store.setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: workingDiffReview.reviewDraftKey,
+      attachment: workingDiffReview,
+    });
+    store.setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: commitReview.reviewDraftKey,
+      attachment: commitReview,
+    });
+    store.setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: commitReview.reviewDraftKey,
+      attachment: editedReview,
+    });
+
+    expect(useWorkspaceAttachmentsStore.getState().attachmentsByScope[scopeKey]).toEqual([
+      workingDiffReview,
+      editedReview,
+    ]);
+  });
+
+  it("removes only the review draft that withdrew its comments", () => {
+    resetWorkspaceAttachmentsStore();
+    const scopeKey = buildWorkspaceAttachmentScopeKey({
+      serverId: "local",
+      workspaceId: "workspace-1",
+      cwd: "/repo",
+    });
+    const workingDiffReview = reviewAttachment("working diff comment");
+    const commitReview = reviewAttachment("commit comment");
+    const store = useWorkspaceAttachmentsStore.getState();
+
+    store.setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: workingDiffReview.reviewDraftKey,
+      attachment: workingDiffReview,
+    });
+    store.setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: commitReview.reviewDraftKey,
+      attachment: commitReview,
+    });
+    store.setWorkspaceReviewAttachment({
+      scopeKey,
+      reviewDraftKey: workingDiffReview.reviewDraftKey,
+      attachment: null,
+    });
+
+    expect(useWorkspaceAttachmentsStore.getState().attachmentsByScope[scopeKey]).toEqual([
+      commitReview,
+    ]);
   });
 
   it("adds a workspace attachment against the current scope state", () => {

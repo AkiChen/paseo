@@ -125,6 +125,7 @@ export function useWorkingDiff({
     isDiffLoading,
     reviewActions,
     reviewAttachment,
+    reviewDraftKey,
     showFullContext,
     expandFullContext,
   };
@@ -134,12 +135,14 @@ export function usePublishWorkingDiffAttachment({
   serverId,
   workspaceId,
   cwd,
+  reviewDraftKey,
   attachment,
   enabled,
 }: {
   serverId: string;
   workspaceId?: string;
   cwd: string;
+  reviewDraftKey: string;
   attachment: ReturnType<typeof useWorkingDiff>["reviewAttachment"];
   enabled: boolean;
 }) {
@@ -147,24 +150,22 @@ export function usePublishWorkingDiffAttachment({
     () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
     [cwd, serverId, workspaceId],
   );
-  const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
-    (state) => state.setWorkspaceAttachments,
-  );
-  const clearWorkspaceAttachments = useWorkspaceAttachmentsStore(
-    (state) => state.clearWorkspaceAttachments,
+  const setWorkspaceReviewAttachment = useWorkspaceAttachmentsStore(
+    (state) => state.setWorkspaceReviewAttachment,
   );
 
   useEffect(() => {
     if (!enabled) {
       return;
     }
-    const attachments = attachment ? [attachment] : [];
-    setWorkspaceAttachments({ scopeKey, attachments });
+    setWorkspaceReviewAttachment({ scopeKey, reviewDraftKey, attachment });
+  }, [attachment, enabled, reviewDraftKey, scopeKey, setWorkspaceReviewAttachment]);
+
+  // Withdraw on unmount only. Going inactive must keep the comments in the
+  // composer: the reader switches to the session to send them.
+  useEffect(() => {
     return () => {
-      const current = useWorkspaceAttachmentsStore.getState().attachmentsByScope[scopeKey];
-      if (current === attachments) {
-        clearWorkspaceAttachments({ scopeKey });
-      }
+      setWorkspaceReviewAttachment({ scopeKey, reviewDraftKey, attachment: null });
     };
-  }, [attachment, clearWorkspaceAttachments, enabled, scopeKey, setWorkspaceAttachments]);
+  }, [reviewDraftKey, scopeKey, setWorkspaceReviewAttachment]);
 }

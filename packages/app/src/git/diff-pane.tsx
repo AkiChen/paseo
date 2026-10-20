@@ -1634,6 +1634,7 @@ export function ChangesSurface({
     isDiffLoading,
     reviewActions,
     reviewAttachment,
+    reviewDraftKey,
     showFullContext,
     expandFullContext,
   } = useWorkingDiff({
@@ -1647,6 +1648,7 @@ export function ChangesSurface({
     serverId,
     workspaceId: workspaceId ?? undefined,
     cwd,
+    reviewDraftKey,
     attachment: reviewAttachment,
     enabled: true,
   });

@@ -226,7 +226,6 @@ function CommitDiffPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target } = usePaneContext();
   const cwd = useWorkspaceDirectory(serverId, workspaceId);
-  const isActive = useRetainedPanelActive();
   const panelPreferences = useDiffPanelPreferences();
   const [showFullContext, setShowFullContext] = useState(false);
   const [commitState, setCommitState] = usePanelState(
@@ -283,8 +282,11 @@ function CommitDiffPanel() {
     serverId,
     workspaceId,
     cwd: cwd ?? "",
+    reviewDraftKey,
     attachment: reviewAttachment,
-    enabled: Boolean(cwd) && isActive,
+    // Publish while the tab is mounted, not only while it is the active pane:
+    // switching to the session must not withdraw the comments the user just wrote.
+    enabled: Boolean(cwd),
   });
   const mode = useMemo(
     () => ({

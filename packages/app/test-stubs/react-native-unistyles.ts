@@ -48,6 +48,10 @@ const testTheme = {
     normal: "400",
     medium: "500",
   },
+  // Appearance settings drive this in the real theme; the diff gutter reads it.
+  lineHeight: {
+    diff: 18,
+  },
   borderRadius: {
     base: 4,
     md: 6,

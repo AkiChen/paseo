@@ -30,6 +30,17 @@ interface WorkspaceAttachmentsStoreActions {
     scopeKey: string;
     attachments: readonly WorkspaceComposerAttachment[];
   }) => void;
+  /**
+   * Publishes or withdraws one review draft's attachment without touching the
+   * other review drafts a workspace may be showing. Several surfaces (the
+   * working diff and each commit diff) publish into the same workspace scope,
+   * so a surface that has nothing to say must not clear the whole scope.
+   */
+  setWorkspaceReviewAttachment: (input: {
+    scopeKey: string;
+    reviewDraftKey: string;
+    attachment: WorkspaceComposerAttachment | null;
+  }) => void;
   addWorkspaceAttachment: (input: {
     scopeKey: string;
     attachment: WorkspaceComposerAttachment;
@@ -133,6 +144,39 @@ export const useWorkspaceAttachmentsStore = create<WorkspaceAttachmentsStore>()(
         attachmentsByScope: {
           ...state.attachmentsByScope,
           [scopeKey]: attachments,
+        },
+      };
+    });
+  },
+  setWorkspaceReviewAttachment: ({ scopeKey, reviewDraftKey, attachment }) => {
+    set((state) => {
+      const current = state.attachmentsByScope[scopeKey] ?? EMPTY_WORKSPACE_ATTACHMENTS;
+      const index = current.findIndex(
+        (candidate) => candidate.kind === "review" && candidate.reviewDraftKey === reviewDraftKey,
+      );
+      if (index === -1 && attachment === null) {
+        return state;
+      }
+      const next = [...current];
+      if (index === -1) {
+        next.push(attachment as WorkspaceComposerAttachment);
+      } else if (attachment === null) {
+        next.splice(index, 1);
+      } else {
+        next[index] = attachment;
+      }
+      if (next.length === 0) {
+        if (!state.attachmentsByScope[scopeKey]) {
+          return state;
+        }
+        const attachmentsByScope = { ...state.attachmentsByScope };
+        delete attachmentsByScope[scopeKey];
+        return { attachmentsByScope };
+      }
+      return {
+        attachmentsByScope: {
+          ...state.attachmentsByScope,
+          [scopeKey]: next,
         },
       };
     });
