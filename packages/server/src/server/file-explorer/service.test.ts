@@ -22,6 +22,7 @@ import {
   describeSymlinkFailure,
   duplicateExplorerEntry,
   FileAccessRefusedError,
+  getDownloadableFileInfo,
   getExplorerFileVersion,
   getFileAccessRoots,
   isFileAccessRefusedError,
@@ -40,6 +41,15 @@ async function createHomeTempDir(prefix: string): Promise<string> {
 async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));
 }
+
+// Image payloads with no usable file extension: content-addressed attachment
+// objects and re-encoded copies are named by hash, not by ".png"/".webp".
+const PNG_HEADER = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+const WEBP_HEADER = Buffer.from([
+  0x52, 0x49, 0x46, 0x46, 0x82, 0x63, 0x01, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20,
+]);
 
 describe("file explorer service", () => {
   it("atomically writes an existing text file at the expected revision", async () => {
@@ -216,6 +226,99 @@ describe("file explorer service", () => {
       expect(result.encoding).toBe("none");
       expect(result.content).toBeUndefined();
       expect(result.mimeType).toBe("application/octet-stream");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies an extension-less PNG by content", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await writeFile(path.join(root, "chart"), PNG_HEADER);
+
+      const result = await readExplorerFile({ root, relativePath: "chart" });
+
+      expect(result.kind).toBe("image");
+      expect(result.encoding).toBe("base64");
+      expect(result.mimeType).toBe("image/png");
+      expect(result.content).toBe(PNG_HEADER.toString("base64"));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies an extension-less WebP by content", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await writeFile(path.join(root, "76115b3f22e64d81472ff94dcbdda595"), WEBP_HEADER);
+
+      const result = await readExplorerFile({
+        root,
+        relativePath: "76115b3f22e64d81472ff94dcbdda595",
+      });
+
+      expect(result.kind).toBe("image");
+      expect(result.encoding).toBe("base64");
+      expect(result.mimeType).toBe("image/webp");
+      expect(result.content).toBe(WEBP_HEADER.toString("base64"));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an extension-less file without an image signature binary", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await writeFile(path.join(root, "opaque"), Buffer.from([0x48, 0x65, 0x00, 0x6c, 0x6f]));
+
+      const result = await readExplorerFile({ root, relativePath: "opaque" });
+
+      expect(result.kind).toBe("binary");
+      expect(result.encoding).toBe("none");
+      expect(result.mimeType).toBe("application/octet-stream");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("streams an extension-less WebP as an image", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await writeFile(path.join(root, "object"), WEBP_HEADER);
+      let kind = "";
+      let mimeType = "";
+      const chunks: Buffer[] = [];
+
+      await streamExplorerFile({ root, relativePath: "object" }, async (file) => {
+        kind = file.kind;
+        mimeType = file.mimeType;
+        for await (const chunk of file.chunks) {
+          chunks.push(Buffer.from(chunk));
+        }
+      });
+
+      expect(kind).toBe("image");
+      expect(mimeType).toBe("image/webp");
+      expect(Buffer.concat(chunks).equals(WEBP_HEADER)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an extension-less WebP download with its image mime type", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await writeFile(path.join(root, "object"), WEBP_HEADER);
+
+      const info = await getDownloadableFileInfo({ root, relativePath: "object" });
+
+      expect(info.mimeType).toBe("image/webp");
+      expect(info.size).toBe(WEBP_HEADER.byteLength);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -123,6 +123,55 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
 };
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
+const GIF_SIGNATURE = [0x47, 0x49, 0x46, 0x38];
+const RIFF_SIGNATURE = [0x52, 0x49, 0x46, 0x46];
+const WEBP_SIGNATURE = [0x57, 0x45, 0x42, 0x50];
+
+function matchesBytesAt(bytes: Uint8Array, signature: readonly number[], offset: number): boolean {
+  if (bytes.byteLength < offset + signature.length) {
+    return false;
+  }
+  return signature.every((byte, index) => bytes[offset + index] === byte);
+}
+
+/**
+ * Reads the image type from the leading bytes. Re-encoded and content-addressed
+ * attachment objects are named by hash with no extension, so a file name alone
+ * cannot decide whether a file is an image. SVG stays extension-only: it is text
+ * with no fixed signature.
+ */
+function detectImageMimeType(bytes: Uint8Array): string | null {
+  if (matchesBytesAt(bytes, PNG_SIGNATURE, 0)) {
+    return "image/png";
+  }
+  if (matchesBytesAt(bytes, JPEG_SIGNATURE, 0)) {
+    return "image/jpeg";
+  }
+  if (matchesBytesAt(bytes, GIF_SIGNATURE, 0)) {
+    return "image/gif";
+  }
+  if (matchesBytesAt(bytes, RIFF_SIGNATURE, 0) && matchesBytesAt(bytes, WEBP_SIGNATURE, 8)) {
+    return "image/webp";
+  }
+  return null;
+}
+
+function imageMimeTypeForExtension(ext: string): string | null {
+  return IMAGE_MIME_TYPES[ext] ?? null;
+}
+
+async function readFileHandleHeader(handle: FileHandle, advertisedSize: number): Promise<Buffer> {
+  const length = Math.min(FILE_TYPE_SAMPLE_BYTES, advertisedSize);
+  if (length === 0) {
+    return Buffer.alloc(0);
+  }
+  const header = Buffer.allocUnsafe(length);
+  const { bytesRead } = await handle.read(header, 0, length, 0);
+  return header.subarray(0, bytesRead);
+}
+
 interface ScopedPathParams {
   root: string;
   relativePath?: string;
@@ -257,13 +306,14 @@ export async function readExplorerFileBytes({
     };
 
     const buffer = await handle.readFile();
-    if (ext in IMAGE_MIME_TYPES) {
+    const imageMimeType = imageMimeTypeForExtension(ext) ?? detectImageMimeType(buffer);
+    if (imageMimeType !== null) {
       return {
         ...basePayload,
         kind: "image",
         encoding: "binary",
         bytes: buffer,
-        mimeType: IMAGE_MIME_TYPES[ext],
+        mimeType: imageMimeType,
       };
     }
 
@@ -305,13 +355,16 @@ export async function streamExplorerFile(
     const advertisedSize = Number(stats.size);
     const advertisedRevision = fileRevision(stats);
     const ext = path.extname(filePath.resolvedPath).toLowerCase();
-    const isImage = ext in IMAGE_MIME_TYPES;
+    const imageMimeType =
+      imageMimeTypeForExtension(ext) ??
+      detectImageMimeType(await readFileHandleHeader(handle, advertisedSize));
+    const isImage = imageMimeType !== null;
     const isBinary = isImage || (await isFileHandleBinary(handle, advertisedSize));
     let kind: ExplorerFileKind = "text";
     let mimeType = textMimeTypeForExtension(ext);
-    if (isImage) {
+    if (imageMimeType !== null) {
       kind = "image";
-      mimeType = IMAGE_MIME_TYPES[ext];
+      mimeType = imageMimeType;
     } else if (isBinary) {
       kind = "binary";
       mimeType = "application/octet-stream";
@@ -551,13 +604,15 @@ export async function getDownloadableFileInfo({ root, relativePath }: ReadFilePa
 
     const ext = path.extname(filePath.resolvedPath).toLowerCase();
     let mimeType = "application/octet-stream";
-    if (ext in IMAGE_MIME_TYPES) {
-      mimeType = IMAGE_MIME_TYPES[ext];
+    const extensionImageMimeType = imageMimeTypeForExtension(ext);
+    if (extensionImageMimeType !== null) {
+      mimeType = extensionImageMimeType;
     } else {
-      const sample = Buffer.alloc(FILE_TYPE_SAMPLE_BYTES);
-      const { bytesRead } = await handle.read(sample, 0, sample.length, 0);
-      const chunk = bytesRead < sample.length ? sample.subarray(0, bytesRead) : sample;
-      if (!isLikelyBinary(chunk)) {
+      const header = await readFileHandleHeader(handle, stats.size);
+      const imageMimeType = detectImageMimeType(header);
+      if (imageMimeType !== null) {
+        mimeType = imageMimeType;
+      } else if (!isLikelyBinary(header)) {
         mimeType = textMimeTypeForExtension(ext);
       }
     }
