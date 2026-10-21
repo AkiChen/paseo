@@ -751,6 +751,28 @@ export const ru: TranslationResources = {
         branchNameCopiedLabel: "Имя ветки",
       },
     },
+    morphicBalance: {
+      title: "Morphic balance",
+      setup: "Set balance",
+      querying: "Querying...",
+      helper: "Enter the Morphic CN-BOT access token. The balance refreshes every 5 minutes.",
+      tokenLabel: "Morphic access token",
+      tokenPlaceholder: "Access token",
+      tokenReplacementPlaceholder: "Enter a new token to replace the saved token",
+      saveAndQuery: "Save and query",
+      refresh: "Refresh",
+      updatedAt: "Last updated: {{value}}",
+      accessibility: {
+        setup: "Set Morphic access token",
+        balance: "Morphic balance {{balance}}",
+      },
+      errors: {
+        query: "Unable to query balance: {{detail}}",
+        queryUnknown: "Unable to query balance",
+        save: "Unable to save access token: {{detail}}",
+        saveUnknown: "Unable to save access token",
+      },
+    },
     scripts: {
       title: "Скрипты",
       actions: {

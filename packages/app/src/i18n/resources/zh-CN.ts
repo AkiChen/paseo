@@ -736,6 +736,28 @@ export const zhCN: TranslationResources = {
         branchNameCopiedLabel: "分支名称",
       },
     },
+    morphicBalance: {
+      title: "Morphic 余额",
+      setup: "设置余额",
+      querying: "查询中...",
+      helper: "粘贴 CN-BOT 站点「安全与访问」里创建的访问令牌，余额每 5 分钟自动刷新。",
+      tokenLabel: "Morphic access token",
+      tokenPlaceholder: "Access token",
+      tokenReplacementPlaceholder: "输入新 token 以替换已保存的 token",
+      saveAndQuery: "保存并查询",
+      refresh: "刷新",
+      updatedAt: "上次更新：{{value}}",
+      accessibility: {
+        setup: "设置 Morphic access token",
+        balance: "Morphic 余额 {{balance}}",
+      },
+      errors: {
+        query: "余额查询失败：{{detail}}",
+        queryUnknown: "余额查询失败",
+        save: "Access token 保存失败：{{detail}}",
+        saveUnknown: "Access token 保存失败",
+      },
+    },
     scripts: {
       title: "Scripts",
       actions: {

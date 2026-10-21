@@ -94,6 +94,12 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   opener: {
     openUrl: (url: string) => ipcRenderer.invoke("paseo:opener:openUrl", url),
   },
+  morphicBalance: {
+    getAccessToken: () => ipcRenderer.invoke("paseo:morphic-balance:get-token"),
+    setAccessToken: (token: string) => ipcRenderer.invoke("paseo:morphic-balance:set-token", token),
+    removeAccessToken: () => ipcRenderer.invoke("paseo:morphic-balance:remove-token"),
+    query: (token: string) => ipcRenderer.invoke("paseo:morphic-balance:query", token),
+  },
   editor: {
     listTargets: () => ipcRenderer.invoke("paseo:editor:listTargets"),
     openTarget: (input: {
