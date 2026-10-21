@@ -605,9 +605,12 @@ which the ACP composition does not carry.
 
 A picture is never drawn on its own. An image block in a tool result, and a file a
 `present` call names, keep their place as the call that produced them — the card
-carries the text and the path — and the picture reaches the transcript where the
-agent writes it into a message of its own. An agent that reads a chart to reason
-about it therefore shows it once, in the answer, instead of once per look.
+carries the text and the path — so a picture reaches the transcript only where the
+agent embeds it in a message of its own, as `![chart](plots/chart.png)` relative to
+the session working directory. That is also why the bridge carries the guidance
+below: this composition mounts no deliverable policy, and `present` on its own
+declares a file without drawing it, so an agent that draws a chart has nothing
+telling it to show the chart.
 
 The card carries DSH's own options, its multi-select and free-text behavior, and
 its question headers. Answers go back as DSH shapes them: the labels the user
@@ -615,13 +618,14 @@ ticked, plus whatever they typed. A refused card is reported as `ASK_CANCELLED`,
 which is what plan mode turns into "the user dismissed the review". Without this
 param an agent behaves as it did before — DSH reports the question as unanswered.
 
-A connected bridge also adds one line of system-prompt guidance, telling the
-agent to put user-owned decisions to the user with the tool instead of deciding
-for them or asking in prose. Nothing else in the ACP composition says so: the
-tool description covers what the tool does, and the presets that ship
-agent-facing policy are not mounted here. A question asked while no daemon is
-connected is still declined, so an agent on an unwired machine keeps its
-previous behavior.
+A connected bridge also adds system-prompt guidance, in two sections. The first
+tells the agent to put user-owned decisions to the user with the tool instead of
+deciding for them or asking in prose, and the second tells it to embed a picture
+the user should see in its answer rather than naming the path. Nothing else in the
+ACP composition says either: the tool descriptions cover what the tools do, and the
+presets that ship agent-facing policy are not mounted here. A question asked while
+no daemon is connected is still declined, so an agent on an unwired machine keeps
+its previous behavior.
 
 The same bridge carries DeepSeek Harness's slash commands. `/compact`, `/goal`,
 `/plan`, `/permission`, and `/feedback` are registered on a command registry

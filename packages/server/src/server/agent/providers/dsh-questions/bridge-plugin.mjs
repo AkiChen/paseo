@@ -16,10 +16,13 @@
  * launch changes: the plugin loads only through a `--patch` overlay the daemon
  * passes on the command line, and it stays inert without a channel.
  *
- * A channel also buys one line of system-prompt guidance: the shipped tool
- * description says what the tool does, not when a coding agent should prefer it
- * over deciding for the user, and the ACP profile mounts no agent preset that
- * would say so.
+ * A channel also buys two lines of system-prompt guidance. The shipped tool
+ * description says what `ask_user_question` does, not when a coding agent should
+ * prefer it over deciding for the user, and the ACP profile mounts no agent preset
+ * that would say so. The second line says how a picture reaches the user: the
+ * composition carries no deliverable guidance either, and `present` on its own
+ * declares a file without drawing anything, so an agent that generates a chart
+ * has nothing telling it to embed the chart in its answer.
  *
  * The same process is where DeepSeek Harness's slash commands live — `/compact`,
  * `/goal`, `/plan`, `/permission`, `/feedback` are registered on `ctx.commands`
@@ -72,6 +75,7 @@ const LOG_ENV = "PASEO_QUESTION_BRIDGE_LOG";
 const PROTOCOL = 1;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 const GUIDANCE_SECTION = "paseo:user-questions";
+const IMAGE_SECTION = "paseo:answer-images";
 /** Where the plan policy sits, used when the section order table is unavailable. */
 const GUIDANCE_ORDER_FALLBACK = 500;
 /**
@@ -94,6 +98,24 @@ const GUIDANCE = [
   "asked you to make. Ask with the tool rather than in prose, offer concrete",
   "options, and keep one decision per question. Anything you can settle by reading",
   "the workspace, settle yourself.",
+].join(" ");
+
+/**
+ * How a picture reaches the user.
+ *
+ * This composition carries no deliverable guidance of its own, and the `present`
+ * tool declares a file without drawing it: an agent that generates a chart has
+ * nothing telling it to put the chart in the answer, so it names the path and the
+ * user sees nothing. Plain text — even inside a code block — is inert; the
+ * Markdown image is what the transcript draws.
+ */
+const IMAGE_GUIDANCE = [
+  "When the user should see a picture — a chart, plot, diagram, or screenshot you",
+  "produced or read — embed it in your reply with Markdown image syntax, as",
+  "`![step time](plots/step-time.png)`. A path relative to the working directory",
+  "resolves in the session workspace; a path written as plain text, or inside a code",
+  "block, shows nothing. `present` declares a deliverable and draws no picture, so a",
+  "picture the user should look at is embedded in the answer as well.",
 ].join(" ");
 
 function log(line) {
@@ -130,16 +152,17 @@ function isRecord(value) {
 }
 
 /**
- * Where the guidance sits in the prompt: with the plan policy, ahead of every
- * tool section. The order table is the profile's, so a name it does not carry
- * falls back to the number that table gives that policy today.
+ * Where a guidance section sits in the prompt: with the plan policy, ahead of
+ * every tool section. The order table is the profile's, so a name it does not
+ * carry falls back to the number that table gives that policy today. The offset
+ * keeps the sections in the order they are registered.
  */
-function guidanceOrder(systemPrompt) {
+function guidanceOrder(systemPrompt, offset) {
   try {
     const planPolicy = systemPrompt.getSectionOrder("PLAN_POLICY");
-    return Number.isFinite(planPolicy) ? planPolicy + 1 : GUIDANCE_ORDER_FALLBACK;
+    return Number.isFinite(planPolicy) ? planPolicy + offset : GUIDANCE_ORDER_FALLBACK + offset;
   } catch {
-    return GUIDANCE_ORDER_FALLBACK;
+    return GUIDANCE_ORDER_FALLBACK + offset;
   }
 }
 
@@ -804,10 +827,23 @@ export function apply(ctx) {
     () =>
       ctx.systemPrompt.section({
         name: GUIDANCE_SECTION,
-        order: guidanceOrder(ctx.systemPrompt),
+        order: guidanceOrder(ctx.systemPrompt, 1),
         text: GUIDANCE,
       }),
     "paseo-question-bridge: question guidance",
+  );
+
+  // A picture is drawn from the answer, and this composition mounts nothing that
+  // says so: without this line an agent presents the file, names its path, and
+  // the user sees a filename where the chart should be.
+  ctx.effect(
+    () =>
+      ctx.systemPrompt.section({
+        name: IMAGE_SECTION,
+        order: guidanceOrder(ctx.systemPrompt, 2),
+        text: IMAGE_GUIDANCE,
+      }),
+    "paseo-question-bridge: picture guidance",
   );
 
   ctx.effect(() => {

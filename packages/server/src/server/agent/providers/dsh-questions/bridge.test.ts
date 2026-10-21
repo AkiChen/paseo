@@ -163,6 +163,11 @@ describe("DshQuestionBridge.prepareLaunch", () => {
     // bridge that answers questions nobody is told to ask is half a feature.
     expect(plugin).toContain("paseo:user-questions");
     expect(plugin).toContain("Use ask_user_question for decisions that belong to the user");
+    // The other half of the guidance: this composition carries no deliverable
+    // policy either, and `present` declares a file without drawing it, so an
+    // agent that draws a chart has to be told to embed the chart in its answer.
+    expect(plugin).toContain("paseo:answer-images");
+    expect(plugin).toContain("embed it in your reply with Markdown image syntax");
     // The session's token totals come from the same projection the harness's own
     // usage pill reads, so the plugin has to name it.
     expect(plugin).toContain("tokenUsage");
