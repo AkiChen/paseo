@@ -7,6 +7,7 @@ import { Readable, Writable } from "node:stream";
 
 import { terminateWithTreeKill } from "../../../utils/tree-kill.js";
 import type { ProcessTerminator } from "../../../utils/tree-kill.js";
+import { deleteDshSessionFiles, resolveDshHome } from "./dsh-session-files.js";
 import type {
   ReadableStream as NodeReadableStream,
   WritableStream as NodeWritableStream,
@@ -1684,6 +1685,21 @@ export class ACPAgentClient implements AgentClient {
         }
       }
     }
+  }
+
+  /**
+   * DSH is the only ACP provider whose durable sessions Paseo knows how to find. Its ACP surface
+   * has no delete method, so a true delete has to reach into the provider's own store; every other
+   * ACP agent keeps that store in a layout Paseo does not own and must not guess at.
+   */
+  async deleteNativeSession(handle: AgentPersistenceHandle): Promise<void> {
+    if (!isDshCommand(this.defaultCommand)) {
+      return;
+    }
+    await deleteDshSessionFiles({
+      home: resolveDshHome(this.runtimeSettings?.env),
+      sessionId: handle.sessionId,
+    });
   }
 
   protected async resolveLaunchCommand(): Promise<{ command: string; args: string[] }> {
@@ -4675,6 +4691,14 @@ function coerceSessionConfigMetadata(
     return {};
   }
   return metadata as Partial<AgentSessionConfig>;
+}
+
+function isDshCommand(command: readonly string[]): boolean {
+  const executable = path
+    .basename(command[0] ?? "")
+    .toLowerCase()
+    .replace(/\.(exe|cmd|bat|ps1)$/, "");
+  return executable === "dsh" || executable === "deepseek-harness";
 }
 
 async function terminateChildProcess(

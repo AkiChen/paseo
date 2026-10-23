@@ -816,6 +816,13 @@ export interface AgentClient {
    */
   unarchiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
   /**
+   * Permanently remove a durable native session from the provider's own store.
+   *
+   * Only called by a hard delete, after the runtime is closed, and only when the caller asked
+   * for the provider session to go too. Providers without a durable store omit this.
+   */
+  deleteNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
    * Release any provider-owned resources held by this client (background
    * processes, sockets, cached subprocesses, etc.). Called when the daemon
    * shuts down. Must be idempotent.

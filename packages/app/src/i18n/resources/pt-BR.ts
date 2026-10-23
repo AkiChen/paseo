@@ -1147,7 +1147,25 @@ export const ptBR: TranslationResources = {
       description: "Verifique sua conexão e tente novamente.",
     },
   },
+  agentDelete: {
+    action: "Excluir permanentemente",
+    currentAgentAction: "Excluir o agente atual…",
+    title: "Excluir este agente permanentemente?",
+    message:
+      '"{{title}}" será removido do Paseo, junto com sua linha do tempo. Se o provedor mantiver uma cópia local da sessão, ela também será excluída. Esta ação não pode ser desfeita.',
+    confirm: "Excluir permanentemente",
+    cancel: "Cancelar",
+    deleting: "Excluindo…",
+    failed: "Não foi possível excluir o agente: {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "Workspaces",
+      agents: "Agentes",
+    },
+    agents: {
+      empty: "Nenhum agente recente",
+    },
     display: {
       trigger: "Preferências de exibição",
       heading: "Exibição",

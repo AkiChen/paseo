@@ -1125,7 +1125,25 @@ export const ko: TranslationResources = {
       description: "연결을 확인한 후 다시 시도하세요.",
     },
   },
+  agentDelete: {
+    action: "영구 삭제",
+    currentAgentAction: "현재 에이전트 영구 삭제…",
+    title: "이 에이전트를 영구 삭제할까요?",
+    message:
+      "「{{title}}」이(가) Paseo에서 제거되고 타임라인도 삭제됩니다. 공급자가 세션을 로컬에 저장한 경우 해당 사본도 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    confirm: "영구 삭제",
+    cancel: "취소",
+    deleting: "삭제 중…",
+    failed: "에이전트를 삭제하지 못했습니다: {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "워크스페이스",
+      agents: "에이전트",
+    },
+    agents: {
+      empty: "최근 에이전트가 없습니다",
+    },
     display: {
       trigger: "표시 설정",
       heading: "표시",

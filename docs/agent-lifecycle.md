@@ -137,6 +137,23 @@ Provider session connection owns every process it spawns until the session is re
 `connect()` must dispose that process before rethrowing; the manager cannot clean up a session it never
 received.
 
+## Delete
+
+Delete is the hard delete: Paseo's record, its durable timeline, and any queued persistence go,
+and the agent leaves every connected client. `delete_agent_request` has always done that part.
+The optional `deleteProviderSession` flag also asks the daemon to remove the provider's own stored
+session through `AgentClient.deleteNativeSession`.
+
+Only DSH implements that hook. Its ACP surface has no delete method, so the adapter removes the
+provider's log directory and projection cache from `$DSH_HOME`
+(`packages/server/src/server/agent/providers/dsh-session-files.ts`). Other providers omit the hook
+and keep their own store.
+
+The daemon closes the agent first so no writer holds the files, deletes the provider session, and
+only then removes Paseo's record. A provider deletion failure leaves the Paseo record in place so
+the delete can be retried. The sidebar Agents rows and the workspace header menu are the client
+entry points; both confirm before calling it.
+
 ## Tabs vs archive
 
 These are two distinct concepts that used to be conflated:

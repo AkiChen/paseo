@@ -2895,12 +2895,13 @@ export class DaemonClient {
     return status.agent;
   }
 
-  async deleteAgent(agentId: string): Promise<void> {
+  async deleteAgent(agentId: string, options?: { deleteProviderSession?: boolean }): Promise<void> {
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
       type: "delete_agent_request",
       agentId,
       requestId,
+      ...(options?.deleteProviderSession ? { deleteProviderSession: true } : {}),
     });
     await this.sendRequest({
       requestId,

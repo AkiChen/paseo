@@ -9,6 +9,9 @@ import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 export interface AggregatedAgent extends AgentDirectoryEntry {
   serverId: string;
   serverLabel: string;
+  // Kept outside `AgentDirectoryEntry` so callers that build a directory entry from less data do
+  // not have to invent one. A subagent is an agent whose parent owns its track.
+  parentAgentId?: string | null;
 }
 
 export interface AggregatedAgentsResult {
@@ -98,6 +101,7 @@ export function useAggregatedAgents(options?: {
           createdAt: agent.createdAt,
           labels: agent.labels,
           projectPlacement: agent.projectPlacement,
+          parentAgentId: agent.parentAgentId,
         };
         const cacheKey = `${serverId}:${agent.id}`;
         const prev = prevAgentsRef.current.get(cacheKey);

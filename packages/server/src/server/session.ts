@@ -323,6 +323,16 @@ function beginAgentDeleteIfSupported(agentStorage: AgentStorage, agentId: string
   }
 }
 
+type CancelableDeleteAgentStorage = AgentStorage & {
+  cancelDelete(agentId: string): void;
+};
+
+function cancelAgentDeleteIfSupported(agentStorage: AgentStorage, agentId: string): void {
+  if ("cancelDelete" in agentStorage && typeof agentStorage.cancelDelete === "function") {
+    (agentStorage as CancelableDeleteAgentStorage).cancelDelete(agentId);
+  }
+}
+
 const FETCH_AGENTS_SORT_KEYS = ["status_priority", "created_at", "updated_at", "title"] as const;
 
 export function resolveWaitForFinishError(options: {
@@ -2707,7 +2717,11 @@ export class Session {
       case "fetch_agent_request":
         return this.handleFetchAgent(msg.agentId, msg.requestId);
       case "delete_agent_request":
-        return this.handleDeleteAgentRequest(msg.agentId, msg.requestId);
+        return this.handleDeleteAgentRequest(
+          msg.agentId,
+          msg.requestId,
+          msg.deleteProviderSession === true,
+        );
       case "archive_agent_request":
         return this.handleArchiveAgentRequest(msg.agentId, msg.requestId);
       case "close_items_request":
@@ -3138,12 +3152,21 @@ export class Session {
     }
   }
 
-  private async handleDeleteAgentRequest(agentId: string, requestId: string): Promise<void> {
+  private async handleDeleteAgentRequest(
+    agentId: string,
+    requestId: string,
+    deleteProviderSession = false,
+  ): Promise<void> {
     this.sessionLogger.info({ agentId }, `Deleting agent ${agentId} from registry`);
 
+    const storedAgent = await this.agentStorage.get(agentId);
     const knownWorkspaceId =
-      this.agentManager.getAgent(agentId)?.workspaceId ??
-      (await this.agentStorage.get(agentId))?.workspaceId ??
+      this.agentManager.getAgent(agentId)?.workspaceId ?? storedAgent?.workspaceId ?? null;
+    // Read the provider handle before close: closing drops the live session, and the stored
+    // record is the only copy left after that.
+    const persistence =
+      this.agentManager.getAgent(agentId)?.session?.describePersistence() ??
+      storedAgent?.persistence ??
       null;
 
     // File-backed storage still needs an early delete fence before closeAgent().
@@ -3161,6 +3184,26 @@ export class Session {
     // Drain queued persistence from the just-closed agent before removing its
     // durable snapshot, otherwise an in-flight background write can recreate it.
     await this.agentManager.flush();
+
+    if (deleteProviderSession && persistence) {
+      try {
+        await this.agentManager.deleteNativeSession(persistence);
+      } catch (error) {
+        // The runtime is already closed. Keep Paseo's record so the delete can be retried
+        // instead of leaving a half-deleted agent whose provider files are still on disk.
+        this.sessionLogger.error(
+          { err: error, agentId, provider: persistence.provider },
+          `Failed to delete provider session for agent ${agentId}`,
+        );
+        cancelAgentDeleteIfSupported(this.agentStorage, agentId);
+        throw new Error(
+          `Failed to delete the provider session: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          { cause: error },
+        );
+      }
+    }
 
     try {
       await this.agentStorage.remove(agentId);

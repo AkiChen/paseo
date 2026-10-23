@@ -1127,7 +1127,25 @@ export const en = {
       description: "Check your connection and try again.",
     },
   },
+  agentDelete: {
+    action: "Delete permanently",
+    currentAgentAction: "Delete current agent…",
+    title: "Delete this agent permanently?",
+    message:
+      '"{{title}}" will be removed from Paseo, along with its timeline. If its provider keeps a local copy of the session, that copy is deleted too. This cannot be undone.',
+    confirm: "Delete permanently",
+    cancel: "Cancel",
+    deleting: "Deleting…",
+    failed: "Could not delete the agent: {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "Workspaces",
+      agents: "Agents",
+    },
+    agents: {
+      empty: "No recent agents",
+    },
     display: {
       trigger: "Display preferences",
       heading: "Display",

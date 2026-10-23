@@ -489,6 +489,7 @@ function wrapClientProvider(
   const listFeatures = inner.listFeatures?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const deleteNativeSession = inner.deleteNativeSession?.bind(inner);
 
   return {
     provider,
@@ -582,6 +583,9 @@ function wrapClientProvider(
       : undefined,
     unarchiveNativeSession: unarchiveNativeSession
       ? async (handle) => await unarchiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    deleteNativeSession: deleteNativeSession
+      ? async (handle) => await deleteNativeSession({ ...handle, provider: inner.provider })
       : undefined,
     getCatalogCacheKey: inner.getCatalogCacheKey?.bind(inner),
     isAvailable: (signal, options) => inner.isAvailable(signal, options),

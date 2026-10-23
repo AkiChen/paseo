@@ -1153,7 +1153,25 @@ export const fr: TranslationResources = {
       description: "Vérifiez votre connexion et réessayez.",
     },
   },
+  agentDelete: {
+    action: "Supprimer définitivement",
+    currentAgentAction: "Supprimer l'agent actuel…",
+    title: "Supprimer définitivement cet agent ?",
+    message:
+      "« {{title}} » sera retiré de Paseo, ainsi que sa chronologie. Si le fournisseur conserve une copie locale de la session, elle sera aussi supprimée. Cette action est irréversible.",
+    confirm: "Supprimer définitivement",
+    cancel: "Annuler",
+    deleting: "Suppression…",
+    failed: "Impossible de supprimer l'agent : {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "Espaces de travail",
+      agents: "Agents",
+    },
+    agents: {
+      empty: "Aucun agent récent",
+    },
     display: {
       trigger: "Préférences d'affichage",
       heading: "Affichage",

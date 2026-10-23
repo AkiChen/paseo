@@ -1157,7 +1157,25 @@ export const es: TranslationResources = {
       description: "Comprueba tu conexión e inténtalo de nuevo.",
     },
   },
+  agentDelete: {
+    action: "Eliminar permanentemente",
+    currentAgentAction: "Eliminar el agente actual…",
+    title: "¿Eliminar este agente permanentemente?",
+    message:
+      "«{{title}}» se eliminará de Paseo junto con su cronología. Si el proveedor guarda una copia local de la sesión, también se eliminará. Esta acción no se puede deshacer.",
+    confirm: "Eliminar permanentemente",
+    cancel: "Cancelar",
+    deleting: "Eliminando…",
+    failed: "No se pudo eliminar el agente: {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "Espacios de trabajo",
+      agents: "Agentes",
+    },
+    agents: {
+      empty: "No hay agentes recientes",
+    },
     display: {
       trigger: "Preferencias de visualización",
       heading: "Visualización",

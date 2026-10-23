@@ -106,6 +106,7 @@ import { useWorkspace } from "@/stores/session-store-hooks";
 import { useWorkspaceTerminalSessionRetention } from "@/terminal/hooks/use-workspace-terminal-session-retention";
 import type { CheckoutStatusPayload } from "@/git/use-status-query";
 import { confirmDialog } from "@/utils/confirm-dialog";
+import { useDeleteAgent } from "@/hooks/use-delete-agent";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { removeResidentBrowserWebview } from "@/desktop/browser/resident-webviews";
@@ -196,6 +197,7 @@ import type { TerminalProfile } from "@getpaseo/protocol/messages";
 import {
   WorkspaceHeaderMenuDesktop,
   WorkspaceHeaderMenuMobile,
+  type WorkspaceHeaderAgentActions,
 } from "@/screens/workspace/workspace-header-menu";
 import { PluginHeaderButtons } from "@/plugins";
 import {
@@ -960,6 +962,7 @@ interface WorkspaceHeaderTitleBarProps {
   createTerminalDisabled: boolean;
   importAgentDisabled: boolean;
   copyPathDisabled: boolean;
+  agentActions?: WorkspaceHeaderAgentActions | null;
   onCreateDraftTab: () => void;
   onCreateTerminal: () => void;
   onCreateTerminalWithProfile: (profile: TerminalProfile) => void;
@@ -989,6 +992,7 @@ function WorkspaceHeaderTitleBar({
   createTerminalDisabled,
   importAgentDisabled,
   copyPathDisabled,
+  agentActions,
   onCreateDraftTab,
   onCreateTerminal,
   onCreateTerminalWithProfile,
@@ -1027,6 +1031,7 @@ function WorkspaceHeaderTitleBar({
             createTerminalDisabled={createTerminalDisabled}
             importAgentDisabled={importAgentDisabled}
             copyPathDisabled={copyPathDisabled}
+            agentActions={agentActions}
             onCreateDraftTab={onCreateDraftTab}
             onCreateTerminal={onCreateTerminal}
             onCreateTerminalWithProfile={onCreateTerminalWithProfile}
@@ -1042,6 +1047,7 @@ function WorkspaceHeaderTitleBar({
             showWorkspaceSetup={showWorkspaceSetup}
             importAgentDisabled={importAgentDisabled}
             copyPathDisabled={copyPathDisabled}
+            agentActions={agentActions}
             onOpenImportSheet={onOpenImportSheet}
             onCopyWorkspacePath={onCopyWorkspacePath}
             onCopyBranchName={onCopyBranchName}
@@ -1964,6 +1970,27 @@ function WorkspaceScreenContent({
     }
     return target.agentId;
   }, [focusedPaneTabState.activeTab]);
+  const { deleteAgent } = useDeleteAgent();
+  const handleDeleteFocusedAgent = useCallback(async () => {
+    const agentId = focusedPaneAgentId;
+    if (!agentId) return;
+    const session = useSessionStore.getState().sessions[normalizedServerId];
+    const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+    const title = agent?.title?.trim() || t("agentList.fallbackTitle");
+    const confirmed = await confirmDialog({
+      title: t("agentDelete.title"),
+      message: t("agentDelete.message", { title }),
+      confirmLabel: t("agentDelete.confirm"),
+      cancelLabel: t("agentDelete.cancel"),
+      destructive: true,
+    });
+    if (!confirmed) return;
+    await deleteAgent({ serverId: normalizedServerId, agentId });
+  }, [deleteAgent, focusedPaneAgentId, normalizedServerId, t]);
+  const workspaceHeaderAgentActions = useMemo<WorkspaceHeaderAgentActions | null>(
+    () => (focusedPaneAgentId ? { onDelete: handleDeleteFocusedAgent } : null),
+    [focusedPaneAgentId, handleDeleteFocusedAgent],
+  );
   const focusedPaneTerminalId = useMemo(() => {
     const target = focusedPaneTabState.activeTab?.descriptor.target;
     if (target?.kind !== "terminal") {
@@ -3909,6 +3936,7 @@ function WorkspaceScreenContent({
                 createTerminalDisabled={createTerminalDisabled}
                 importAgentDisabled={!canOpenImportSheet}
                 copyPathDisabled={!workspaceDirectory}
+                agentActions={workspaceHeaderAgentActions}
                 onCreateDraftTab={handleCreateDraftTab}
                 onCreateTerminal={handleCreateTerminal}
                 onCreateTerminalWithProfile={handleCreateTerminalWithProfile}
@@ -3951,6 +3979,7 @@ function WorkspaceScreenContent({
       showScreenHeader,
       showWorkspaceSetup,
       workspaceDirectory,
+      workspaceHeaderAgentActions,
       workspaceHeaderSubtitle,
       workspaceHeaderTitle,
       isWorkspaceHeaderSubtitleDistinct,

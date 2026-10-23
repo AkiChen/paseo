@@ -1134,7 +1134,25 @@ export const ja: TranslationResources = {
       description: "接続を確認してもう一度お試しください。",
     },
   },
+  agentDelete: {
+    action: "完全に削除",
+    currentAgentAction: "現在のエージェントを完全に削除…",
+    title: "このエージェントを完全に削除しますか？",
+    message:
+      "「{{title}}」は Paseo から削除され、タイムラインも失われます。プロバイダーがセッションをローカルに保存している場合は、そのコピーも削除されます。この操作は元に戻せません。",
+    confirm: "完全に削除",
+    cancel: "キャンセル",
+    deleting: "削除中…",
+    failed: "エージェントを削除できませんでした: {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "ワークスペース",
+      agents: "エージェント",
+    },
+    agents: {
+      empty: "最近のエージェントはありません",
+    },
     display: {
       trigger: "表示設定",
       heading: "表示",

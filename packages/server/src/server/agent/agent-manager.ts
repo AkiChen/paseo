@@ -3227,6 +3227,18 @@ export class AgentManager {
     await this.deleteCommittedTimeline(agentId);
   }
 
+  /**
+   * Removes the provider's own stored session, when the provider knows how. Called after the
+   * runtime is closed, so no writer is holding the files.
+   */
+  async deleteNativeSession(handle: AgentPersistenceHandle): Promise<void> {
+    const client = this.clients.get(handle.provider);
+    if (!client?.deleteNativeSession) {
+      return;
+    }
+    await client.deleteNativeSession(handle);
+  }
+
   async deleteCommittedTimeline(agentId: string): Promise<void> {
     await this.durableTimelineStore?.deleteAgent(agentId);
   }

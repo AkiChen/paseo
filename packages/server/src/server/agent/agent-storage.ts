@@ -210,6 +210,14 @@ export class AgentStorage {
     this.deleting.add(agentId);
   }
 
+  /**
+   * Lifts the write fence when a delete stops before `remove()`. Provider-side deletion can fail
+   * after the runtime is closed; without this the surviving record would never persist again.
+   */
+  cancelDelete(agentId: string): void {
+    this.deleting.delete(agentId);
+  }
+
   async remove(agentId: string): Promise<void> {
     await this.load();
     this.beginDelete(agentId);

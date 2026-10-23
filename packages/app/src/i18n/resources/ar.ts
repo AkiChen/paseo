@@ -1118,7 +1118,25 @@ export const ar: TranslationResources = {
       description: "تحقق من اتصالك وحاول مرة أخرى.",
     },
   },
+  agentDelete: {
+    action: "حذف نهائي",
+    currentAgentAction: "حذف الوكيل الحالي…",
+    title: "هل تريد حذف هذا الوكيل نهائيًا؟",
+    message:
+      "ستتم إزالة «{{title}}» من Paseo مع سجله الزمني. وإذا كان المزوّد يحتفظ بنسخة محلية من الجلسة، فستُحذف أيضًا. لا يمكن التراجع عن هذا الإجراء.",
+    confirm: "حذف نهائي",
+    cancel: "إلغاء",
+    deleting: "جارٍ الحذف…",
+    failed: "تعذّر حذف الوكيل: {{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "مساحات العمل",
+      agents: "الوكلاء",
+    },
+    agents: {
+      empty: "لا يوجد وكلاء حديثون",
+    },
     display: {
       trigger: "تفضيلات العرض",
       heading: "العرض",

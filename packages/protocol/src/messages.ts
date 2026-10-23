@@ -916,6 +916,11 @@ export const DeleteAgentRequestMessageSchema = z.object({
   type: z.literal("delete_agent_request"),
   agentId: z.string(),
   requestId: z.string(),
+  /**
+   * Also remove the provider's own stored session, not just Paseo's record and timeline.
+   * Optional so older clients keep deleting only what they know about.
+   */
+  deleteProviderSession: z.boolean().optional(),
 });
 
 export const ArchiveAgentRequestMessageSchema = z.object({

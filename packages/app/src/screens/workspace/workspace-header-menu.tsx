@@ -9,6 +9,7 @@ import {
   Import as ImportIcon,
   Settings,
   SquarePen,
+  Trash2,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { TerminalProfile } from "@getpaseo/protocol/messages";
@@ -40,8 +41,10 @@ const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedTrash = withUnistyles(Trash2);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destructive });
 
 const MENU_NEW_AGENT_ICON = <ThemedSquarePen size={16} uniProps={mutedColorMapping} />;
 const MENU_NEW_BROWSER_ICON = <ThemedGlobe size={16} uniProps={mutedColorMapping} />;
@@ -49,6 +52,7 @@ const MENU_NEW_TERMINAL_ICON = <TerminalProfileIcon iconKey={undefined} size={16
 const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />;
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
+const MENU_DELETE_AGENT_ICON = <ThemedTrash size={16} uniProps={destructiveColorMapping} />;
 function WorkspaceHeaderMenuTriggerIcon() {
   return (
     <ThemedEllipsis
@@ -134,6 +138,32 @@ function WorkspaceHeaderWorkspaceActionItems({
   );
 }
 
+/**
+ * Agent-scoped actions live in the same header menu as the workspace ones, but only while an
+ * agent tab is focused. The menu must not offer to delete an agent when the focused tab is a
+ * terminal or a file.
+ */
+export interface WorkspaceHeaderAgentActions {
+  onDelete: () => void;
+}
+
+function WorkspaceHeaderAgentActionItem({ onDelete }: WorkspaceHeaderAgentActions) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        destructive
+        leading={MENU_DELETE_AGENT_ICON}
+        onSelect={onDelete}
+        testID="workspace-header-delete-agent"
+      >
+        {t("agentDelete.currentAgentAction")}
+      </DropdownMenuItem>
+    </>
+  );
+}
+
 function workspaceHeaderMenuButtonStyle({
   hovered,
   pressed,
@@ -149,7 +179,14 @@ function workspaceHeaderMenuButtonStyle({
 /**
  * Wide layouts make tabs from the tab strip's `+` menu, so this one carries workspace actions only.
  */
-export function WorkspaceHeaderMenuDesktop(props: WorkspaceHeaderWorkspaceActions) {
+export interface WorkspaceHeaderMenuDesktopProps extends WorkspaceHeaderWorkspaceActions {
+  agentActions?: WorkspaceHeaderAgentActions | null;
+}
+
+export function WorkspaceHeaderMenuDesktop({
+  agentActions,
+  ...workspaceActions
+}: WorkspaceHeaderMenuDesktopProps) {
   const { t } = useTranslation();
   return (
     <DropdownMenu>
@@ -162,7 +199,8 @@ export function WorkspaceHeaderMenuDesktop(props: WorkspaceHeaderWorkspaceAction
         <WorkspaceHeaderMenuTriggerIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" width={220} testID="workspace-header-menu">
-        <WorkspaceHeaderWorkspaceActionItems {...props} />
+        <WorkspaceHeaderWorkspaceActionItems {...workspaceActions} />
+        {agentActions ? <WorkspaceHeaderAgentActionItem {...agentActions} /> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -203,6 +241,7 @@ export interface WorkspaceHeaderMenuMobileProps extends WorkspaceHeaderWorkspace
   normalizedServerId: string;
   showCreateBrowserTab: boolean;
   createTerminalDisabled: boolean;
+  agentActions?: WorkspaceHeaderAgentActions | null;
   onCreateDraftTab: () => void;
   onCreateTerminal: () => void;
   onCreateTerminalWithProfile: (profile: TerminalProfile) => void;
@@ -221,6 +260,7 @@ export function WorkspaceHeaderMenuMobile({
   onCreateTerminal,
   onCreateTerminalWithProfile,
   onCreateBrowser,
+  agentActions,
   ...workspaceActions
 }: WorkspaceHeaderMenuMobileProps) {
   const { t } = useTranslation();
@@ -269,6 +309,7 @@ export function WorkspaceHeaderMenuMobile({
           </DropdownMenuItem>
         ) : null}
         <WorkspaceHeaderWorkspaceActionItems {...workspaceActions} />
+        {agentActions ? <WorkspaceHeaderAgentActionItem {...agentActions} /> : null}
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{t("workspace.tabs.actions.terminalProfilesMenu")}</DropdownMenuLabel>
         <DropdownMenuItem

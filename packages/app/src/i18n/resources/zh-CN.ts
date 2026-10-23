@@ -1110,7 +1110,25 @@ export const zhCN: TranslationResources = {
       description: "请检查网络连接后重试。",
     },
   },
+  agentDelete: {
+    action: "彻底删除",
+    currentAgentAction: "彻底删除当前 Agent…",
+    title: "彻底删除这个 Agent？",
+    message:
+      "「{{title}}」将从 Paseo 移除，时间线一并删除；如果 provider 在本地保存了会话副本，也会从磁盘删除。此操作无法撤销。",
+    confirm: "彻底删除",
+    cancel: "取消",
+    deleting: "正在删除…",
+    failed: "删除 Agent 失败：{{message}}",
+  },
   sidebar: {
+    listMode: {
+      workspaces: "工作区",
+      agents: "Agents",
+    },
+    agents: {
+      empty: "暂无最近使用的 Agent",
+    },
     display: {
       trigger: "显示偏好",
       heading: "显示",
