@@ -351,6 +351,8 @@ export const fr: TranslationResources = {
     attachments: {
       dismissImage: "Ignorer l'image",
       closeImage: "Fermer l'image",
+      downloadOriginalImage: "Télécharger l’original",
+      savedToGallery: "Enregistré dans la galerie",
       imageLoadFailed: "Impossible de charger l'image",
       imageUnavailable: "Image indisponible",
       imagePreviewUnavailable: "Aperçu de l'image indisponible.",

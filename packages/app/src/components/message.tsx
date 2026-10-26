@@ -42,6 +42,7 @@ import {
   Scissors,
   MicVocal,
   FileSymlink,
+  Download,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
@@ -92,6 +93,9 @@ import {
 } from "@/assistant-file-links";
 import { getCompactionMarkerLabel } from "./message-compaction-label";
 import { useAssistantImage } from "@/assistant-image/use-assistant-image";
+import { downloadOriginalImage } from "@/assistant-image/download-original";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/contexts/toast-context";
 import {
   AttachmentFrame,
   AttachmentLabel,
@@ -778,6 +782,7 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
   },
   imageFrame: {
+    position: "relative",
     width: "100%",
     minHeight: 160,
     marginHorizontal: -theme.spacing[1],
@@ -799,6 +804,12 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
     left: 0,
     alignItems: "center",
     justifyContent: "center",
+  },
+  imageActions: {
+    position: "absolute",
+    top: theme.spacing[2],
+    right: theme.spacing[2],
+    zIndex: 1,
   },
   imageState: {
     alignItems: "center",
@@ -834,6 +845,8 @@ function AssistantMarkdownImage({
   serverId?: string;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
+  const [downloading, setDownloading] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const openViewer = useCallback(() => setViewerOpen(true), []);
   const closeViewer = useCallback(() => setViewerOpen(false), []);
@@ -855,6 +868,31 @@ function AssistantMarkdownImage({
   const aspectRatio = image.status === "failed" ? null : image.aspectRatio;
   const imageUri = binding?.uri ?? "";
   const imageSource = useMemo(() => ({ uri: imageUri }), [imageUri]);
+  const downloadImage = useCallback(async () => {
+    if (!imageUri || downloading) return;
+    setDownloading(true);
+    try {
+      const destination = await downloadOriginalImage({ uri: imageUri, source });
+      if (destination === "gallery") {
+        toast.show(t("message.attachments.savedToGallery"), { variant: "success" });
+      }
+    } catch (error) {
+      console.warn("[AssistantImage] Original download failed", error);
+      toast.error(t("downloads.failed"));
+    } finally {
+      setDownloading(false);
+    }
+  }, [downloading, imageUri, source, t, toast]);
+  const handleDownload = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      void downloadImage();
+    },
+    [downloadImage],
+  );
+  const handleLightboxDownload = useCallback(() => {
+    void downloadImage();
+  }, [downloadImage]);
   const frameStyle = useMemo<StyleProp<ViewStyle>>(
     () => [assistantMessageStylesheet.imageFrame, containerStyle],
     [containerStyle],
@@ -933,7 +971,26 @@ function AssistantMarkdownImage({
           ) : null}
         </View>
       </Pressable>
-      <AttachmentLightbox source={lightboxSource} onClose={closeViewer} />
+      {image.status === "loaded" ? (
+        <View style={assistantMessageStylesheet.imageActions}>
+          <Button
+            variant="secondary"
+            size="xs"
+            leftIcon={Download}
+            loading={downloading}
+            onPress={handleDownload}
+            accessibilityLabel={t("message.attachments.downloadOriginalImage")}
+            testID="assistant-image-download"
+          >
+            {t("message.attachments.downloadOriginalImage")}
+          </Button>
+        </View>
+      ) : null}
+      <AttachmentLightbox
+        source={lightboxSource}
+        onClose={closeViewer}
+        onDownload={handleLightboxDownload}
+      />
     </View>
   );
 }

@@ -85,6 +85,7 @@ vi.mock("lucide-react-native", () => {
     React.createElement("span", { ...props, "data-icon": name });
   return {
     X: createIcon("X"),
+    Download: createIcon("Download"),
   };
 });
 
@@ -180,6 +181,26 @@ function queryByTestId(testID: string): HTMLElement | null {
 }
 
 describe("AttachmentLightbox", () => {
+  it("downloads the original without closing the viewer", () => {
+    const onDownload = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <AttachmentLightbox
+        source={assistantImageSource}
+        onDownload={onDownload}
+        onClose={onClose}
+      />,
+    );
+    click(queryByTestId("attachment-lightbox-download")!);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("omits the download action when no handler is supplied", () => {
+    render(<AttachmentLightbox source={assistantImageSource} onClose={vi.fn()} />);
+    expect(queryByTestId("attachment-lightbox-download")).toBeNull();
+  });
+
   it("renders nothing when the source is null", () => {
     render(<AttachmentLightbox source={null} onClose={vi.fn()} />);
 

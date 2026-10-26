@@ -3,7 +3,7 @@ import { Modal, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
+import { Download, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
@@ -21,12 +21,13 @@ export type ImageLightboxSource =
 interface AttachmentLightboxProps {
   source: ImageLightboxSource | null;
   onClose: () => void;
+  onDownload?: () => void;
 }
 
 const ModalRoot = isNative ? GestureHandlerRootView : View;
 const LIGHTBOX_FIT = { padding: SPACING[4], maxWidth: 960, maxHeight: 640 };
 
-export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps) {
+export function AttachmentLightbox({ source, onClose, onDownload }: AttachmentLightboxProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const metadata = source?.type === "attachment" ? source.metadata : null;
@@ -70,6 +71,16 @@ export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps)
   );
   const actions = useMemo(
     () => [
+      ...(onDownload
+        ? [
+            {
+              icon: Download,
+              label: t("message.attachments.downloadOriginalImage"),
+              onPress: onDownload,
+              testID: "attachment-lightbox-download",
+            },
+          ]
+        : []),
       {
         icon: X,
         label: t("message.attachments.closeImage"),
@@ -77,7 +88,7 @@ export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps)
         testID: "attachment-lightbox-close",
       },
     ],
-    [onClose, t],
+    [onClose, onDownload, t],
   );
 
   const handleImageError = useCallback(() => setErrored(true), []);

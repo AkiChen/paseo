@@ -353,6 +353,8 @@ export const es: TranslationResources = {
     attachments: {
       dismissImage: "Descartar imagen",
       closeImage: "Cerrar imagen",
+      downloadOriginalImage: "Descargar original",
+      savedToGallery: "Guardado en la galería",
       imageLoadFailed: "No se pudo cargar la imagen",
       imageUnavailable: "Imagen no disponible",
       imagePreviewUnavailable: "Vista previa de la imagen no disponible.",

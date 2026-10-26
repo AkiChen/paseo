@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, test as base } from "../support/fixtures";
 import {
   appendSettledTimelineTurns,
@@ -44,6 +46,38 @@ test("switching between settled agent tabs keeps a real assistant PNG rendered",
   await openExistingImageAgentTabs(page, { imageAgent, otherAgent });
   await expectAssistantImageRendered(page, image);
   await switchAwayAndBackWithoutImageInstability(page, { image, imageAgent, otherAgent });
+});
+
+test("downloads original image bytes from the timeline and lightbox", async ({
+  imageWorkspace: workspace,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const image = await createSmallAssistantPng(workspace, {
+    alt: "Original download image",
+    fileName: "original-download.png",
+  });
+  const agent = await createSettledMockAgent(workspace, "Original image download");
+  await emitSettledAssistantImage(workspace.client, agent, image);
+  await openAssistantImageTimeline(page, agent);
+  await expectAssistantImageRendered(page, image);
+  const original = await readFile(path.join(workspace.repoPath, image.relativePath));
+
+  for (const buttonId of ["assistant-image-download", "attachment-lightbox-download"]) {
+    if (buttonId === "attachment-lightbox-download") {
+      await page.getByRole("button", { name: "Open image attachment" }).click();
+    }
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByTestId(buttonId).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe(image.relativePath);
+    const downloadedPath = await download.path();
+    expect(downloadedPath).not.toBeNull();
+    expect(await readFile(downloadedPath!)).toEqual(original);
+    await expect(page.getByTestId("attachment-lightbox-image")).toHaveCount(
+      buttonId === "assistant-image-download" ? 0 : 1,
+    );
+  }
 });
 
 test("opens a timeline image in a zoomable lightbox", async ({

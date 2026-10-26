@@ -20,6 +20,9 @@ import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useCompactTimeAgo } from "@/hooks/use-compact-time-ago";
 import { useDeleteAgent, type DeleteAgentInput } from "@/hooks/use-delete-agent";
 import { useHosts } from "@/runtime/host-runtime";
+import { useHostProjects } from "@/projects/host-projects";
+import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { deriveIdentityColorName, identityForeground } from "@/styles/identity-colors";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { deriveSidebarStateBucket, type SidebarStateBucket } from "@/utils/sidebar-agent-state";
@@ -57,8 +60,7 @@ interface SidebarRecentAgentsListProps {
  * The sidebar's Agents mode: every root agent across hosts, grouped by status.
  *
  * Workspace membership is deliberately not a grouping here. The point of the mode is to reach an
- * agent without first finding the workspace it lives in, so the workspace name is context on the
- * row rather than a heading above it.
+ * agent without first finding its workspace. Each row follows that workspace's current branch.
  */
 export function SidebarRecentAgentsList({
   active,
@@ -66,7 +68,17 @@ export function SidebarRecentAgentsList({
 }: SidebarRecentAgentsListProps) {
   const { t } = useTranslation();
   const hosts = useHosts();
-  const showHost = hosts.length > 1;
+  const serverIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
+  const projects = useHostProjects(serverIds);
+  const projectKeysByWorkspace = useMemo(
+    () =>
+      new Map(
+        projects.flatMap((project) =>
+          project.workspaceKeys.map((key) => [key, project.viewKey] as const),
+        ),
+      ),
+    [projects],
+  );
   const { deleteAgent } = useDeleteAgent();
   const { archiveAgent } = useArchiveAgent();
   const { agents, isInitialLoad, isRevalidating, refreshAll } = useAggregatedAgents({
@@ -116,7 +128,7 @@ export function SidebarRecentAgentsList({
             <SidebarRecentAgentRow
               key={`${agent.serverId}:${agent.id}`}
               agent={agent}
-              showHost={showHost}
+              projectViewKey={projectKeysByWorkspace.get(`${agent.serverId}:${agent.workspaceId}`)}
               onArchive={archiveAgent}
               onDelete={deleteAgent}
               onBeforeNavigate={onBeforeNavigate}
@@ -158,13 +170,13 @@ function RecentAgentGroupIcon({ bucket }: { bucket: SidebarStateBucket }) {
 
 const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
   agent,
-  showHost,
+  projectViewKey,
   onArchive,
   onDelete,
   onBeforeNavigate,
 }: {
   agent: AggregatedAgent;
-  showHost: boolean;
+  projectViewKey?: string;
   onArchive: (input: DeleteAgentInput) => Promise<void>;
   onDelete: (input: DeleteAgentInput) => Promise<void>;
   onBeforeNavigate?: () => void;
@@ -175,7 +187,12 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
   const ProviderIcon = getProviderIcon(agent.provider, agent.serverId);
   const ThemedProviderIcon = useMemo(() => withUnistyles(ProviderIcon), [ProviderIcon]);
   const title = agent.title?.trim() || t("agentList.fallbackTitle");
-  const subtitle = resolveAgentSubtitle(agent, showHost);
+  const currentBranch = useWorkspaceFields(
+    agent.serverId,
+    agent.workspaceId ?? null,
+    (workspace) => workspace.gitRuntime?.currentBranch?.trim() || null,
+  );
+  const subtitle = currentBranch === "HEAD" ? null : currentBranch;
   const target = useMemo(
     () => ({ serverId: agent.serverId, agentId: agent.id }),
     [agent.serverId, agent.id],
@@ -259,7 +276,11 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
             {title}
           </Text>
           {subtitle ? (
-            <Text numberOfLines={1} style={styles.subtitle}>
+            <Text
+              numberOfLines={1}
+              style={styles.subtitle(projectViewKey)}
+              testID={`sidebar-recent-agent-branch-${agent.serverId}-${agent.id}`}
+            >
               {subtitle}
             </Text>
           ) : null}
@@ -302,13 +323,6 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
     </ContextMenu>
   );
 });
-
-function resolveAgentSubtitle(agent: AggregatedAgent, showHost: boolean): string {
-  const placement = agent.projectPlacement;
-  const workspaceName = placement?.workspaceName?.trim() || placement?.projectName?.trim() || "";
-  const hostName = showHost ? agent.serverLabel.trim() : "";
-  return [workspaceName, hostName].filter((part) => part.length > 0).join(" · ");
-}
 
 const styles = StyleSheet.create((theme) => ({
   list: {
@@ -379,11 +393,13 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
   },
-  subtitle: {
+  subtitle: (projectViewKey?: string) => ({
     marginTop: 1,
-    color: theme.colors.foregroundMuted,
+    color: projectViewKey
+      ? identityForeground(deriveIdentityColorName(projectViewKey), theme.colorScheme)
+      : theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
-  },
+  }),
   trailing: {
     flexDirection: "row",
     alignItems: "center",

@@ -342,6 +342,8 @@ export const en = {
     attachments: {
       dismissImage: "Dismiss image",
       closeImage: "Close image",
+      downloadOriginalImage: "Download original",
+      savedToGallery: "Saved to gallery",
       imageLoadFailed: "Couldn't load image",
       imageUnavailable: "Image unavailable",
       imagePreviewUnavailable: "Image preview unavailable.",

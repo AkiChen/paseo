@@ -44,9 +44,9 @@ mac:
   artifactName: "Paseo-${version}-${arch}.${ext}"
   minimumSystemVersion: "13.0.0"
   category: public.app-category.developer-tools
-  # electron-builder converts this PNG itself. The checked-in .icns still holds the
-  # previous mark and cannot be regenerated without macOS tooling.
-  icon: assets/icon.png
+  # Reuse the app icon with a rounded 832px tile centered on a transparent
+  # 1024px canvas so the Dock icon keeps macOS-sized outer margins.
+  icon: assets/icon-mac.png
   hardenedRuntime: true
   notarize: true
   entitlements: build/entitlements.mac.plist
@@ -54,7 +54,7 @@ mac:
   extraResources:
     - from: bin/paseo
       to: bin/paseo
-    - from: assets/icon.png
+    - from: assets/icon-mac.png
       to: icon.png
   target:
     - dmg

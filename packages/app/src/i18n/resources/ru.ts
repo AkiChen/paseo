@@ -352,6 +352,8 @@ export const ru: TranslationResources = {
     attachments: {
       dismissImage: "Закрыть изображение",
       closeImage: "Закрыть изображение",
+      downloadOriginalImage: "Скачать оригинал",
+      savedToGallery: "Сохранено в галерею",
       imageLoadFailed: "Не удалось загрузить изображение",
       imageUnavailable: "Изображение недоступно",
       imagePreviewUnavailable: "Предварительный просмотр изображения недоступен.",
