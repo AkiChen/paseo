@@ -1,5 +1,6 @@
 import { ChatGptIcon } from "@/components/icons/chatgpt-icon";
 import { DeepSeekIcon } from "@/components/icons/deepseek-icon";
+import { resolveProviderIconName } from "@/components/provider-icon-name";
 import { getProviderIcon, type ProviderIconComponent } from "@/components/provider-icons";
 
 const CHATGPT_ICON_ID = "chatgpt";
@@ -75,10 +76,10 @@ export interface ModelIconInput {
 }
 
 /**
- * Model-aware glyph: a provider that fronts several vendors (`morphic`,
- * `openrouter`, a custom ACP harness) still shows the mark of the model it has
- * selected, not the provider's own. Unknown models fall back to that provider's
- * icon, which is the pre-existing behavior.
+ * Model-aware glyph. A provider that brands itself (Codex, Claude, anything with
+ * a registered or daemon-supplied icon) keeps its own mark for every model it
+ * lists. Only a generic harness — no icon, so the robot fallback — takes the
+ * selected model's family, which is what a multi-vendor front end needs.
  */
 export function getModelIcon({
   provider,
@@ -86,6 +87,9 @@ export function getModelIcon({
   modelLabel,
   serverId,
 }: ModelIconInput): ProviderIconComponent {
+  if (resolveProviderIconName(provider, serverId).kind !== "bot") {
+    return getProviderIcon(provider, serverId);
+  }
   const familyId = resolveModelIconId(modelId, modelLabel);
   if (!familyId) {
     return getProviderIcon(provider, serverId);

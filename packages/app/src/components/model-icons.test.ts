@@ -72,10 +72,12 @@ describe("getModelIcon", () => {
     expect(icon).toBe(CodexIcon);
   });
 
-  it("keeps Codex's own glyph while its GPT models draw the ChatGPT mark", () => {
+  it("never overrides a provider that draws its own brand icon", () => {
     expect(getProviderIcon("codex")).toBe(CodexIcon);
+    // A Codex agent listing GPT models keeps the Codex mark on every row.
     expect(getModelIcon({ provider: "codex", modelId: "gpt-5-codex", serverId: null })).toBe(
-      ChatGptIcon,
+      CodexIcon,
     );
+    expect(getModelIcon({ provider: "claude", modelId: "gpt-5", serverId: null })).toBe(ClaudeIcon);
   });
 });

@@ -34,7 +34,7 @@ import {
 } from "@/composer/pill-styles";
 import { getActiveMessageSubmissions } from "@/composer/submission/model";
 import { RewindComposerRestoreProvider } from "@/components/rewind/composer-restore";
-import { getProviderIcon } from "@/components/provider-icons";
+import { getModelIcon } from "@/components/model-icons";
 import { useToastHost, type ToastApi, type ToastState } from "@/components/toast-host";
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import { useWorkspaceAttachmentScopeKey } from "@/attachments/workspace-attachments-store";
@@ -131,6 +131,11 @@ function resolveChatAgentFromSession(
   if (!agentId) return null;
   const session = state.sessions[serverId];
   return session?.agents?.get(agentId) ?? session?.agentDetails?.get(agentId) ?? null;
+}
+
+/** Live first: `model_changed` writes runtimeInfo; the snapshot field covers older agents. */
+function resolveAgentModel(agent: Agent | null): string | null {
+  return agent?.runtimeInfo?.model ?? agent?.model ?? null;
 }
 
 function readViewedTimelineError(input: {
@@ -332,10 +337,14 @@ function useAgentPanelDescriptor(
   const descriptorState = useSessionStore(
     useShallow((state) => {
       const session = state.sessions[context.serverId];
-      const agent =
-        session?.agents?.get(target.agentId) ?? session?.agentDetails?.get(target.agentId) ?? null;
+      const agent = resolveChatAgentFromSession(state, context.serverId, target.agentId);
       return {
         provider: agent?.provider ?? "codex",
+        // The tab glyph follows the agent's model, not just its provider, so a
+        // harness that fronts several vendors doesn't show one robot for all.
+        // runtimeInfo is the live source (model_changed writes it); the snapshot
+        // field covers agents created before any runtime info existed.
+        model: resolveAgentModel(agent),
         title: agent?.title ?? null,
         status: agent?.status ?? null,
         pendingPermissionCount: agent?.pendingPermissions.length ?? 0,
@@ -347,7 +356,11 @@ function useAgentPanelDescriptor(
   );
   const provider = descriptorState.provider;
   const label = resolveWorkspaceAgentTabLabel(descriptorState.title);
-  const icon = getProviderIcon(provider, context.serverId);
+  const icon = getModelIcon({
+    provider,
+    modelId: descriptorState.model,
+    serverId: context.serverId,
+  });
 
   return {
     label: label ?? "",
