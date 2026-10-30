@@ -404,6 +404,8 @@ const PROVIDER_ICONS: Record<string, typeof Bot> = {
 
 If no icon is registered, `getProviderIcon()` falls back to a generic `Bot` icon from lucide.
 
+Model rows do not always show the provider icon. `getModelIcon()` in `packages/app/src/components/model-icons.ts` reads the model id (then the model label) for a vendor name and reuses that vendor's provider icon, so one custom ACP harness that fronts GPT, Claude, Kimi and DeepSeek shows four marks in the same list instead of four robots. Models it does not recognize keep the provider icon. To teach it a vendor, add a pattern to `MODEL_FAMILIES` and make sure the entry's `iconId` resolves in `provider-icons.ts`.
+
 ### 5. Add E2E test config
 
 In `packages/server/src/server/daemon-e2e/agent-configs.ts`, add your provider:

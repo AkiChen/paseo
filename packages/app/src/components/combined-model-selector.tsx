@@ -255,6 +255,8 @@ export function CombinedModelSelector({
             <View style={toolbar?.glyphSize === 20 ? styles.toolbarGlyph20 : styles.toolbarGlyph16}>
               <ModelProviderGlyph
                 provider={selectedProvider}
+                modelId={selectedModel}
+                modelLabel={browser.selectedModelLabel}
                 serverId={serverId}
                 size={toolbar?.glyphSize ?? ICON_SIZE.md}
               />

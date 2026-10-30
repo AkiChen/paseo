@@ -7,7 +7,7 @@ import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { AgentProfilePicker, AgentProfileSeed } from "@/agent-profiles";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
-import { getProviderIcon } from "@/components/provider-icons";
+import { getModelIcon } from "@/components/model-icons";
 import { ModelBrowser, useModelBrowser } from "@/components/model-browser";
 import { resolveModelBrowserScrolling } from "@/components/model-browser-view";
 import { AgentControlTrigger } from "@/composer/agent-controls/control";
@@ -130,9 +130,15 @@ export function CompactModelSheet({
     profiles,
     serverId,
   });
-  const ProviderIcon =
-    selectedProvider.trim().length > 0 ? getProviderIcon(selectedProvider, serverId) : null;
-  const ModelIcon = ProviderIcon ?? Bot;
+  const hasSelectedProvider = selectedProvider.trim().length > 0;
+  const ModelIcon = hasSelectedProvider
+    ? getModelIcon({
+        provider: selectedProvider,
+        modelId: selectedModel,
+        modelLabel: rootBrowser.selectedModelLabel,
+        serverId,
+      })
+    : Bot;
   const rootHeader = useMemo(
     () => ({
       ...rootBrowser.header,
@@ -277,9 +283,9 @@ export function CompactModelSheet({
         testID="combined-model-selector"
         chevron={null}
       >
-        {ProviderIcon ? (
+        {hasSelectedProvider ? (
           <ComposerToolbarGlyph size={glyphSize}>
-            <ProviderIcon size={glyphSize} color={styles.providerIcon.color} />
+            <ModelIcon size={glyphSize} color={styles.providerIcon.color} />
           </ComposerToolbarGlyph>
         ) : null}
         <View style={styles.triggerLabels}>

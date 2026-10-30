@@ -39,7 +39,7 @@ import type { SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { getProviderIcon } from "@/components/provider-icons";
+import { getModelIcon } from "@/components/model-icons";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import {
@@ -216,14 +216,19 @@ export function ModelProviderGlyph({
   provider,
   serverId,
   size,
+  modelId,
+  modelLabel,
   tone = "muted",
 }: {
   provider: string;
   serverId: string | null;
   size: number;
+  /** When present, the glyph follows the model's family, not just the provider. */
+  modelId?: string | null;
+  modelLabel?: string | null;
   tone?: ProviderGlyphTone;
 }) {
-  const Icon = getProviderIcon(provider, serverId);
+  const Icon = getModelIcon({ provider, modelId, modelLabel, serverId });
   const color =
     tone === "foreground" ? styles.providerIconForeground.color : styles.providerIconMuted.color;
   return <Icon size={size} color={color} />;
@@ -680,8 +685,16 @@ function ModelRow({
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
   const leadingSlot = useMemo(
-    () => <ModelProviderGlyph provider={row.provider} serverId={serverId} size={ICON_SIZE.sm} />,
-    [row.provider, serverId],
+    () => (
+      <ModelProviderGlyph
+        provider={row.provider}
+        modelId={row.modelId}
+        modelLabel={row.modelLabel}
+        serverId={serverId}
+        size={ICON_SIZE.sm}
+      />
+    ),
+    [row.modelId, row.modelLabel, row.provider, serverId],
   );
 
   const description = showProviderLabel ? buildProviderQualifiedDescription(row) : row.description;
