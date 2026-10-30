@@ -12,6 +12,8 @@ export interface AggregatedAgent extends AgentDirectoryEntry {
   // Kept outside `AgentDirectoryEntry` so callers that build a directory entry from less data do
   // not have to invent one. A subagent is an agent whose parent owns its track.
   parentAgentId?: string | null;
+  /** Current model, so list glyphs can follow the model instead of the provider. */
+  model?: string | null;
 }
 
 export interface AggregatedAgentsResult {
@@ -102,6 +104,7 @@ export function useAggregatedAgents(options?: {
           labels: agent.labels,
           projectPlacement: agent.projectPlacement,
           parentAgentId: agent.parentAgentId,
+          model: agent.runtimeInfo?.model ?? agent.model ?? null,
         };
         const cacheKey = `${serverId}:${agent.id}`;
         const prev = prevAgentsRef.current.get(cacheKey);

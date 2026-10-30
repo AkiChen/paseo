@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { AgentStatusDot } from "@/components/agent-status-dot";
-import { getProviderIcon } from "@/components/provider-icons";
+import { getModelIcon } from "@/components/model-icons";
 import { SidebarAgentListSkeleton } from "@/components/sidebar-agent-list-skeleton";
 import { StatusRing } from "@/components/status-ring";
 import { STATUS_RING_FRAME_SIZE } from "@/components/status-ring/geometry";
@@ -184,7 +184,11 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
   const { t } = useTranslation();
   const timeAgo = useCompactTimeAgo(agent.lastActivityAt);
   const [isBusy, setIsBusy] = useState(false);
-  const ProviderIcon = getProviderIcon(agent.provider, agent.serverId);
+  const ProviderIcon = getModelIcon({
+    provider: agent.provider,
+    modelId: agent.model,
+    serverId: agent.serverId,
+  });
   const ThemedProviderIcon = useMemo(() => withUnistyles(ProviderIcon), [ProviderIcon]);
   const title = agent.title?.trim() || t("agentList.fallbackTitle");
   const currentBranch = useWorkspaceFields(
