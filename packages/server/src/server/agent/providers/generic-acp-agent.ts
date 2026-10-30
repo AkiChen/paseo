@@ -17,6 +17,7 @@ import {
   type DiagnosticEntry,
   toDiagnosticErrorMessage,
 } from "./diagnostic-utils.js";
+import { DshForkBridgeSchema } from "./dsh-fork/bridge.js";
 import { DshQuestionBridgeSchema } from "./dsh-questions/bridge.js";
 import { SessionMetadataSchema } from "./session-metadata.js";
 
@@ -41,6 +42,9 @@ export const GenericACPProviderParamsSchema = z
     // questions there, for providers whose ACP has no question channel. See
     // `dsh-questions/bridge.ts`.
     questionBridge: DshQuestionBridgeSchema.optional(),
+    // A plugin Paseo loads into the provider process to fork sessions there, for
+    // providers that expose no ACP fork. See `dsh-fork/bridge.ts`.
+    forkBridge: DshForkBridgeSchema.optional(),
   })
   .passthrough();
 
@@ -90,6 +94,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
       catalogModelResolver: options.catalogModelResolver,
       sessionMetadata: providerParams.sessionMetadata ?? null,
       questionBridge: providerParams.questionBridge ?? null,
+      forkBridge: providerParams.forkBridge ?? null,
       now: options.now,
     });
 
@@ -180,6 +185,9 @@ function buildGenericACPCapabilities(params: GenericACPProviderParams): AgentCap
   return {
     ...DEFAULT_ACP_CAPABILITIES,
     supportsMcpServers: params.supportsMcpServers ?? DEFAULT_ACP_CAPABILITIES.supportsMcpServers,
+    // A configured bridge forks this provider's sessions inside its own process,
+    // so the fork UI is offered even though ACP advertises no `session/fork`.
+    ...(params.forkBridge === undefined ? {} : { supportsSessionFork: true }),
   };
 }
 

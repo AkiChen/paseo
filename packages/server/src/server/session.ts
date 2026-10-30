@@ -8126,8 +8126,18 @@ export class Session {
     }
 
     const inherited = this.selectForkInheritedRows(snapshot, msg);
+    this.sessionLogger.info(
+      {
+        agentId: snapshot.id,
+        boundaryCursor: msg.boundaryCursor ?? null,
+        boundaryMessageId: msg.boundaryMessageId ?? null,
+        inheritedRows: inherited.rows.length,
+      },
+      "agent.fork_session.boundary",
+    );
     const handle = await session.forkSession({
       truncateFromUserMessageId: inherited.truncateFromUserMessageId,
+      boundaryMessageId: msg.boundaryMessageId ?? null,
     });
     const forked = await this.agentManager.resumeAgentFromPersistence(
       handle,
@@ -8201,7 +8211,10 @@ export class Session {
   private selectForkInheritedRows(
     snapshot: ManagedAgent,
     msg: Extract<SessionInboundMessage, { type: "agent.fork_session.request" }>,
-  ): { rows: readonly AgentTimelineRow[]; truncateFromUserMessageId: string | null } {
+  ): {
+    rows: readonly AgentTimelineRow[];
+    truncateFromUserMessageId: string | null;
+  } {
     let timeline: AgentTimelineFetchResult;
     try {
       timeline = this.agentManager.fetchTimeline(snapshot.id, { direction: "tail", limit: 0 });

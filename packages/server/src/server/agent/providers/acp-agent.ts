@@ -72,6 +72,7 @@ import {
   type AgentModelDefinition,
   type AgentPermissionRequest,
   type AgentPermissionRequestKind,
+  type AgentForkSessionOptions,
   type AgentPermissionResponse,
   type AgentPersistenceHandle,
   type AgentPromptContentBlock,
@@ -107,6 +108,12 @@ import {
   resolveDefaultAgentCreateConfig,
 } from "../create-agent-mode.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
+import {
+  createDshForkBridge,
+  type DshForkBridge,
+  type DshForkBridgeLaunch,
+  type DshForkBridgeSource,
+} from "./dsh-fork/bridge.js";
 import {
   createDshQuestionBridge,
   type DshQuestionBridge,
@@ -504,6 +511,8 @@ interface ACPAgentClientOptions {
   sessionMetadata?: SessionMetadataSource | null;
   /** Bridge that answers this provider's user questions from Paseo. */
   questionBridge?: DshQuestionBridgeSource | null;
+  /** Bridge that forks this provider's sessions inside its own process. */
+  forkBridge?: DshForkBridgeSource | null;
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
@@ -540,6 +549,8 @@ interface ACPAgentSessionOptions {
   launchEnv?: Record<string, string>;
   /** Bridge that answers this provider's user questions from Paseo. */
   questionBridge?: DshQuestionBridge | null;
+  /** Bridge that forks this provider's sessions inside its own process. */
+  forkBridge?: DshForkBridge | null;
   /**
    * Reads the provider's own store for a session. Only the store knows a title a
    * provider regenerates without mentioning it over ACP.
@@ -992,6 +1003,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly importPromptCache = new Map<string, ACPImportPromptCacheEntry>();
   private readonly sessionMetadataReader: SessionMetadataReader | null;
   private readonly questionBridge: DshQuestionBridge | null;
+  private readonly forkBridge: DshForkBridge | null;
   private readonly now: () => number;
   protected readonly terminateProcess: ProcessTerminator;
 
@@ -1023,6 +1035,7 @@ export class ACPAgentClient implements AgentClient {
     this.extensionCommandsParser = options.extensionCommandsParser;
     this.sessionMetadataReader = createSessionMetadataReader(options.sessionMetadata ?? null);
     this.questionBridge = createDshQuestionBridge(options.questionBridge ?? null, this.logger);
+    this.forkBridge = createDshForkBridge(options.forkBridge ?? null, this.logger);
     this.now = options.now ?? Date.now;
   }
 
@@ -1054,6 +1067,7 @@ export class ACPAgentClient implements AgentClient {
         agentId: launchContext?.agentId,
         launchEnv: launchContext?.env,
         questionBridge: this.questionBridge,
+        forkBridge: this.forkBridge,
         extensionCommandsParser: this.extensionCommandsParser,
         waitForInitialCommands: this.waitForInitialCommands,
         initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
@@ -1107,6 +1121,7 @@ export class ACPAgentClient implements AgentClient {
       agentId: launchContext?.agentId,
       launchEnv: launchContext?.env,
       questionBridge: this.questionBridge,
+      forkBridge: this.forkBridge,
       extensionCommandsParser: this.extensionCommandsParser,
       waitForInitialCommands: this.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
@@ -1771,11 +1786,14 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly agentId?: string;
   private readonly launchEnv?: Record<string, string>;
   private readonly questionBridge: DshQuestionBridge | null;
+  private readonly forkBridge: DshForkBridge | null;
   /** The provider's own store, where a title ACP never mentions is written. */
   private readonly sessionMetadataReader: SessionMetadataReader | null;
   /** Channel the plugin inside this process answers on, once it is spawned. */
   private questionBridgeChannel: string | null = null;
   private questionBridgeConnection: DshQuestionBridgeConnection | null = null;
+  /** Channel this process's fork plugin answers on, once it is spawned. */
+  private forkBridgeChannel: string | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private readonly pendingQuestions = new Map<string, PendingQuestion>();
@@ -1845,6 +1863,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.agentId = options.agentId;
     this.launchEnv = options.launchEnv;
     this.questionBridge = options.questionBridge ?? null;
+    this.forkBridge = options.forkBridge ?? null;
     this.initialHandle = options.handle;
     this.config = { ...config, provider: options.provider };
     this.currentMode = config.modeId ?? null;
@@ -2693,6 +2712,51 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     };
   }
 
+  /**
+   * Branch this session into an independent one and return its handle.
+   *
+   * A provider that advertises ACP `session/fork` is asked over ACP. One that
+   * does not — DSH today — is asked through its fork bridge, which does the same
+   * work inside the process that owns the session store. This session is
+   * untouched either way: the caller resumes the returned id in a fresh process,
+   * the same contract `describePersistence` already gives the resume path.
+   */
+  async forkSession(options?: AgentForkSessionOptions): Promise<AgentPersistenceHandle> {
+    if (!this.connection || !this.sessionId) {
+      throw new Error(`${this.provider} session is not initialized`);
+    }
+    const handle = this.describePersistence();
+    if (!handle) {
+      throw new Error(`${this.provider} session has no persistence handle to fork from`);
+    }
+
+    if (this.agentCapabilities?.sessionCapabilities?.fork) {
+      const response = await this.runACPRequest(() =>
+        this.connection!.unstable_forkSession({
+          sessionId: this.sessionId!,
+          cwd: this.config.cwd,
+          mcpServers: this.acpMcpServers(),
+        }),
+      );
+      return { ...handle, sessionId: response.sessionId, nativeHandle: response.sessionId };
+    }
+
+    if (this.forkBridge !== null && this.forkBridgeChannel !== null) {
+      const forkedSessionId = await this.forkBridge.fork({
+        channel: this.forkBridgeChannel,
+        sessionId: this.sessionId,
+        atMessageId: options?.boundaryMessageId ?? null,
+      });
+      this.logger.info(
+        { agentId: this.agentId, sessionId: this.sessionId, forkedSessionId },
+        "Forked a session through its provider bridge",
+      );
+      return { ...handle, sessionId: forkedSessionId, nativeHandle: forkedSessionId };
+    }
+
+    throw new Error(`${this.provider} does not support provider session fork`);
+  }
+
   async interrupt(): Promise<void> {
     if (!this.connection || !this.sessionId) {
       return;
@@ -3036,6 +3100,25 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   /**
+   * Name this process's fork channel and materialize the plugin that answers on
+   * it. A bridge that cannot be prepared costs the provider fork, not the
+   * launch: the session still runs, and a fork later fails with a clear error.
+   */
+  protected async prepareForkBridgeLaunch(): Promise<DshForkBridgeLaunch | null> {
+    if (this.forkBridge === null) {
+      return null;
+    }
+    try {
+      const launch = await this.forkBridge.prepareLaunch();
+      this.forkBridgeChannel = launch.channel;
+      return launch;
+    } catch (error) {
+      this.logger.warn({ err: error }, "Fork bridge unavailable for this session");
+      return null;
+    }
+  }
+
+  /**
    * Answer DSH's questions from Paseo for as long as this process lives.
    *
    * The plugin claims the question waterfall inside the process and relays each
@@ -3137,14 +3220,20 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       throw new Error(`${this.provider} command '${this.defaultCommand[0]}' not found`);
     }
 
-    const bridge = await this.prepareQuestionBridgeLaunch();
+    const questionBridge = await this.prepareQuestionBridgeLaunch();
+    const forkBridge = await this.prepareForkBridgeLaunch();
     const command = prefix.command;
-    const args = [...prefix.args, ...this.defaultCommand.slice(1), ...(bridge?.args ?? [])];
+    const args = [
+      ...prefix.args,
+      ...this.defaultCommand.slice(1),
+      ...(questionBridge?.args ?? []),
+      ...(forkBridge?.args ?? []),
+    ];
     const child = spawnProcess(command, args, {
       cwd: this.config.cwd,
       ...createProviderEnvSpec({
         runtimeSettings: this.runtimeSettings,
-        overlays: [this.launchEnv, bridge?.env],
+        overlays: [this.launchEnv, questionBridge?.env, forkBridge?.env],
       }),
       stdio: ["pipe", "pipe", "pipe"],
     });

@@ -678,6 +678,13 @@ export interface AgentResumeSessionOptions {
  */
 export interface AgentForkSessionOptions {
   truncateFromUserMessageId?: string | null;
+  /**
+   * Provider message id of the assistant message the user forked from. Providers
+   * that own the turn log (DSH) cut at the first `turn/end` at or after that
+   * message, which is exactly what the provider's own "branch in a new
+   * conversation" does.
+   */
+  boundaryMessageId?: string | null;
 }
 
 /**

@@ -473,6 +473,12 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
     revertConversation: inner.revertConversation?.bind(inner),
     revertFiles: inner.revertFiles?.bind(inner),
     revertBoth: inner.revertBoth?.bind(inner),
+    // The inner session is the shared adapter ("acp"), while this provider is the
+    // configured one ("dsh"). The fork handle has to name the configured provider,
+    // or the resume path cannot find its client.
+    forkSession: inner.forkSession
+      ? async (options) => ({ ...(await inner.forkSession!(options)), provider })
+      : undefined,
     tryHandleOutOfBand: inner.tryHandleOutOfBand?.bind(inner),
   };
 }
