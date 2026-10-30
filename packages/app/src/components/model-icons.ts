@@ -1,10 +1,18 @@
+import { ChatGptIcon } from "@/components/icons/chatgpt-icon";
 import { DeepSeekIcon } from "@/components/icons/deepseek-icon";
 import { getProviderIcon, type ProviderIconComponent } from "@/components/provider-icons";
 
+const CHATGPT_ICON_ID = "chatgpt";
 const DEEPSEEK_ICON_ID = "deepseek";
 
+/** Families whose mark lives in the app rather than in the provider registry. */
+const LOCAL_FAMILY_ICONS: Record<string, ProviderIconComponent> = {
+  [CHATGPT_ICON_ID]: ChatGptIcon,
+  [DEEPSEEK_ICON_ID]: DeepSeekIcon,
+};
+
 interface ModelFamily {
-  /** A registered provider icon that already draws this family's mark. */
+  /** Key in `LOCAL_FAMILY_ICONS`, or a provider icon id registered in `provider-icons`. */
   iconId: string;
   pattern: RegExp;
 }
@@ -19,7 +27,10 @@ const MODEL_FAMILIES: readonly ModelFamily[] = [
   { iconId: DEEPSEEK_ICON_ID, pattern: /(?:^|\s)deepseek/ },
   { iconId: "kimi", pattern: /(?:^|\s)kimi|moonshot/ },
   { iconId: "claude", pattern: /(?:^|\s)claude|anthropic|(?:^|\s)(?:sonnet|opus|haiku)/ },
-  { iconId: "codex", pattern: /(?:^|\s)gpt|chatgpt|(?:^|\s)o[1-9](?:\s|$)|codex|davinci/ },
+  {
+    iconId: CHATGPT_ICON_ID,
+    pattern: /(?:^|\s)gpt|chatgpt|(?:^|\s)o[1-9](?:\s|$)|codex|davinci/,
+  },
   { iconId: "gemini", pattern: /(?:^|\s)(?:gemini|gemma)/ },
   { iconId: "qwen-code", pattern: /(?:^|\s)(?:qwen|qwq|tongyi)/ },
   { iconId: "glm-acp-agent", pattern: /(?:^|\s)(?:glm|chatglm|zhipu)/ },
@@ -79,8 +90,5 @@ export function getModelIcon({
   if (!familyId) {
     return getProviderIcon(provider, serverId);
   }
-  if (familyId === DEEPSEEK_ICON_ID) {
-    return DeepSeekIcon;
-  }
-  return getProviderIcon(familyId);
+  return LOCAL_FAMILY_ICONS[familyId] ?? getProviderIcon(familyId);
 }

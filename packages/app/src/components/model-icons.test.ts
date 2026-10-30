@@ -1,10 +1,12 @@
 import { Bot } from "lucide-react-native";
 import { describe, expect, it } from "vitest";
+import { ChatGptIcon } from "./icons/chatgpt-icon";
 import { ClaudeIcon } from "./icons/claude-icon";
 import { CodexIcon } from "./icons/codex-icon";
 import { DeepSeekIcon } from "./icons/deepseek-icon";
 import { MiniMaxIcon } from "./icons/minimax-icon";
 import { getModelIcon, resolveModelIconId } from "./model-icons";
+import { getProviderIcon } from "./provider-icons";
 
 function iconFor(modelId: string, modelLabel?: string) {
   return getModelIcon({ provider: "dsh", modelId, modelLabel, serverId: null });
@@ -12,10 +14,10 @@ function iconFor(modelId: string, modelLabel?: string) {
 
 describe("resolveModelIconId", () => {
   it.each([
-    ["gpt-6.1-sol", "codex"],
-    ["morphic/gpt-6.1-sol", "codex"],
-    ["chatgpt-4o-latest", "codex"],
-    ["o3-mini", "codex"],
+    ["gpt-6.1-sol", "chatgpt"],
+    ["morphic/gpt-6.1-sol", "chatgpt"],
+    ["chatgpt-4o-latest", "chatgpt"],
+    ["o3-mini", "chatgpt"],
     ["claude-sonnet-4-5", "claude"],
     ["anthropic/claude-opus-4", "claude"],
     ["deepseek-chat", "deepseek"],
@@ -33,7 +35,7 @@ describe("resolveModelIconId", () => {
   });
 
   it("falls back to the label when the id names no brand", () => {
-    expect(resolveModelIconId("morphic-sol-261024", "GPT-6.1 Sol")).toBe("codex");
+    expect(resolveModelIconId("morphic-sol-261024", "GPT-6.1 Sol")).toBe("chatgpt");
   });
 
   it("returns null for opaque or empty models", () => {
@@ -45,7 +47,7 @@ describe("resolveModelIconId", () => {
 
 describe("getModelIcon", () => {
   it("uses the model family's registered mark", () => {
-    expect(iconFor("gpt-6.1-sol")).toBe(CodexIcon);
+    expect(iconFor("gpt-6.1-sol")).toBe(ChatGptIcon);
     expect(iconFor("claude-sonnet-4-5")).toBe(ClaudeIcon);
     expect(iconFor("MiniMax-M2")).toBe(MiniMaxIcon);
     expect(iconFor("deepseek-chat")).toBe(DeepSeekIcon);
@@ -68,5 +70,12 @@ describe("getModelIcon", () => {
       serverId: null,
     });
     expect(icon).toBe(CodexIcon);
+  });
+
+  it("keeps Codex's own glyph while its GPT models draw the ChatGPT mark", () => {
+    expect(getProviderIcon("codex")).toBe(CodexIcon);
+    expect(getModelIcon({ provider: "codex", modelId: "gpt-5-codex", serverId: null })).toBe(
+      ChatGptIcon,
+    );
   });
 });
