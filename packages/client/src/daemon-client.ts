@@ -42,6 +42,7 @@ import type {
   FileWriteResult,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
+  AgentForkSessionResponseMessage,
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
@@ -642,6 +643,7 @@ type ScheduleUpdatePayload = Extract<
 >["payload"];
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
+export type AgentForkSessionPayload = AgentForkSessionResponseMessage["payload"];
 
 export type FetchAgentTimelineDirection = FetchAgentTimelinePayload["direction"];
 export type FetchAgentTimelineProjection = FetchAgentTimelinePayload["projection"];
@@ -722,6 +724,12 @@ function normalizeListCommandsOptions(
   return { agentId: input, ...legacyOptions };
 }
 export interface AgentForkContextOptions {
+  boundaryCursor?: FetchAgentTimelineCursor;
+  boundaryMessageId?: string;
+  requestId?: string;
+}
+
+export interface AgentForkSessionOptions {
   boundaryCursor?: FetchAgentTimelineCursor;
   boundaryMessageId?: string;
   requestId?: string;
@@ -3401,6 +3409,47 @@ export class DaemonClient {
       options: { skipQueue: true },
       select: (msg) => {
         if (msg.type !== "agent.fork_context.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== resolvedRequestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+
+    if (payload.error) {
+      throw new Error(payload.error);
+    }
+
+    return payload;
+  }
+
+  /**
+   * Branch the agent's provider session into a new agent. Unlike
+   * `buildAgentForkContext`, nothing is copied into a draft: the daemon creates
+   * and returns a registered agent backed by a forked provider session.
+   */
+  async forkAgentSession(
+    agentId: string,
+    options: AgentForkSessionOptions = {},
+  ): Promise<AgentForkSessionPayload> {
+    const resolvedRequestId = this.createRequestId(options.requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.fork_session.request",
+      agentId,
+      requestId: resolvedRequestId,
+      ...(options.boundaryCursor ? { boundaryCursor: options.boundaryCursor } : {}),
+      ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
+    });
+
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      timeout: 60000,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.fork_session.response") {
           return null;
         }
         if (msg.payload.requestId !== resolvedRequestId) {

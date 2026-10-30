@@ -336,6 +336,8 @@ export const en = {
       forkUnavailable: "Update the host to use this.",
       forkMissingWorkspace: "This agent is not in a workspace.",
       forkFailed: "Failed to fork chat",
+      forkSession: "Fork session (keeps context)",
+      forkSessionFailed: "Failed to fork session",
       openFile: "Open file",
       copied: "Copied",
     },

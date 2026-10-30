@@ -192,6 +192,8 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  /** The provider can branch its own session into an independent one. */
+  supportsSessionFork?: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -668,6 +670,17 @@ export interface AgentResumeSessionOptions {
 }
 
 /**
+ * Where a provider-side fork should stop.
+ *
+ * A provider can only cut at a turn boundary it owns. `truncateFromUserMessageId`
+ * names the first user message the fork must NOT inherit, so the caller derives
+ * it from the same boundary the UI pinned. Omitting it keeps the whole session.
+ */
+export interface AgentForkSessionOptions {
+  truncateFromUserMessageId?: string | null;
+}
+
+/**
  * Returned by respondToPermission when the permission resolution requires
  * a follow-up turn (e.g. Codex plan approval → implementation).
  */
@@ -713,6 +726,12 @@ export interface AgentSession {
   revertConversation?(input: { messageId: string }): Promise<void>;
   revertFiles?(input: { messageId: string }): Promise<void>;
   revertBoth?(input: { messageId: string }): Promise<void>;
+  /**
+   * Branch the provider session into an independent one and return the handle
+   * the caller can resume. The source session must not be touched. Providers
+   * that can only fork whole sessions ignore `truncateFromUserMessageId`.
+   */
+  forkSession?(options?: AgentForkSessionOptions): Promise<AgentPersistenceHandle>;
   /**
    * Out-of-band prompt handler. When non-null, the manager runs the returned
    * handler instead of allocating a turn. The handler emits stream events

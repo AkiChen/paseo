@@ -347,6 +347,8 @@ export const ja: TranslationResources = {
       forkUnavailable: "これを使用するにはホストを更新してください。",
       forkMissingWorkspace: "このエージェントはワークスペース内にありません。",
       forkFailed: "チャットのフォークに失敗しました",
+      forkSession: "セッションを分岐（コンテキストを保持）",
+      forkSessionFailed: "セッションの分岐に失敗しました",
       openFile: "ファイルを開く",
       copied: "コピーしました",
     },

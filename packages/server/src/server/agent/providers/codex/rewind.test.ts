@@ -9,6 +9,7 @@ import type {
 import {
   type CodexUserMessageTurnIndex,
   type CodexRewindClient,
+  forkCodexConversation,
   revertCodexConversation,
 } from "./rewind.js";
 
@@ -244,5 +245,125 @@ describe("Codex Rewind", () => {
     ).rejects.toThrow("Codex could not find user message missing-message");
     expect(codex.recordedForks).toEqual([]);
     expect(codex.recordedRollbacks).toEqual([]);
+  });
+});
+
+describe("Codex session fork", () => {
+  test("copies the whole thread when the fork keeps every turn", async () => {
+    const codex = new FakeCodex();
+    const userMessageTurns = new CodexMessageTurns(
+      new Map([
+        ["codex-first", 0],
+        ["codex-second", 1],
+      ]),
+    );
+
+    const forkedThreadId = await forkCodexConversation({
+      client: codex,
+      threadId: "source-thread",
+      truncateFromUserMessageId: null,
+      cwd: "/workspace/project",
+      model: "gpt-5.4-mini",
+      serviceTier: null,
+      userMessageTurns,
+    });
+
+    expect(forkedThreadId).toBe("forked-thread");
+    expect(codex.recordedForks).toEqual([
+      {
+        threadId: "source-thread",
+        cwd: "/workspace/project",
+        model: "gpt-5.4-mini",
+        serviceTier: null,
+        excludeTurns: false,
+        persistExtendedHistory: true,
+      },
+    ]);
+    expect(codex.recordedRollbacks).toEqual([]);
+  });
+
+  test("rolls the copy back to the turn the fork stopped at, leaving the source alone", async () => {
+    const codex = new FakeCodex();
+    const userMessageTurns = new CodexMessageTurns(
+      new Map([
+        ["codex-first", 0],
+        ["codex-second", 1],
+        ["codex-third", 2],
+      ]),
+    );
+
+    const forkedThreadId = await forkCodexConversation({
+      client: codex,
+      threadId: "source-thread",
+      truncateFromUserMessageId: "codex-third",
+      userMessageTurns,
+    });
+
+    expect(forkedThreadId).toBe("forked-thread");
+    expect(codex.recordedForks.map((params) => params.threadId)).toEqual(["source-thread"]);
+    expect(codex.recordedRollbacks).toEqual([{ threadId: "forked-thread", numTurns: 1 }]);
+  });
+
+  test("forks a paginated thread before the first dropped turn, with no rollback", async () => {
+    class PaginatedCodex extends FakeCodex {
+      override request(method: string): Promise<unknown> {
+        if (method === "thread/read") {
+          return Promise.resolve({ thread: { id: "source-thread", historyMode: "paginated" } });
+        }
+        throw new Error(`Unexpected request: ${method}`);
+      }
+
+      override rollbackThread(): Promise<CodexThreadRollbackResponse> {
+        throw new Error("paginated threads do not support thread/rollback");
+      }
+    }
+
+    const codex = new PaginatedCodex();
+    const userMessageTurns = new CodexMessageTurns(
+      new Map([
+        ["codex-first", 0],
+        ["codex-second", 1],
+      ]),
+      new Map([
+        ["codex-first", "turn-first"],
+        ["codex-second", "turn-second"],
+      ]),
+    );
+
+    const forkedThreadId = await forkCodexConversation({
+      client: codex,
+      threadId: "source-thread",
+      truncateFromUserMessageId: "codex-second",
+      userMessageTurns,
+    });
+
+    expect(forkedThreadId).toBe("forked-thread");
+    expect(codex.recordedForks).toEqual([
+      {
+        threadId: "source-thread",
+        beforeTurnId: "turn-second",
+        cwd: null,
+        model: null,
+        serviceTier: null,
+        excludeTurns: false,
+        persistExtendedHistory: true,
+      },
+    ]);
+    expect(codex.recordedRollbacks).toEqual([]);
+  });
+
+  test("refuses to fork when the truncation boundary is not in the thread", async () => {
+    const codex = new FakeCodex();
+    const userMessageTurns = new CodexMessageTurns(new Map([["codex-first", 0]]));
+
+    await expect(
+      forkCodexConversation({
+        client: codex,
+        threadId: "source-thread",
+        truncateFromUserMessageId: "missing-message",
+        userMessageTurns,
+      }),
+    ).rejects.toThrow("Codex could not find user message missing-message");
+    expect(codex.recordedForks).toEqual([]);
   });
 });

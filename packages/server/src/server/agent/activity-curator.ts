@@ -221,14 +221,17 @@ interface ForkCursorBoundary {
   cursor: { epoch: string; seq: number };
 }
 
-function selectForkContextRows(input: {
+export function selectForkContextRows(input: {
   rows: readonly AgentTimelineRow[];
   cursorBoundary?: ForkCursorBoundary | null;
   boundaryMessageId?: string | null;
 }): {
   items: AgentTimelineItem[];
+  rows: readonly AgentTimelineRow[];
   boundaryCursor: { epoch: string; seq: number } | null;
   boundaryMessageId: string | null;
+  /** Timeline seq of the last selected row, or null when nothing was pinned. */
+  boundarySeq: number | null;
 } {
   const projectedRows = projectTimelineRows({ rows: input.rows, mode: "projected" });
   const boundaryCursor = input.cursorBoundary?.cursor ?? null;
@@ -236,8 +239,10 @@ function selectForkContextRows(input: {
   if (!boundaryCursor && !boundaryMessageId) {
     return {
       items: projectedRows.map((entry) => entry.item),
+      rows: input.rows,
       boundaryCursor: null,
       boundaryMessageId: null,
+      boundarySeq: null,
     };
   }
 
@@ -266,11 +271,14 @@ function selectForkContextRows(input: {
     );
   }
   const projected = projectedRows.filter((row) => row.seqEnd <= boundarySeq);
+  const selectedRows = input.rows.filter((row) => row.seq <= boundarySeq);
 
   return {
     items: projected.map((entry) => entry.item),
+    rows: selectedRows,
     boundaryCursor,
     boundaryMessageId,
+    boundarySeq,
   };
 }
 

@@ -345,6 +345,8 @@ export const fr: TranslationResources = {
       forkUnavailable: "Mettez l'hôte à jour pour utiliser ceci.",
       forkMissingWorkspace: "Cet agent n'est pas dans un espace de travail.",
       forkFailed: "Impossible de dupliquer le chat",
+      forkSession: "Dupliquer la session (conserve le contexte)",
+      forkSessionFailed: "Impossible de dupliquer la session",
       openFile: "Ouvrir le fichier",
       copied: "Copié",
     },

@@ -339,6 +339,8 @@ export const ar: TranslationResources = {
       forkUnavailable: "حدّث المضيف لاستخدام هذا.",
       forkMissingWorkspace: "هذا الوكيل ليس في مساحة عمل.",
       forkFailed: "فشل تفريع المحادثة",
+      forkSession: "تفريع الجلسة (يحافظ على السياق)",
+      forkSessionFailed: "فشل تفريع الجلسة",
       openFile: "افتح الملف",
       copied: "منقول",
     },

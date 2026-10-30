@@ -340,6 +340,8 @@ export const ko: TranslationResources = {
       forkUnavailable: "이를 사용하려면 호스트를 업데이트하세요.",
       forkMissingWorkspace: "이 에이전트는 워크스페이스에 속해 있지 않습니다.",
       forkFailed: "채팅을 분기하지 못했습니다.",
+      forkSession: "세션 분기(컨텍스트 유지)",
+      forkSessionFailed: "세션을 분기하지 못했습니다",
       openFile: "파일 열기",
       copied: "복사됨",
     },

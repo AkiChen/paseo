@@ -42,6 +42,14 @@ export type AssistantTurnForkHandler = (input: {
  */
 export type InFlightTurnForkHandler = (target: AssistantForkTarget) => Promise<void> | void;
 
+/**
+ * Native session fork. Always takes a boundary: it branches the provider session
+ * at a completed turn, so it has no mid-run counterpart.
+ */
+export type AssistantSessionForkHandler = (
+  boundary: AssistantTurnForkBoundary,
+) => Promise<void> | void;
+
 export const TurnFooter = memo(function TurnFooter({
   isRunning,
   inFlightTurnStartedAt,
@@ -50,6 +58,7 @@ export const TurnFooter = memo(function TurnFooter({
   supportsTimelineCursor,
   onForkAssistantTurn,
   onForkInFlightTurn,
+  onForkSession,
 }: {
   isRunning: boolean;
   inFlightTurnStartedAt: Date | null;
@@ -58,6 +67,7 @@ export const TurnFooter = memo(function TurnFooter({
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
   onForkInFlightTurn?: InFlightTurnForkHandler;
+  onForkSession?: AssistantSessionForkHandler;
 }) {
   if (isRunning) {
     return (
@@ -80,6 +90,7 @@ export const TurnFooter = memo(function TurnFooter({
       startIndex={host.startIndex}
       supportsTimelineCursor={supportsTimelineCursor}
       onForkAssistantTurn={onForkAssistantTurn}
+      onForkSession={onForkSession}
     />
   );
 });
@@ -91,6 +102,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   startIndex,
   supportsTimelineCursor,
   onForkAssistantTurn,
+  onForkSession,
 }: {
   strategy: TurnContentStrategy;
   items: StreamItem[];
@@ -98,6 +110,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   startIndex: number;
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
+  onForkSession?: AssistantSessionForkHandler;
 }) {
   return (
     <TurnFooterRow>
@@ -108,6 +121,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
         startIndex={startIndex}
         supportsTimelineCursor={supportsTimelineCursor}
         onForkAssistantTurn={onForkAssistantTurn}
+        onForkSession={onForkSession}
       />
     </TurnFooterRow>
   );
@@ -164,6 +178,7 @@ function CompletedTurnFooter({
   startIndex,
   supportsTimelineCursor,
   onForkAssistantTurn,
+  onForkSession,
 }: {
   strategy: TurnContentStrategy;
   items: StreamItem[];
@@ -171,6 +186,7 @@ function CompletedTurnFooter({
   startIndex: number;
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
+  onForkSession?: AssistantSessionForkHandler;
 }) {
   const getContent = useCallback(
     () =>
@@ -195,6 +211,12 @@ function CompletedTurnFooter({
     },
     [boundary, onForkAssistantTurn],
   );
+  const handleForkSession = useCallback(() => {
+    if (!boundary) {
+      return;
+    }
+    return onForkSession?.(boundary);
+  }, [boundary, onForkSession]);
   return (
     <View style={stylesheet.turnFooterSlot}>
       <AssistantTurnFooter
@@ -202,6 +224,7 @@ function CompletedTurnFooter({
         completedAt={timing?.completedAt}
         durationMs={timing?.durationMs}
         onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
+        onForkSession={boundary && onForkSession ? handleForkSession : undefined}
       />
     </View>
   );

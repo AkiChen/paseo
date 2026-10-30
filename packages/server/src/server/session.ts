@@ -121,7 +121,11 @@ import {
 } from "./agent/timeline-append.js";
 import { assertPluginTimelineDataSize } from "./agent/agent-timeline-content.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
-import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import {
+  buildAgentForkContextAttachment,
+  selectForkContextRows,
+} from "./agent/activity-curator.js";
+import type { AgentTimelineRow } from "./agent/agent-timeline-store-types.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -2672,6 +2676,8 @@ export class Session {
       }
       case "agent.fork_context.request":
         return this.handleAgentForkContextRequest(msg);
+      case "agent.fork_session.request":
+        return this.handleAgentForkSessionRequest(msg);
       default:
         return undefined;
     }
@@ -8059,6 +8065,200 @@ export class Session {
         },
       });
     }
+  }
+
+  /**
+   * Branch the agent's provider session into a new agent.
+   *
+   * Unlike `agent.fork_context`, nothing is copied into a draft: the provider
+   * forks its own session, the daemon registers a new agent on the forked
+   * handle, and the new agent starts with the source's prefix already in
+   * context. The client opens it directly.
+   */
+  private async handleAgentForkSessionRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.fork_session.request" }>,
+  ): Promise<void> {
+    try {
+      const snapshot = await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+      const forked = await this.forkAgentThroughProviderSession(snapshot, msg);
+      this.emit({
+        type: "agent.fork_session.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          forkedAgentId: forked.agentId,
+          sessionId: forked.sessionId,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, agentId: msg.agentId },
+        "Failed to handle agent.fork_session.request",
+      );
+      this.emit({
+        type: "agent.fork_session.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          forkedAgentId: null,
+          sessionId: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async forkAgentThroughProviderSession(
+    snapshot: ManagedAgent,
+    msg: Extract<SessionInboundMessage, { type: "agent.fork_session.request" }>,
+  ): Promise<{ agentId: string; sessionId: string }> {
+    const session = snapshot.session;
+    if (!session) {
+      throw new Error(`${snapshot.provider} agent is closed; reopen it before forking its session`);
+    }
+    if (snapshot.capabilities.supportsSessionFork !== true || !session.forkSession) {
+      throw new Error(`${snapshot.provider} does not support provider session fork`);
+    }
+
+    const inherited = this.selectForkInheritedRows(snapshot, msg);
+    const handle = await session.forkSession({
+      truncateFromUserMessageId: inherited.truncateFromUserMessageId,
+    });
+    const forked = await this.agentManager.resumeAgentFromPersistence(
+      handle,
+      await this.readForkTitle(snapshot.id),
+      undefined,
+      {
+        labels: snapshot.labels,
+        workspaceId: snapshot.workspaceId,
+      },
+    );
+    await this.agentManager.hydrateTimelineFromProvider(forked.id);
+    // A provider that replays its transcript already filled the timeline and is
+    // the authority on it. One that does not leaves the new agent's window
+    // empty while its session still carries the source's prefix, so show the
+    // rows that prefix came from.
+    try {
+      const forkedRows = this.agentManager.fetchTimeline(forked.id, {
+        direction: "tail",
+        limit: 0,
+      }).rows;
+      if (forkedRows.length === 0 && inherited.rows.length > 0) {
+        await this.agentManager.seedTimelineFromRows(forked.id, inherited.rows);
+        this.sessionLogger.info(
+          {
+            agentId: snapshot.id,
+            forkedAgentId: forked.id,
+            inheritedRows: inherited.rows.length,
+          },
+          "Forked agent inherited the source timeline",
+        );
+      }
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, forkedAgentId: forked.id },
+        "Forked agent could not inherit the source timeline",
+      );
+    }
+    await this.agentUpdates.forwardLiveAgent(forked);
+    this.sessionLogger.info(
+      { agentId: snapshot.id, forkedAgentId: forked.id, provider: forked.provider },
+      "Forked agent through its provider session",
+    );
+    return { agentId: forked.id, sessionId: handle.sessionId };
+  }
+
+  /**
+   * The title override a fork inherits from its source, or nothing when the
+   * source has no title to give.
+   */
+  private async readForkTitle(agentId: string): Promise<Partial<AgentSessionConfig> | undefined> {
+    try {
+      const title = (await this.agentStorage.get(agentId))?.title?.trim();
+      return title ? { title } : undefined;
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, agentId },
+        "Could not read the source agent title for a fork",
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * The source rows a provider fork carries, plus the first user message the
+   * fork must drop when it pinned a boundary.
+   *
+   * The provider cuts at turn boundaries it owns, so the truncation hint is the
+   * user message that opened the turn after the boundary. A turn still in flight
+   * is dropped from the rows as well: the provider does not carry it.
+   */
+  private selectForkInheritedRows(
+    snapshot: ManagedAgent,
+    msg: Extract<SessionInboundMessage, { type: "agent.fork_session.request" }>,
+  ): { rows: readonly AgentTimelineRow[]; truncateFromUserMessageId: string | null } {
+    let timeline: AgentTimelineFetchResult;
+    try {
+      timeline = this.agentManager.fetchTimeline(snapshot.id, { direction: "tail", limit: 0 });
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, agentId: snapshot.id },
+        "Forked agent has no source rows to inherit",
+      );
+      return { rows: [], truncateFromUserMessageId: null };
+    }
+    const withoutInFlightTurn = (rows: readonly AgentTimelineRow[]): readonly AgentTimelineRow[] =>
+      snapshot.activeForegroundTurnId === null
+        ? rows
+        : rows.filter((row) => row.turnId !== snapshot.activeForegroundTurnId);
+    try {
+      const selected = selectForkContextRows({
+        rows: timeline.rows,
+        cursorBoundary: msg.boundaryCursor
+          ? { timelineEpoch: timeline.epoch, cursor: msg.boundaryCursor }
+          : null,
+        boundaryMessageId: msg.boundaryMessageId ?? null,
+      });
+      return {
+        rows: withoutInFlightTurn(selected.rows),
+        truncateFromUserMessageId:
+          selected.boundarySeq === null
+            ? null
+            : this.firstUserMessageAfter(timeline.rows, selected.boundarySeq),
+      };
+    } catch (error) {
+      // The boundary the client named is gone — the agent was reloaded since that
+      // cursor was read, which a daemon restart does. The provider already forks
+      // its whole completed prefix, so inherit that rather than opening empty.
+      this.sessionLogger.warn(
+        { err: error, agentId: snapshot.id },
+        "Fork boundary is stale; inheriting the whole completed prefix",
+      );
+      return {
+        rows: withoutInFlightTurn(timeline.rows),
+        truncateFromUserMessageId: null,
+      };
+    }
+  }
+
+  private firstUserMessageAfter(
+    rows: AgentTimelineFetchResult["rows"],
+    boundarySeq: number,
+  ): string | null {
+    for (const row of rows) {
+      if (row.seqStart <= boundarySeq) {
+        continue;
+      }
+      if (row.item.type === "user_message" && row.item.messageId) {
+        return row.item.messageId;
+      }
+    }
+    return null;
   }
 
   private async prepareAgentMessage(agentId: string, text: string): Promise<void> {

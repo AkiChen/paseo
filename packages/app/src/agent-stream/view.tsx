@@ -81,6 +81,7 @@ import {
   CompletedTurnFooterRow,
   TurnFooter,
   TURN_FOOTER_BOTTOM_SPACING,
+  type AssistantSessionForkHandler,
   type AssistantTurnForkHandler,
   type InFlightTurnForkHandler,
   type TurnContentStrategy,
@@ -106,6 +107,7 @@ import {
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useForkAgent } from "@/hooks/use-fork-agent";
+import { useForkSession } from "@/hooks/use-fork-session";
 import { isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import { recordRenderProfileReasons } from "@/utils/render-profiler";
@@ -157,12 +159,31 @@ function renderPendingPermissionsNode(input: {
   );
 }
 
+/**
+ * The native fork handler for this pane, or nothing when the surface is
+ * read-only or the provider cannot branch its session.
+ */
+function resolveSessionForkHandler(input: {
+  readOnly: boolean;
+  capabilities: AgentCapabilityFlags | undefined;
+  handler: AssistantSessionForkHandler;
+}): AssistantSessionForkHandler | undefined {
+  if (input.readOnly) {
+    return undefined;
+  }
+  if (input.capabilities?.supportsSessionFork !== true) {
+    return undefined;
+  }
+  return input.handler;
+}
+
 function renderStreamItemWithTurnFooter(input: {
   content: ReactNode;
   layoutItem: StreamLayoutItem;
   strategy: TurnContentStrategy;
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
+  onForkSession?: AssistantSessionForkHandler;
 }): ReactNode {
   if (!input.content) {
     return null;
@@ -177,6 +198,7 @@ function renderStreamItemWithTurnFooter(input: {
       startIndex={footerHost.startIndex}
       supportsTimelineCursor={input.supportsTimelineCursor}
       onForkAssistantTurn={input.onForkAssistantTurn}
+      onForkSession={input.onForkSession}
     />
   ) : null;
   const content = (
@@ -391,6 +413,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
     const streamHead = providedStreamHead ?? sessionStreamHead;
     const forkAgent = useForkAgent({ serverId: resolvedServerId, toast, readOnly });
+    const forkSession = useForkSession({ serverId: resolvedServerId, toast, readOnly });
     const supportsAgentForkContextCursor = useSessionStore(
       (state) =>
         state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContextCursor === true,
@@ -533,6 +556,21 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         workspaceId: context.workspaceId,
         target,
       });
+    });
+
+    // The native fork branches the provider session at a completed turn and
+    // opens the new agent directly; there is no draft and no attachment.
+    const handleForkSession: AssistantSessionForkHandler = useStableEvent(async (boundary) => {
+      await forkSession({
+        agentId,
+        workspaceId: context.workspaceId,
+        boundary,
+      });
+    });
+    const onForkSession = resolveSessionForkHandler({
+      readOnly,
+      capabilities: context.capabilities,
+      handler: handleForkSession,
     });
 
     // Freeze stream presentation while this tab slot is hidden to prevent offscreen
@@ -1004,10 +1042,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           strategy: streamRenderStrategy,
           supportsTimelineCursor: supportsAgentForkContextCursor,
           onForkAssistantTurn: readOnly ? undefined : handleForkAssistantTurn,
+          onForkSession,
         });
       },
       [
         handleForkAssistantTurn,
+        onForkSession,
         readOnly,
         renderStreamItemContent,
         streamRenderStrategy,
@@ -1039,11 +1079,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             supportsTimelineCursor={supportsAgentForkContextCursor}
             onForkAssistantTurn={readOnly ? undefined : handleForkAssistantTurn}
             onForkInFlightTurn={readOnly ? undefined : handleForkInFlightTurn}
+            onForkSession={onForkSession}
           />
         ) : null,
       [
         handleForkAssistantTurn,
         handleForkInFlightTurn,
+        onForkSession,
         readOnly,
         isTurnActive,
         baseRenderModel.turnTiming.runningStartedAt,

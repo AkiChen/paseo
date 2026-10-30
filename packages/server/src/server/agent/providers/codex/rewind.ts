@@ -20,9 +20,9 @@ export interface CodexUserMessageTurnIndex {
   count(): number;
 }
 
-type CodexThreadHistoryMode = "legacy" | "paginated";
+export type CodexThreadHistoryMode = "legacy" | "paginated";
 
-async function readCodexThreadHistoryMode(
+export async function readCodexThreadHistoryMode(
   client: CodexRewindClient,
   threadId: string,
 ): Promise<CodexThreadHistoryMode> {
@@ -60,6 +60,28 @@ async function rollbackCodexThread(
   return parseCodexThreadRollbackResponse(await client.request("thread/rollback", params));
 }
 
+/**
+ * Codex does not carry the parent thread's config into a fork; without it the
+ * forked thread falls back to the default model provider.
+ */
+function buildForkParams(input: {
+  threadId: string;
+  cwd?: string | null;
+  model?: string | null;
+  serviceTier?: string | null;
+  config?: Record<string, unknown> | null;
+}): CodexThreadForkParams {
+  return {
+    threadId: input.threadId,
+    cwd: input.cwd ?? null,
+    model: input.model ?? null,
+    serviceTier: input.serviceTier ?? null,
+    ...(input.config ? { config: input.config } : {}),
+    excludeTurns: false,
+    persistExtendedHistory: true,
+  };
+}
+
 export async function revertCodexConversation(input: {
   client: CodexRewindClient;
   threadId: string | null;
@@ -86,17 +108,13 @@ export async function revertCodexConversation(input: {
     throw new Error(`Codex user message ${input.messageId} is outside the current thread`);
   }
 
-  // Codex does not carry the parent thread's config into a fork; without it the
-  // forked thread falls back to the default model provider.
-  const forkParams: CodexThreadForkParams = {
+  const forkParams = buildForkParams({
     threadId: input.threadId,
-    cwd: input.cwd ?? null,
-    model: input.model ?? null,
-    serviceTier: input.serviceTier ?? null,
-    ...(input.config ? { config: input.config } : {}),
-    excludeTurns: false,
-    persistExtendedHistory: true,
-  };
+    cwd: input.cwd,
+    model: input.model,
+    serviceTier: input.serviceTier,
+    config: input.config,
+  });
 
   const historyMode = await readCodexThreadHistoryMode(input.client, input.threadId);
   if (historyMode === "paginated") {
@@ -123,4 +141,71 @@ export async function revertCodexConversation(input: {
     numTurns,
   });
   await input.setThreadId(rolledBack.thread.id);
+}
+
+/**
+ * Branch a Codex thread without touching the source.
+ *
+ * `truncateFromUserMessageId` names the first user message the branch must not
+ * inherit, so the caller keeps everything before it (the turn the user forked
+ * from). Paginated threads fork before that turn; legacy threads fork the whole
+ * thread and roll the extra turns off the copy.
+ */
+export async function forkCodexConversation(input: {
+  client: CodexRewindClient;
+  threadId: string;
+  truncateFromUserMessageId?: string | null;
+  cwd?: string | null;
+  model?: string | null;
+  serviceTier?: string | null;
+  config?: Record<string, unknown> | null;
+  userMessageTurns: CodexUserMessageTurnIndex;
+  /**
+   * History mode read from the session that owns the source thread. A cold
+   * client forked in a separate app-server can read it too, but the live one is
+   * cheaper and never contends with the writer lock.
+   */
+  historyMode?: CodexThreadHistoryMode;
+}): Promise<string> {
+  const truncateFromUserMessageId = input.truncateFromUserMessageId ?? null;
+  const truncateTurn = truncateFromUserMessageId
+    ? input.userMessageTurns.resolve(truncateFromUserMessageId)
+    : null;
+  if (truncateFromUserMessageId && truncateTurn === null) {
+    throw new Error(
+      `Codex could not find user message ${truncateFromUserMessageId} in the current thread`,
+    );
+  }
+
+  const forkParams = buildForkParams(input);
+  const historyMode =
+    input.historyMode ?? (await readCodexThreadHistoryMode(input.client, input.threadId));
+
+  if (historyMode === "paginated") {
+    if (!truncateTurn) {
+      return (await forkCodexThread(input.client, forkParams)).thread.id;
+    }
+    if (!truncateTurn.turnId) {
+      throw new Error(
+        `Codex could not find the turn containing user message ${truncateFromUserMessageId}`,
+      );
+    }
+    const forked = await forkCodexThread(input.client, {
+      ...forkParams,
+      beforeTurnId: truncateTurn.turnId,
+    });
+    return forked.thread.id;
+  }
+
+  const forked = await forkCodexThread(input.client, forkParams);
+  const numTurns = truncateTurn ? input.userMessageTurns.count() - truncateTurn.index : 0;
+  if (numTurns <= 0) {
+    return forked.thread.id;
+  }
+  // Rollback shapes the copy only: the source thread keeps every turn.
+  const rolledBack = await rollbackCodexThread(input.client, {
+    threadId: forked.thread.id,
+    numTurns,
+  });
+  return rolledBack.thread.id;
 }

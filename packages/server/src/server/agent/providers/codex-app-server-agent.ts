@@ -5,6 +5,7 @@ import {
   type AgentClient,
   type AgentCreateSessionOptions,
   type AgentFeature,
+  type AgentForkSessionOptions,
   type AgentLaunchContext,
   type AgentResumeSessionOptions,
   type AgentMode,
@@ -85,7 +86,12 @@ import {
   type CodexThreadRollbackResponse,
   type CodexAppServerTraceContext,
 } from "./codex/app-server-transport.js";
-import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import {
+  type CodexUserMessageTurnIndex,
+  forkCodexConversation,
+  readCodexThreadHistoryMode,
+  revertCodexConversation,
+} from "./codex/rewind.js";
 import {
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
@@ -221,6 +227,7 @@ const CODEX_APP_SERVER_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: false,
   supportsRewindBoth: false,
+  supportsSessionFork: true,
 };
 
 const CODEX_MODES: AgentMode[] = [
@@ -4848,6 +4855,99 @@ export class CodexAppServerAgentSession implements AgentSession {
         this.reconcileAsyncQuestionsAfterRewind();
       },
     });
+  }
+
+  /**
+   * Fill the user-message turn index from the thread's own history.
+   *
+   * Read-only on purpose: it leaves `persistedHistory` and `historyPending`
+   * untouched so a later history replay is not duplicated.
+   */
+  private async syncUserMessageTurnsFromHistory(client: CodexAppServerClientLike): Promise<void> {
+    const threadId = this.currentThreadId;
+    if (!threadId) return;
+    const history = await loadCodexThreadHistoryTimeline({
+      threadId,
+      cwd: this.config.cwd ?? null,
+      requestThread: (threadIdToRead) => readCodexThread(client, threadIdToRead),
+    });
+    this.resetCodexUserMessageTurns();
+    for (const entry of history.timeline) {
+      if (entry.item.type === "user_message") {
+        this.rememberCodexUserMessageTurn(entry.item.messageId, entry.providerTurnId);
+      }
+    }
+  }
+
+  /**
+   * Branch this thread into a new one and hand back its handle. The source
+   * thread keeps running: `forkSession` only reads it, and a fork is a plain
+   * copy until `truncateFromUserMessageId` rolls the tail off the copy.
+   */
+  async forkSession(options?: AgentForkSessionOptions): Promise<AgentPersistenceHandle> {
+    await this.connect();
+    const client = this.client;
+    if (!client) {
+      throw new Error("Codex client is not initialized");
+    }
+    if (this.currentThreadId) {
+      await this.ensureThreadLoaded();
+    } else {
+      await this.ensureThread();
+    }
+    const sourceThreadId = this.currentThreadId;
+    if (!sourceThreadId) {
+      throw new Error("Codex thread is not ready to fork");
+    }
+    // A resumed agent has no live events to learn its turns from until history
+    // replays, and truncation needs that index.
+    if (options?.truncateFromUserMessageId && this.userMessageTurnIds.length === 0) {
+      await this.syncUserMessageTurnsFromHistory(client);
+    }
+    // Read the mode from the live client: the source thread's writer lock is
+    // ours, so this read never contends.
+    const historyMode = await readCodexThreadHistoryMode(client, sourceThreadId);
+
+    // Fork from a transient app-server. `thread/fork` loads the copy into the
+    // process that ran it, and that process is this agent's — the copy would
+    // stay writer-locked here, and the new agent's own app-server could never
+    // resume it ("already has an active writer"). Disposing this client drops
+    // the lock before the daemon resumes the child.
+    const forkChild = await this.spawnAppServer();
+    const forker =
+      this.deps._createCodexClient?.(forkChild, this.logger, () => ({})) ??
+      new CodexAppServerClient(forkChild, this.logger);
+    let forkedThreadId: string;
+    try {
+      await forker.request("initialize", buildCodexAppServerInitializeParams());
+      forker.notify("initialized", {});
+      forkedThreadId = await forkCodexConversation({
+        client: forker,
+        threadId: sourceThreadId,
+        truncateFromUserMessageId: options?.truncateFromUserMessageId ?? null,
+        cwd: this.config.cwd ?? null,
+        model: this.config.model ?? null,
+        serviceTier: this.serviceTier,
+        config: this.buildCodexInnerConfig(),
+        userMessageTurns: this.codexUserMessageTurns(),
+        historyMode,
+      });
+    } finally {
+      await forker.dispose();
+    }
+
+    const source = this.describePersistence();
+    if (!source) {
+      throw new Error("Codex thread has no persistence handle to fork from");
+    }
+    return {
+      ...source,
+      sessionId: forkedThreadId,
+      nativeHandle: forkedThreadId,
+      // The fork starts from a copy; pending async questions belong to the
+      // source's turn and must not reopen in the new agent.
+      metadata: { ...source.metadata, threadId: forkedThreadId, asyncQuestions: undefined },
+    };
   }
 
   async interrupt(): Promise<void> {

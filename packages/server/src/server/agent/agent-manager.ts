@@ -3164,6 +3164,38 @@ export class AgentManager {
     await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
   }
 
+  /**
+   * Show the rows a provider-side fork inherited.
+   *
+   * A provider fork hands the new session the source's prefix but replays
+   * nothing for it, so the new agent's window would open empty while the model
+   * can still see that context. The rows are the caller's existing projection of
+   * the source, renumbered into this agent's own sequence.
+   */
+  async seedTimelineFromRows(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void> {
+    if (rows.length === 0) {
+      return;
+    }
+    const agent = this.requireSessionAgent(agentId);
+    const seeded = rows.map((row, index) => ({ ...row, seq: index + 1 }));
+    this.agentStreamCoalescer.flushAndDiscard(agentId);
+    await this.deleteCommittedTimeline(agentId);
+    this.timelineStore.delete(agentId);
+    this.timelineStore.initialize(agentId, {
+      rows: seeded,
+      nextSeq: seeded.length + 1,
+      timestamp: new Date().toISOString(),
+    });
+    await this.durableTimelineStore?.bulkInsert(agentId, seeded);
+    this.touchUpdatedAt(agent);
+    this.emitState(agent);
+    this.dispatch({
+      type: "timeline_replacement",
+      agentId,
+      epoch: this.timelineStore.getEpoch(agentId),
+    });
+  }
+
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
     const submittedRow = this.timelineStore
