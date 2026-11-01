@@ -1,5 +1,6 @@
 import { ChatGptIcon } from "@/components/icons/chatgpt-icon";
 import { DeepSeekIcon } from "@/components/icons/deepseek-icon";
+import { MoonshotIcon } from "@/components/icons/moonshot-icon";
 import { resolveProviderIconName } from "@/components/provider-icon-name";
 import { getProviderIcon, type ProviderIconComponent } from "@/components/provider-icons";
 
@@ -10,6 +11,7 @@ const DEEPSEEK_ICON_ID = "deepseek";
 const LOCAL_FAMILY_ICONS: Record<string, ProviderIconComponent> = {
   [CHATGPT_ICON_ID]: ChatGptIcon,
   [DEEPSEEK_ICON_ID]: DeepSeekIcon,
+  kimi: MoonshotIcon,
 };
 
 interface ModelFamily {

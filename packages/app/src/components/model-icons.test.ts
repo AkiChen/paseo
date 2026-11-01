@@ -5,6 +5,7 @@ import { ClaudeIcon } from "./icons/claude-icon";
 import { CodexIcon } from "./icons/codex-icon";
 import { DeepSeekIcon } from "./icons/deepseek-icon";
 import { MiniMaxIcon } from "./icons/minimax-icon";
+import { MoonshotIcon } from "./icons/moonshot-icon";
 import { getModelIcon, resolveModelIconId } from "./model-icons";
 import { getProviderIcon } from "./provider-icons";
 
@@ -51,10 +52,11 @@ describe("getModelIcon", () => {
     expect(iconFor("claude-sonnet-4-5")).toBe(ClaudeIcon);
     expect(iconFor("MiniMax-M2")).toBe(MiniMaxIcon);
     expect(iconFor("deepseek-chat")).toBe(DeepSeekIcon);
+    expect(iconFor("morphic/kimi-k3")).toBe(MoonshotIcon);
+    expect(iconFor("moonshot-v1-128k")).toBe(MoonshotIcon);
   });
 
   it("uses the vendored brand SVG for catalog-only families", () => {
-    expect(iconFor("morphic/kimi-k3").displayName).toBe("SvgProviderIcon(kimi)");
     expect(iconFor("gemini-3-pro").displayName).toBe("SvgProviderIcon(gemini)");
   });
 

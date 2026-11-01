@@ -6,6 +6,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   View,
   Pressable,
+  Platform,
   Text,
   StyleSheet as RNStyleSheet,
   type PressableStateCallbackType,
@@ -1140,7 +1141,11 @@ function ComposerCancelButton({
   const icon = isCancellingAgent ? (
     <LoadingSpinner size="small" color="white" />
   ) : (
-    <Square size={buttonIconSize} color="white" fill="white" />
+    <Square
+      size={Platform.OS === "android" ? ICON_SIZE.md : buttonIconSize}
+      color="white"
+      fill="white"
+    />
   );
   const shortcutNode = agentInterruptKeys ? <Shortcut chord={agentInterruptKeys} /> : null;
   return (
