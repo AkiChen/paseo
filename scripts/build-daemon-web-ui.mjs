@@ -12,6 +12,9 @@ const APP_DIR = path.join(REPO_ROOT, "packages", "app");
 const SOURCE_DIST = path.join(APP_DIR, "dist");
 const TARGET_DIST = path.join(REPO_ROOT, "packages", "server", "dist", "server", "web-ui");
 const COMPRESS_EXTENSIONS = new Set([".html", ".js", ".css", ".json", ".svg", ".map"]);
+// npm is a .cmd shim on Windows, and spawn refuses to run one without a shell
+// (it also cannot find it: CreateProcess only appends .exe).
+const RUN_THROUGH_SHELL = process.platform === "win32";
 
 function fmtMiB(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
@@ -39,6 +42,7 @@ async function exportBrowserWebApp() {
   console.log("Exporting browser web app...");
   await run("npm", ["run", "build:web", "--workspace=@getpaseo/app"], {
     cwd: REPO_ROOT,
+    shell: RUN_THROUGH_SHELL,
   });
 }
 
