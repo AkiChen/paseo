@@ -210,6 +210,9 @@ describe("DshQuestionBridge.prepareLaunch", () => {
     // All-prompts frames the whole conversation and fails instead of truncating, so
     // the shipped 4096 (sized for a single message) would never generate a title.
     expect(patch).toContain("maxInputBytes: 262144");
+    // The cap covers reasoning as well as the title: routes whose adapter does not
+    // disable thinking for this purpose spend hundreds of tokens before the title.
+    expect(patch).toContain("maxOutputTokens: 4096");
   });
 
   test("names a fresh channel per launch so two processes never share one", async () => {

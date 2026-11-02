@@ -673,6 +673,12 @@ fails rather than truncating an oversized frame, which is why the overlay carrie
 a 256 KiB input limit where the shipped first-prompt entry carries 4 KiB. A
 conversation longer than that keeps the title it had.
 
+The output cap is sized for reasoning, not for the title. It is completion-wide,
+and only DeepSeek's adapter turns thinking off for a title call, so a route served
+by another adapter can spend hundreds of reasoning tokens before it emits a
+character. A cap sized for the visible title ends that call with `max-tokens` and
+the agent keeps its old title.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.

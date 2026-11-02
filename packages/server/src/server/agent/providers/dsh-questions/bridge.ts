@@ -229,6 +229,13 @@ const PATCH_CONTENT = `# Paseo's question bridge, loaded into \`dsh --profile ac
  * a provider that sends a single message, while all-prompts frames the whole human
  * conversation and fails rather than truncating it. A session longer than this
  * keeps the title it had.
+ *
+ * `maxOutputTokens` has to cover reasoning, not just the title. The cap is
+ * completion-wide, and only DeepSeek's adapter turns thinking off for the
+ * `session-title` purpose; a route served by another adapter (Kimi K3.1, for one)
+ * spends hundreds of reasoning tokens before it emits a character, so a cap sized
+ * for the visible title ends the call with `max-tokens` and the title never
+ * changes. It is an upper bound, not a target — unused budget costs nothing.
  */
 const TITLE_PROVIDER_PACKAGE = "@deepseek-ai/dsh-session-title-all-prompts-llm";
 const TITLE_PROVIDER_SWAP = `
@@ -243,7 +250,7 @@ const TITLE_PROVIDER_SWAP = `
         targetWords: 5
         targetCjkCharacters: 10
         maxInputBytes: 262144
-        maxOutputTokens: 64
+        maxOutputTokens: 4096
         timeoutMs: 60000
 `;
 
