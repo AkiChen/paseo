@@ -111,7 +111,7 @@ test("resuming a stored agent keeps its unread flag and its last-activity time",
     // The agent finished days ago, and was marked unread later without being opened, which
     // moves `updatedAt` on its own. Clients already hold that newer time, and
     // `acceptAgentDirectoryUpdate` drops anything older, so the resumed agent must not come
-    // back carrying only `lastActivityAt`.
+    // back carrying only `lastActivityAt`. The conversation clock stays where the work ended.
     await storage.upsert({
       ...stored,
       updatedAt: markedUnread,
@@ -131,9 +131,10 @@ test("resuming a stored agent keeps its unread flag and its last-activity time",
     expect(resumed?.requiresAttention).toBe(true);
     expect(resumed?.attentionReason).toBe("finished");
     expect(resumed?.updatedAt).toBe(markedUnread);
-    expect(resumed?.lastActivityAt).toBe(markedUnread);
+    expect(resumed?.lastActivityAt).toBe(lastActive);
     expect(manager.getAgent(agentId)?.attention.requiresAttention).toBe(true);
     expect(manager.getAgent(agentId)?.updatedAt.toISOString()).toBe(markedUnread);
+    expect(manager.getAgent(agentId)?.lastActivityAt.toISOString()).toBe(lastActive);
   } finally {
     await manager.closeAgent(agentId).catch(() => undefined);
     await manager.flush().catch(() => undefined);

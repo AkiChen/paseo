@@ -3,6 +3,8 @@ import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import {
   buildConfigOverrides,
   buildSessionConfig,
+  extractTimestamps,
+  resolveStoredAgentActivityAt,
   toAgentPersistenceHandle,
 } from "./persistence-hooks.js";
 
@@ -192,5 +194,25 @@ describe("persistence hooks", () => {
     });
 
     expect(handle).toBeNull();
+  });
+
+  test("extractTimestamps keeps the conversation clock separate from the record clock", () => {
+    const record = createRecord({
+      updatedAt: "2026-11-05T07:47:00.000Z",
+      lastActivityAt: "2026-11-03T02:00:00.000Z",
+    });
+
+    const timestamps = extractTimestamps(record);
+    expect(timestamps.updatedAt.toISOString()).toBe("2026-11-05T07:47:00.000Z");
+    expect(timestamps.lastActivityAt.toISOString()).toBe("2026-11-03T02:00:00.000Z");
+  });
+
+  test("records written before the conversation clock fall back to the record clock", () => {
+    const record = createRecord({
+      updatedAt: "2026-11-05T07:47:00.000Z",
+      lastActivityAt: undefined,
+    });
+
+    expect(resolveStoredAgentActivityAt(record)).toBe("2026-11-05T07:47:00.000Z");
   });
 });

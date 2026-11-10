@@ -90,7 +90,7 @@ import {
   type ProviderSubagentStoreEvent,
 } from "./provider-subagents/store.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
-import { extractAttention } from "../persistence-hooks.js";
+import { extractAttention, resolveStoredAgentActivityAt } from "../persistence-hooks.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -117,6 +117,21 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .flatMap((block) => (block.type === "text" && !("mimeType" in block) ? [block.text] : []))
     .join("\n")
     .trim();
+}
+
+/**
+ * A resumed agent carries the clocks it was stored with; only a brand-new one starts at `now`.
+ */
+function resolveRegistrationTimestamps(
+  options: { createdAt?: Date; updatedAt?: Date; lastActivityAt?: Date },
+  now: Date,
+): { createdAt: Date; updatedAt: Date; lastActivityAt: Date } {
+  const updatedAt = options.updatedAt ?? now;
+  return {
+    createdAt: options.createdAt ?? now,
+    updatedAt,
+    lastActivityAt: options.lastActivityAt ?? updatedAt,
+  };
 }
 
 export class AgentManagerShuttingDownError extends Error {
@@ -412,6 +427,8 @@ interface ManagedAgentBase {
   runtimeInfo?: AgentRuntimeInfo;
   createdAt: Date;
   updatedAt: Date;
+  /** Conversation activity only; see `touchActivity`. Never moves for metadata edits. */
+  lastActivityAt: Date;
   availableModes: AgentMode[];
   features?: AgentFeature[];
   currentModeId: string | null;
@@ -925,6 +942,18 @@ export class AgentManager {
     return next;
   }
 
+  /**
+   * The conversation clock, separate from `updatedAt`. Only prompts and timeline rows move it:
+   * renaming, labelling, clearing attention, and a provider retitling itself leave it alone, so a
+   * client's "recently active" order does not reshuffle when a restart touches those records.
+   */
+  private touchActivity(agent: ManagedAgent): void {
+    const nowMs = Date.now();
+    if (nowMs > agent.lastActivityAt.getTime()) {
+      agent.lastActivityAt = new Date(nowMs);
+    }
+  }
+
   private nextStoredUpdatedAt(record: StoredAgentRecord): string {
     const previousMs = Date.parse(record.updatedAt);
     const nowMs = Date.now();
@@ -1305,6 +1334,7 @@ export class AgentManager {
     options?: {
       createdAt?: Date;
       updatedAt?: Date;
+      lastActivityAt?: Date;
       lastUserMessageAt?: Date | null;
       labels?: Record<string, string>;
       workspaceId?: string;
@@ -1337,6 +1367,7 @@ export class AgentManager {
     options?: {
       createdAt?: Date;
       updatedAt?: Date;
+      lastActivityAt?: Date;
       lastUserMessageAt?: Date | null;
       labels?: Record<string, string>;
       workspaceId?: string;
@@ -1888,6 +1919,7 @@ export class AgentManager {
         lifecycle: "closed",
         createdAt: new Date(record.createdAt),
         updatedAt,
+        lastActivityAt: new Date(resolveStoredAgentActivityAt(record)),
         availableModes: [],
         features: record.features,
         currentModeId: record.lastModeId ?? null,
@@ -3511,6 +3543,7 @@ export class AgentManager {
     options?: {
       createdAt?: Date;
       updatedAt?: Date;
+      lastActivityAt?: Date;
       lastUserMessageAt?: Date | null;
       labels?: Record<string, string>;
       timeline?: AgentTimelineItem[];
@@ -3691,6 +3724,7 @@ export class AgentManager {
       | {
           createdAt?: Date;
           updatedAt?: Date;
+          lastActivityAt?: Date;
           lastUserMessageAt?: Date | null;
           labels?: Record<string, string>;
           historyPrimed?: boolean;
@@ -3704,6 +3738,10 @@ export class AgentManager {
       | undefined;
   }): ActiveManagedAgent {
     const { resolvedAgentId, session, config, now, options } = params;
+    const { createdAt, updatedAt, lastActivityAt } = resolveRegistrationTimestamps(
+      options ?? {},
+      now,
+    );
     return {
       id: resolvedAgentId,
       provider: config.provider,
@@ -3715,8 +3753,9 @@ export class AgentManager {
       config,
       runtimeInfo: undefined,
       lifecycle: "initializing",
-      createdAt: options?.createdAt ?? now,
-      updatedAt: options?.updatedAt ?? now,
+      createdAt,
+      updatedAt,
+      lastActivityAt,
       availableModes: [],
       currentModeId: null,
       pendingPermissions: new Map<string, AgentPermissionRequest>(),
@@ -4721,6 +4760,12 @@ export class AgentManager {
     options?: { providerMessageId?: string },
   ): AgentStreamEvent {
     const row = this.recordTimeline(agentId, item, { ...options, turnId });
+    // Live rows only: history replay and startup backfill go through `recordTimeline`
+    // directly, so resuming a chat cannot pass itself off as conversation activity.
+    const activityAgent = this.agents.get(agentId);
+    if (activityAgent) {
+      this.touchActivity(activityAgent);
+    }
     const event: AgentStreamEvent = {
       type: "timeline",
       item,

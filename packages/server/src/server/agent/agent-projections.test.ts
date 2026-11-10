@@ -71,6 +71,7 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     lifecycle,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     availableModes: [
       { id: "plan", label: "Planning" },
       { id: "build", label: "Building", description: "Detailed" },
@@ -187,6 +188,21 @@ describe("toStoredAgentRecord", () => {
     expect(agent.config.providerOptions!.allowedTools).toEqual(["Read"]);
     record.persistence!.sessionId = "mutated";
     expect(agent.persistence!.sessionId).toBe("persist-2");
+  });
+
+  it("keeps the conversation clock out of the record clock", () => {
+    const agent = createManagedAgent({
+      updatedAt: new Date("2026-11-05T07:47:00.000Z"),
+      lastActivityAt: new Date("2026-11-03T02:00:00.000Z"),
+    });
+
+    const record = toStoredAgentRecord(agent);
+    expect(record.updatedAt).toBe("2026-11-05T07:47:00.000Z");
+    expect(record.lastActivityAt).toBe("2026-11-03T02:00:00.000Z");
+
+    const payload = toAgentPayload(agent);
+    expect(payload.updatedAt).toBe("2026-11-05T07:47:00.000Z");
+    expect(payload.lastActivityAt).toBe("2026-11-03T02:00:00.000Z");
   });
 
   it("falls back to config mode when current mode is null and handles null title", () => {

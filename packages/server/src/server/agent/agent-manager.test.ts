@@ -4859,6 +4859,75 @@ test("setTitle bumps updatedAt and persists title in the same snapshot write", a
   expect(live!.updatedAt.getTime()).toBeGreaterThan(Date.parse(before!.updatedAt));
 });
 
+test("a rename moves updatedAt but not the conversation clock", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-rename-activity-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: {
+      codex: new TestAgentClient(),
+    },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000129",
+  });
+
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+
+  const before = await storage.get(snapshot.id);
+  expect(before?.lastActivityAt).toBeTruthy();
+
+  await manager.setTitle(snapshot.id, "Renamed after the fact");
+
+  const after = await storage.get(snapshot.id);
+  expect(Date.parse(after!.updatedAt)).toBeGreaterThan(Date.parse(before!.updatedAt));
+  // The sidebar's "recently active" order reads this clock, so a metadata edit must leave it.
+  expect(after!.lastActivityAt).toBe(before!.lastActivityAt);
+  expect(manager.getAgent(snapshot.id)?.lastActivityAt.getTime()).toBe(
+    Date.parse(before!.lastActivityAt!),
+  );
+});
+
+test("a streamed message moves the conversation clock", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-activity-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new TestAgentClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000130",
+  });
+  const providerSessions: TestAgentSession[] = [];
+  vi.spyOn(client, "createSession").mockImplementation(async (config) => {
+    const session = new TestAgentSession(config);
+    providerSessions.push(session);
+    return session;
+  });
+
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const before = await storage.get(snapshot.id);
+
+  providerSessions[0]!.pushEvent({ type: "turn_started", provider: "codex", turnId: "turn-1" });
+  providerSessions[0]!.pushEvent({
+    type: "timeline",
+    provider: "codex",
+    turnId: "turn-1",
+    item: { type: "assistant_message", text: "done" },
+  });
+  providerSessions[0]!.pushEvent({ type: "turn_completed", provider: "codex", turnId: "turn-1" });
+
+  await vi.waitFor(async () => {
+    const record = await storage.get(snapshot.id);
+    expect(Date.parse(record!.lastActivityAt!)).toBeGreaterThan(
+      Date.parse(before!.lastActivityAt!),
+    );
+  });
+});
+
 test("a provider-reported title becomes the stored title without a rename", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-title-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

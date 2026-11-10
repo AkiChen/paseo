@@ -823,6 +823,14 @@ export const AgentSnapshotPayloadSchema = z.object({
   effectiveThinkingOptionId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /**
+   * When the conversation last moved: a prompt was submitted, or a message/tool call landed.
+   * Metadata edits — rename, labels, attention clearing, a provider retitling itself — move
+   * `updatedAt` but must not move this, so "recently active" ordering survives a restart.
+   *
+   * COMPAT(lastActivityAt): added in v0.2.7, remove after 2027-05-01 once daemon floor >= v0.2.7.
+   */
+  lastActivityAt: z.string().optional(),
   lastUserMessageAt: z.string().nullable(),
   status: AgentStatusSchema,
   activeTurn: AgentActiveTurnPayloadSchema.nullable().optional(),

@@ -15,6 +15,7 @@ function createSnapshot(
     model: input.model ?? null,
     createdAt: input.createdAt ?? "2026-04-20T00:00:00.000Z",
     updatedAt: input.updatedAt ?? "2026-04-20T00:01:00.000Z",
+    lastActivityAt: input.lastActivityAt,
     lastUserMessageAt: input.lastUserMessageAt ?? null,
     status: input.status ?? "idle",
     activeTurn: input.activeTurn,
@@ -113,5 +114,27 @@ describe("normalizeAgentSnapshot", () => {
     expect(missing.parentAgentId).toBeNull();
     expect(empty.parentAgentId).toBeNull();
     expect(nonString.parentAgentId).toBeNull();
+  });
+
+  it("prefers the conversation clock over the record clock", () => {
+    const agent = normalizeAgentSnapshot(
+      createSnapshot({
+        updatedAt: "2026-11-05T07:47:00.000Z",
+        lastActivityAt: "2026-11-03T02:00:00.000Z",
+      }),
+      "server-1",
+    );
+
+    expect(agent.lastActivityAt).toEqual(new Date("2026-11-03T02:00:00.000Z"));
+    expect(agent.updatedAt).toEqual(new Date("2026-11-05T07:47:00.000Z"));
+  });
+
+  it("falls back to updatedAt when an older daemon omits the conversation clock", () => {
+    const agent = normalizeAgentSnapshot(
+      createSnapshot({ updatedAt: "2026-11-05T07:47:00.000Z" }),
+      "server-1",
+    );
+
+    expect(agent.lastActivityAt).toEqual(agent.updatedAt);
   });
 });

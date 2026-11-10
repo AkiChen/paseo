@@ -131,9 +131,22 @@ export function resolveStoredAgentUpdatedAt(record: StoredAgentRecord): string {
   return timestamps[0].raw;
 }
 
+/**
+ * The conversation clock for a stored agent. Records written before the field existed only carry
+ * the record timestamp, so fall back to it rather than reporting "no activity".
+ */
+export function resolveStoredAgentActivityAt(record: StoredAgentRecord): string {
+  const raw = record.lastActivityAt;
+  if (typeof raw === "string" && raw.length > 0 && !Number.isNaN(Date.parse(raw))) {
+    return raw;
+  }
+  return resolveStoredAgentUpdatedAt(record);
+}
+
 export function extractTimestamps(record: StoredAgentRecord): {
   createdAt: Date;
   updatedAt: Date;
+  lastActivityAt: Date;
   lastUserMessageAt: Date | null;
   labels?: Record<string, string>;
   workspaceId?: string;
@@ -142,6 +155,7 @@ export function extractTimestamps(record: StoredAgentRecord): {
   return {
     createdAt: new Date(record.createdAt),
     updatedAt: new Date(resolveStoredAgentUpdatedAt(record)),
+    lastActivityAt: new Date(resolveStoredAgentActivityAt(record)),
     lastUserMessageAt: record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null,
     labels: record.labels,
     workspaceId: record.workspaceId,

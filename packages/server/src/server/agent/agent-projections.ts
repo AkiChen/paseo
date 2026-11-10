@@ -21,6 +21,7 @@ import type { ManagedAgent } from "./agent-manager.js";
 import type { JsonValue } from "../json-utils.js";
 import {
   isStoredAgentProviderAvailable,
+  resolveStoredAgentActivityAt,
   resolveStoredAgentUpdatedAt,
   toAgentPersistenceHandle,
 } from "../persistence-hooks.js";
@@ -80,7 +81,7 @@ export function toStoredAgentRecord(
     workspaceId: agent.workspaceId,
     createdAt,
     updatedAt: agent.updatedAt.toISOString(),
-    lastActivityAt: agent.updatedAt.toISOString(),
+    lastActivityAt: agent.lastActivityAt.toISOString(),
     lastUserMessageAt: agent.lastUserMessageAt ? agent.lastUserMessageAt.toISOString() : null,
     title: options?.title ?? null,
     labels: agent.labels,
@@ -123,6 +124,7 @@ export function toAgentPayload(
     ...(runtimeInfo ? { runtimeInfo } : {}),
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
+    lastActivityAt: agent.lastActivityAt.toISOString(),
     lastUserMessageAt: agent.lastUserMessageAt ? agent.lastUserMessageAt.toISOString() : null,
     status: agent.lifecycle,
     activeTurn: agent.activeTurnId
@@ -213,6 +215,7 @@ export function buildStoredAgentPayload(
 
   const createdAt = new Date(record.createdAt);
   const updatedAt = new Date(resolveStoredAgentUpdatedAt(record));
+  const lastActivityAt = new Date(resolveStoredAgentActivityAt(record));
   const lastUserMessageAt = record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null;
 
   const runtimeInfo = buildStoredRuntimeInfo(record);
@@ -235,6 +238,7 @@ export function buildStoredAgentPayload(
     ...(runtimeInfo ? { runtimeInfo } : {}),
     createdAt: createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
+    lastActivityAt: lastActivityAt.toISOString(),
     lastUserMessageAt: lastUserMessageAt ? lastUserMessageAt.toISOString() : null,
     status: record.lastStatus,
     capabilities: defaultCapabilities,

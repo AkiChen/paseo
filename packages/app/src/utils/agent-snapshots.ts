@@ -68,6 +68,7 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
     thinkingOptionId: agent.thinkingOptionId ?? null,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
+    lastActivityAt: agent.lastActivityAt.toISOString(),
     lastUserMessageAt: agent.lastUserMessageAt?.toISOString() ?? null,
     status: agent.status,
     ...projectActiveTurn(agent),
@@ -91,6 +92,9 @@ export function projectAgentSnapshot(agent: Agent): AgentSnapshotPayload {
 export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId: string) {
   const createdAt = new Date(snapshot.createdAt);
   const updatedAt = new Date(snapshot.updatedAt);
+  // COMPAT(lastActivityAt): added in v0.2.7, remove after 2027-05-01 once daemon floor >= v0.2.7.
+  // Older daemons have only the record clock, which also moves for renames and attention clears.
+  const lastActivityAt = snapshot.lastActivityAt ? new Date(snapshot.lastActivityAt) : updatedAt;
   const lastUserMessageAt = snapshot.lastUserMessageAt
     ? new Date(snapshot.lastUserMessageAt)
     : null;
@@ -113,7 +117,7 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     createdAt,
     updatedAt,
     lastUserMessageAt,
-    lastActivityAt: updatedAt,
+    lastActivityAt,
     capabilities: snapshot.capabilities,
     currentModeId: snapshot.currentModeId,
     availableModes: snapshot.availableModes ?? [],
