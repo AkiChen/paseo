@@ -28,6 +28,7 @@ import { MarkdownParagraphView, MarkdownTextSpan } from "@/components/markdown-t
 import { MarkdownTableCellText } from "@/components/markdown-text-selection";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
+import { normalizeDisplayMath } from "@/utils/display-math";
 import { createMarkdownParser } from "@/utils/markdown-parser";
 import { createCompactMarkdownStyles, createMarkdownStyles } from "@/styles/markdown-styles";
 import type { Theme } from "@/styles/theme";
@@ -93,9 +94,15 @@ export function MarkdownRenderer({
   enableHtmlish = true,
 }: MarkdownRendererProps) {
   const markdownRules = useMemo(() => rules ?? createSharedMarkdownRules(), [rules]);
+  // Agents spell display math as LaTeX; markdown has no rule for it, so route it
+  // into the fenced-block renderer before anything else reads the text.
+  const normalizedText = useMemo(() => normalizeDisplayMath(text), [text]);
   const parts = useMemo(
-    () => (enableHtmlish ? splitHtmlishMarkdown(text) : [{ kind: "markdown" as const, text }]),
-    [enableHtmlish, text],
+    () =>
+      enableHtmlish
+        ? splitHtmlishMarkdown(normalizedText)
+        : [{ kind: "markdown" as const, text: normalizedText }],
+    [enableHtmlish, normalizedText],
   );
   const rendererProps = useMemo(
     () => ({

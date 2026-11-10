@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import { type DiagramFenceLanguage, diagramFenceLanguage } from "./diagram-language";
 import { getMarkdownFenceLanguage } from "./language";
+import { MathFence } from "./math";
 import { MermaidFence } from "./mermaid";
 import type { MarkdownFenceRendererProps } from "./types";
 
@@ -23,6 +24,16 @@ export function MarkdownFenceBlock({
   textStyle,
 }: MarkdownFenceBlockProps) {
   const language = getMarkdownFenceLanguage(info);
+  if (language === "math") {
+    return (
+      <MathFence
+        code={code}
+        phase={phase}
+        inheritedStyles={inheritedStyles}
+        textStyle={textStyle}
+      />
+    );
+  }
   const diagramLanguage = diagramFenceLanguage(language);
   const DiagramFence = diagramLanguage === null ? undefined : diagramFences[diagramLanguage];
   if (DiagramFence) {
