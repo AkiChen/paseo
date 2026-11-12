@@ -1873,6 +1873,12 @@ export const ja: TranslationResources = {
   menu: {
     backdrop: "メニューの背景",
   },
+  agentStatusSummary: {
+    running: "{{count}} 件実行中",
+    waiting: "{{count}} 件対応待ち",
+    failed: "{{count}} 件失敗",
+    attention: "{{count}} 件確認待ち",
+  },
   subagents: {
     title: "サブエージェント",
     pillLabelOne: "サブエージェント 1 件",

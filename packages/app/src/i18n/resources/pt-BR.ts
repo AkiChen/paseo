@@ -1887,6 +1887,12 @@ export const ptBR: TranslationResources = {
   menu: {
     backdrop: "Fundo do menu",
   },
+  agentStatusSummary: {
+    running: "{{count}} em execução",
+    waiting: "{{count}} aguardando",
+    failed: "{{count}} com falha",
+    attention: "{{count}} para revisar",
+  },
   subagents: {
     title: "Subagentes",
     pillLabelOne: "1 subagente",

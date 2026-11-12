@@ -1902,6 +1902,12 @@ export const es: TranslationResources = {
   menu: {
     backdrop: "Fondo del menú",
   },
+  agentStatusSummary: {
+    running: "{{count}} en ejecución",
+    waiting: "{{count}} en espera",
+    failed: "{{count}} fallidos",
+    attention: "{{count}} por revisar",
+  },
   subagents: {
     title: "Subagentes",
     pillLabelOne: "1 subagente",

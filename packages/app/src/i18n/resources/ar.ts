@@ -1851,6 +1851,12 @@ export const ar: TranslationResources = {
   menu: {
     backdrop: "خلفية القائمة",
   },
+  agentStatusSummary: {
+    running: "{{count}} قيد التشغيل",
+    waiting: "{{count}} في الانتظار",
+    failed: "{{count}} فشل",
+    attention: "{{count}} بانتظار المراجعة",
+  },
   subagents: {
     title: "الوكلاء الفرعيون",
     pillLabelOne: "وكيل فرعي واحد",

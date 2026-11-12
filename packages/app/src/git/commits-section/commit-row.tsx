@@ -1,6 +1,7 @@
 import { memo, useCallback } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
 import type { ClassifiedCheckoutCommit } from "@/git/use-commits-query";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
@@ -34,26 +35,39 @@ export const CommitRow = memo(function CommitRow({
   }, [commit.sha, onCommitPress]);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      testID={`commit-row-${commit.shortSha}`}
-      onPress={handlePress}
-      style={commitRowPressableStyle}
-    >
-      <CommitGraphNode commit={commit} isFirst={isFirst} isLast={isLast} />
-      <View style={styles.commitDetails}>
-        <Text dataSet={CODE_SURFACE_DATASET} style={styles.shortSha} numberOfLines={1}>
-          {commit.shortSha}
-        </Text>
-        <Text style={styles.subject} numberOfLines={1}>
-          {commit.subject}
-        </Text>
-      </View>
-      <Text style={styles.timestamp}>{formatTimeAgo(new Date(commit.authorDate), now)}</Text>
-      <View style={styles.caret}>
-        <ThemedChevron size={14} uniProps={chevronColorMapping} />
-      </View>
-    </Pressable>
+    <Tooltip delayDuration={400} enabledOnDesktop enabledOnMobile={false}>
+      <TooltipTrigger asChild>
+        <Pressable
+          accessibilityRole="button"
+          testID={`commit-row-${commit.shortSha}`}
+          onPress={handlePress}
+          style={commitRowPressableStyle}
+        >
+          <CommitGraphNode commit={commit} isFirst={isFirst} isLast={isLast} />
+          <View style={styles.commitDetails}>
+            <Text dataSet={CODE_SURFACE_DATASET} style={styles.shortSha} numberOfLines={1}>
+              {commit.shortSha}
+            </Text>
+            <Text style={styles.subject} numberOfLines={1}>
+              {commit.subject}
+            </Text>
+          </View>
+          <Text style={styles.timestamp}>{formatTimeAgo(new Date(commit.authorDate), now)}</Text>
+          <View style={styles.caret}>
+            <ThemedChevron size={14} uniProps={chevronColorMapping} />
+          </View>
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        offset={6}
+        maxWidth={420}
+        testID={`commit-row-tooltip-${commit.shortSha}`}
+      >
+        <Text style={styles.tooltipText}>{commit.subject}</Text>
+      </TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -100,5 +114,9 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+  },
+  tooltipText: {
+    color: theme.colors.popoverForeground,
+    fontSize: theme.fontSize.base,
   },
 }));

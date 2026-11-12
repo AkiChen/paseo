@@ -2459,7 +2459,7 @@ function ComposerContentImpl({
         <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
         {/* Input area */}
         <View style={inputAreaContainerStyle}>
-          <View style={styles.inputAreaContent}>
+          <View style={styles.inputAreaContent} testID="agent-chat-column">
             {queueList}
             {sendErrorNode}
 

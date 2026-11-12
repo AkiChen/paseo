@@ -20,7 +20,14 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -34,6 +41,11 @@ import { HostPicker } from "@/components/hosts/host-picker";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
 import { SidebarListModeHeader } from "@/components/sidebar/sidebar-list-mode-header";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
+import {
+  SIDEBAR_PEEK_ENTER_MS,
+  SIDEBAR_PEEK_EXIT_MS,
+  type SidebarPeekControls,
+} from "@/components/sidebar/use-sidebar-peek";
 import { SidebarRecentAgentsList } from "@/components/sidebar/sidebar-recent-agents-list";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -112,14 +124,22 @@ interface MobileSidebarProps extends SidebarSharedProps {
 interface DesktopSidebarProps extends SidebarSharedProps {
   insetsTop: number;
   active: boolean;
+  peek: SidebarPeekControls;
 }
 
-export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boolean }) {
+export const LeftSidebar = memo(function LeftSidebar({
+  active,
+  peek,
+}: {
+  active: boolean;
+  peek: SidebarPeekControls;
+}) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const isCompactLayout = useIsCompactFormFactor();
   const showMobileAgent = usePanelStore((state) => state.showMobileAgent);
+  const sideActive = active || peek.visible;
 
   const {
     projects,
@@ -255,11 +275,12 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
 
   return (
     <>
-      <RetainedPanelActivity active={active}>
+      <RetainedPanelActivity active={sideActive}>
         <DesktopSidebar
           {...sharedProps}
           insetsTop={insets.top}
           active={active}
+          peek={peek}
           handleOpenProject={handleOpenProjectDesktop}
           handleImportSession={openImportSession}
           handleSettings={handleSettingsDesktop}
@@ -661,6 +682,7 @@ function DesktopSidebar({
   handleOpenHostSettings,
   insetsTop,
   active,
+  peek,
 }: DesktopSidebarProps) {
   const ownsTopLeft = useOwnsWindowChromeCorner("top-left");
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
@@ -668,6 +690,14 @@ function DesktopSidebar({
   const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
   const setSidebarWidth = usePanelStore((state) => state.setSidebarWidth);
   const { width: viewportWidth } = useWindowDimensions();
+  const isPeeking = peek.open;
+  const interactive = active || isPeeking;
+  const isPeekVisible = !active && peek.visible;
+  // Keep the list fully rendered through the exit animation; only the pointer
+  // surface goes inert as soon as the peek starts closing.
+  const contentActive = active || peek.visible;
+  const prefersReducedMotion = useReducedMotion();
+  const peekProgress = useSharedValue(0);
   const visibleSidebarWidth = resolveDesktopSidebarWidth({
     requestedWidth: sidebarWidth,
     viewportWidth,
@@ -682,6 +712,26 @@ function DesktopSidebar({
   useEffect(() => {
     resizeWidth.value = visibleSidebarWidth;
   }, [resizeWidth, visibleSidebarWidth]);
+
+  // The peek slides in from the window edge and fades in together; the split
+  // timing keeps it from looking like a hard layout snap. The exit is a touch
+  // faster than the entrance so dismissing feels immediate.
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      peekProgress.value = peek.open ? 1 : 0;
+      return;
+    }
+    peekProgress.value = withTiming(peek.open ? 1 : 0, {
+      duration: peek.open ? SIDEBAR_PEEK_ENTER_MS : SIDEBAR_PEEK_EXIT_MS,
+      easing: peek.open ? Easing.bezier(0.22, 1, 0.36, 1) : Easing.bezier(0.4, 0, 1, 1),
+    });
+  }, [peek.open, peekProgress, prefersReducedMotion]);
+
+  useEffect(() => {
+    if (!peek.visible) {
+      peekProgress.value = 0;
+    }
+  }, [peek.visible, peekProgress]);
 
   const resizeGesture = useMemo(
     () =>
@@ -723,21 +773,42 @@ function DesktopSidebar({
     ],
   );
 
-  const resizeAnimatedStyle = useAnimatedStyle(() => ({
-    width: resizeWidth.value,
-  }));
+  // One animated style owns width, opacity, and transform so switching between
+  // docked and peeked can never leave a stale transform behind. `opacity`
+  // reaches full a little before the translate does, so the panel reads as
+  // solid by the time it settles instead of ghosting over the chat.
+  const sidebarAnimatedStyle = useAnimatedStyle(() => {
+    const width = resizeWidth.value;
+    if (active) {
+      return { width, opacity: 1, transform: [{ translateX: 0 }] };
+    }
+    if (!peek.visible) {
+      return { width, opacity: 0, transform: [{ translateX: -width }] };
+    }
+    const progress = peekProgress.value;
+    return {
+      width,
+      opacity: Math.min(1, progress * 1.35),
+      transform: [{ translateX: -(1 - progress) * width }],
+    };
+  });
 
   const desktopSidebarStyle = useMemo(
     () => [
       staticStyles.desktopSidebar,
-      !active && staticStyles.desktopSidebarHidden,
-      resizeAnimatedStyle,
+      !active && !peek.visible && staticStyles.desktopSidebarHidden,
+      isPeekVisible && staticStyles.desktopSidebarPeek,
+      sidebarAnimatedStyle,
     ],
-    [active, resizeAnimatedStyle],
+    [active, isPeekVisible, peek.visible, sidebarAnimatedStyle],
   );
   const desktopSidebarBorderStyle = useMemo(
     () => [styles.desktopSidebarBorder, { flex: 1, paddingTop: insetsTop }],
     [insetsTop],
+  );
+  const desktopSidebarSurfaceStyle = useMemo(
+    () => [desktopSidebarBorderStyle, isPeekVisible && styles.desktopSidebarPeekSurface],
+    [desktopSidebarBorderStyle, isPeekVisible],
   );
   const sidebarHeaderGroupStyle = useMemo(
     () => [styles.sidebarHeaderGroup, ownsTopLeft && styles.sidebarHeaderGroupBelowChrome],
@@ -746,7 +817,7 @@ function DesktopSidebar({
 
   let sidebarBody: ReactNode;
   if (listMode === "agents") {
-    sidebarBody = <SidebarRecentAgentsList active={active} />;
+    sidebarBody = <SidebarRecentAgentsList active={contentActive} />;
   } else if (isInitialLoad && !hasActiveHostFilter) {
     sidebarBody = <SidebarAgentListSkeleton />;
   } else {
@@ -773,12 +844,15 @@ function DesktopSidebar({
 
   return (
     <Animated.View
-      accessibilityElementsHidden={!active}
-      importantForAccessibility={active ? "auto" : "no-hide-descendants"}
-      pointerEvents={active ? "auto" : "none"}
+      accessibilityElementsHidden={!interactive}
+      importantForAccessibility={interactive ? "auto" : "no-hide-descendants"}
+      pointerEvents={interactive ? "auto" : "none"}
+      onPointerEnter={isPeeking ? peek.onPanelEnter : undefined}
+      onPointerLeave={isPeeking ? peek.onPanelLeave : undefined}
+      testID={isPeekVisible ? "left-sidebar-peek" : undefined}
       style={desktopSidebarStyle}
     >
-      <View style={desktopSidebarBorderStyle}>
+      <View style={desktopSidebarSurfaceStyle}>
         <View style={styles.sidebarDragArea}>
           {ownsTopLeft || DEV_BUILD_LABEL ? (
             <View style={styles.desktopChromeRow}>
@@ -819,12 +893,14 @@ function DesktopSidebar({
           handleOpenHostSettings={handleOpenHostSettings}
         />
 
-        <SidebarResizeHandle
-          edge="right"
-          gesture={resizeGesture}
-          pressed={resizePressed}
-          testID="left-sidebar-resize-handle"
-        />
+        {isPeekVisible ? null : (
+          <SidebarResizeHandle
+            edge="right"
+            gesture={resizeGesture}
+            pressed={resizePressed}
+            testID="left-sidebar-resize-handle"
+          />
+        )}
       </View>
     </Animated.View>
   );
@@ -839,6 +915,16 @@ const staticStyles = RNStyleSheet.create({
   },
   desktopSidebarHidden: {
     display: "none",
+  },
+  // Hover-peek: the same sidebar instance leaves the dock and floats over the
+  // content without reserving layout width. Above pane chrome (including the
+  // agent panel's transient overlays) but below the window controls.
+  desktopSidebarPeek: {
+    position: "absolute" as const,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 100,
   },
 });
 
@@ -881,6 +967,9 @@ const styles = StyleSheet.create((theme) => ({
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceSidebar,
+  },
+  desktopSidebarPeekSurface: {
+    ...theme.shadow.lg,
   },
   sidebarDragArea: {
     position: "relative",

@@ -191,7 +191,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   rail: {
     position: "absolute",
-    left: theme.spacing[2],
+    right: theme.spacing[2],
     top: "10%",
     bottom: "10%",
     width: RAIL_WIDTH,
@@ -208,14 +208,14 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
-  // Pills share one left rail and grow rightward, so magnification reads as a bulge moving
+  // Pills share one right rail and grow leftward, so magnification reads as a bulge moving
   // with the pointer instead of every tick breathing about its own centre.
   target: {
     width: "100%",
     height: "100%",
-    alignItems: "flex-start",
+    alignItems: "flex-end",
     justifyContent: "center",
-    paddingLeft: theme.spacing[1],
+    paddingRight: theme.spacing[1],
     borderRadius: theme.borderRadius.base,
   },
   // At rest the pills use low-emphasis chrome so the column stays readable peripherally
@@ -235,7 +235,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   preview: {
     position: "absolute",
-    left: RAIL_WIDTH + PREVIEW_GAP,
+    right: RAIL_WIDTH + PREVIEW_GAP,
     top: "50%",
     marginTop: -PREVIEW_HEIGHT / 2,
     width: PREVIEW_WIDTH,

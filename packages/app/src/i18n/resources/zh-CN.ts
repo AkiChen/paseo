@@ -1830,6 +1830,12 @@ export const zhCN: TranslationResources = {
   menu: {
     backdrop: "菜单背景",
   },
+  agentStatusSummary: {
+    running: "{{count}} 个运行中",
+    waiting: "{{count}} 个等待交互",
+    failed: "{{count}} 个失败",
+    attention: "{{count}} 个待查看",
+  },
   subagents: {
     title: "Subagent",
     pillLabelOne: "1 个 subagent",

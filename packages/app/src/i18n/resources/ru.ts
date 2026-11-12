@@ -1886,6 +1886,12 @@ export const ru: TranslationResources = {
   menu: {
     backdrop: "Фон меню",
   },
+  agentStatusSummary: {
+    running: "{{count}} выполняется",
+    waiting: "{{count}} ожидает",
+    failed: "{{count}} с ошибкой",
+    attention: "{{count}} на проверку",
+  },
   subagents: {
     title: "Субагенты",
     pillLabelOne: "1 субагент",

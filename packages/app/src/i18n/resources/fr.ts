@@ -1903,6 +1903,12 @@ export const fr: TranslationResources = {
   menu: {
     backdrop: "Toile de fond du menu",
   },
+  agentStatusSummary: {
+    running: "{{count}} en cours",
+    waiting: "{{count}} en attente",
+    failed: "{{count}} en échec",
+    attention: "{{count}} à examiner",
+  },
   subagents: {
     title: "Sous-agents",
     pillLabelOne: "1 sous-agent",

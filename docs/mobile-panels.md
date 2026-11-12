@@ -87,7 +87,19 @@ definition, no longer eligible to begin.
   styles in sidebar components.
 - The desktop left sidebar is retained too. App chrome owns separate mounted and visible decisions:
   closing it or yielding its width marks it inactive and applies `display: none` without conditionally
-  removing the sidebar tree.
+  removing the sidebar tree. While it is inactive on desktop web, `useSidebarPeek` turns that same
+  tree into a hover-peek overlay: a 250ms dwell in the region between the window edge and the
+  leftmost pane's chat column (`agent-chat-column`, the composer column measured in the DOM) applies
+  `desktopSidebarPeek` (absolute over the content), and leaving the panel returns it to
+  `display: none` after a short grace period. The region starts below the title and workspace tab
+  rows, and its width is capped at the sidebar's own width, so it narrows when the dialog or pane
+  narrows and never grows past the column it replaces; a non-chat pane keeps an 8px edge, and
+  screens without workspace panes fall back to the sidebar width. It is tracked from window pointer
+  movement, not from an overlay, so the wide area never swallows clicks in the content beneath it.
+  The panel slides in from the edge and fades with it (240ms ease-out); the exit keeps it mounted for
+  its 150ms ease-in before unmounting, and reduced-motion snaps to the end state. The peek never
+  changes the pinned `desktop.agentListOpen` state, and it is disabled on compact layouts, native,
+  and focus mode.
 - Animated panel nodes use React Native static styles plus inline theme values. Do not attach
   Unistyles-generated styles to those nodes; Unistyles and Reanimated patching the same Fabric node
   has caused native crashes.

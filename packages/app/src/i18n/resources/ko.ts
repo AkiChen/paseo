@@ -1861,6 +1861,12 @@ export const ko: TranslationResources = {
   menu: {
     backdrop: "메뉴 배경",
   },
+  agentStatusSummary: {
+    running: "실행 중 {{count}}개",
+    waiting: "대기 중 {{count}}개",
+    failed: "실패 {{count}}개",
+    attention: "검토 대기 {{count}}개",
+  },
   subagents: {
     title: "하위 에이전트",
     pillLabelOne: "하위 에이전트 1개",

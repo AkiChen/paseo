@@ -38,6 +38,7 @@ import { LeftSidebar } from "@/components/left-sidebar";
 import { WindowSidebarMenuToggle } from "@/components/headers/menu-header";
 import { DesktopWindowControls } from "@/components/desktop/window-controls";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
+import { resolveSidebarPeekEnabled, useSidebarPeek } from "@/components/sidebar/use-sidebar-peek";
 import { WorkspacePinShortcutHandler } from "@/components/workspace-pin-shortcut-handler";
 import { WorkspaceRenameHost } from "@/components/workspace-rename-host";
 import { CompactExplorerSidebarHost } from "@/components/compact-explorer-sidebar-host";
@@ -56,6 +57,7 @@ import {
   resolveDesktopAppChromeLayout,
   resolveDesktopAppContentMinimum,
   resolveDesktopSidebarVisibility,
+  resolveDesktopSidebarWidth,
 } from "@/components/desktop-sidebar-layout";
 import { isNative, isWeb } from "@/constants/platform";
 import { HorizontalScrollProvider } from "@/contexts/horizontal-scroll-context";
@@ -638,10 +640,28 @@ function SidebarChrome({
   const isCompactLayout = useIsCompactFormFactor();
   const isMobileActive = useIsMobilePanelActive("agent-list");
   const isDesktopOpen = usePanelStore((state) => state.desktop.agentListOpen);
+  const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
+  const { width: viewportWidth } = useWindowDimensions();
   const active = visible && (isCompactLayout ? isMobileActive : isDesktopOpen);
+  // Hover-peek is a desktop-web affordance for a sidebar the user hid. It never
+  // changes the pinned state: the same sidebar instance becomes an overlay and
+  // returns to display:none when the pointer leaves it. Inside a workspace the
+  // hook measures the leftmost pane's chat column, so the hotspot ends at the
+  // dialog and narrows with it; the sidebar width is the no-pane fallback.
+  const peekEnabled = resolveSidebarPeekEnabled({
+    isWeb,
+    isCompactLayout,
+    mounted,
+    active,
+  });
+  const peekFallbackWidth = resolveDesktopSidebarWidth({
+    requestedWidth: sidebarWidth,
+    viewportWidth,
+  });
+  const peek = useSidebarPeek({ enabled: peekEnabled, triggerWidth: peekFallbackWidth });
   return (
-    <SidebarModelProvider active={active}>
-      {mounted ? <LeftSidebar active={active} /> : null}
+    <SidebarModelProvider active={active || peek.visible}>
+      {mounted ? <LeftSidebar active={active} peek={peek} /> : null}
       <WorkspaceShortcutTargetsSubscriber enabled={keyboardShortcutsEnabled} />
     </SidebarModelProvider>
   );

@@ -1877,6 +1877,12 @@ export const en = {
   menu: {
     backdrop: "Menu backdrop",
   },
+  agentStatusSummary: {
+    running: "{{count}} running",
+    waiting: "{{count}} waiting",
+    failed: "{{count}} failed",
+    attention: "{{count}} ready to review",
+  },
   subagents: {
     title: "Subagents",
     pillLabelOne: "1 subagent",
