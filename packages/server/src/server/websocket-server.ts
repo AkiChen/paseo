@@ -103,6 +103,17 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { WorkLedgerService } from "./work-ledger/index.js";
+
+/** Daemon-global read surfaces a session forwards to. */
+interface ReadServices {
+  workLedgerService: WorkLedgerService | null;
+}
+
+interface ReadServiceInputs {
+  workspaceLabelService: WorkspaceLabelService | null;
+  workLedgerService: WorkLedgerService | null;
+}
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -540,7 +551,18 @@ export class VoiceAssistantWebSocketServer {
   private readonly creationService: CreationService;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
-  private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly workspaceLabelService!: WorkspaceLabelService | null;
+  private readonly workLedgerServices!: ReadServices;
+  /**
+   * Read-only services. The constructor is at its complexity ceiling, so it fills
+   * this one slot and assigns the two fields from it, in that order: field
+   * initializers run before the constructor body, so they cannot read it in their
+   * own initializers.
+   */
+  private readonly readServiceInputs: ReadServiceInputs = {
+    workspaceLabelService: null,
+    workLedgerService: null,
+  };
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -660,7 +682,14 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
+    workLedgerService?: WorkLedgerService,
   ) {
+    // One assignment: read-only services, resolved by the field initializers above.
+    Object.assign(this.readServiceInputs, { workspaceLabelService, workLedgerService });
+    Object.assign(this, {
+      workspaceLabelService: this.readServiceInputs.workspaceLabelService,
+      workLedgerServices: { workLedgerService: this.readServiceInputs.workLedgerService },
+    });
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
     this.advertiseDaemonStatusRpc = wsConfig.daemonStatusRpc !== false;
@@ -688,7 +717,7 @@ export class VoiceAssistantWebSocketServer {
     );
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
-    this.workspaceLabelService = workspaceLabelService ?? null;
+
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -768,6 +797,7 @@ export class VoiceAssistantWebSocketServer {
   private assignOptionalServices(params: {
     speech: SpeechService | null | undefined;
     terminalManager: TerminalManager | null | undefined;
+
     dictation: { finalTimeoutMs?: number } | undefined;
     onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | undefined;
     serviceProxy: ServiceProxySubsystem | null | undefined;
@@ -1451,7 +1481,7 @@ export class VoiceAssistantWebSocketServer {
   }
 
   private createSocketSession(options: SocketSessionOptions): Session {
-    return new Session({
+    const session = new Session({
       browserToolsBroker: this.browserToolsBroker,
       clientId: options.clientId,
       appVersion: options.appVersion,
@@ -1542,6 +1572,8 @@ export class VoiceAssistantWebSocketServer {
       daemonRuntimeConfig: this.daemonRuntimeConfig,
       getWebSocketRuntimeMetrics: () => this.lastRuntimeMetricsSnapshot,
     });
+    session.setWorkLedgerService(this.workLedgerServices.workLedgerService);
+    return session;
   }
 
   private clearPendingConnection(ws: WebSocketLike): PendingConnection | null {
@@ -1795,6 +1827,9 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        // COMPAT(workLedger): added in v0.11.0; remove gate once the daemon floor
+        // serves work_ledger.* RPCs.
+        ...(this.workLedgerServices.workLedgerService ? { workLedger: true } : {}),
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.

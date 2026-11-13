@@ -212,6 +212,13 @@ const INBOUND_PERMISSION = {
   workspace_setup_status_request: "workspace.read",
   "workspace.setup.run.request": "workspace.write",
   write_project_config_request: "workspace.write",
+  // COMPAT(workLedger): added in v0.11.0; drop together with the server_info gate.
+  // Clients only read the ledger; agents write it through Paseo tools.
+  "work_ledger.list.request": "workspace.read",
+  "work_ledger.item.list.request": "workspace.read",
+  "work_ledger.item.get.request": "workspace.read",
+  // Not reachable from a client yet; recorded with the sibling RPCs it belongs to.
+  "work_ledger.item.set_status.request": "workspace.write",
 } as const satisfies Record<InboundOperation, PermissionRequirement>;
 
 const OUTBOUND_PERMISSION = {
@@ -438,6 +445,12 @@ const OUTBOUND_PERMISSION = {
   "workspace.setup.run.response": "workspace.write",
   workspace_update: ["workspace.read", "hub.execute"],
   write_project_config_response: "workspace.write",
+  // COMPAT(workLedger): added in v0.11.0; drop together with the server_info gate.
+  "work_ledger.list.response": "workspace.read",
+  "work_ledger.update": "workspace.read",
+  "work_ledger.item.list.response": "workspace.read",
+  "work_ledger.item.get.response": "workspace.read",
+  "work_ledger.item.set_status.response": "workspace.write",
 } as const satisfies Record<OutboundOperation, PermissionRequirement>;
 
 export function requiredPermissionForInbound(operation: InboundOperation): PermissionRequirement {

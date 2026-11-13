@@ -41,6 +41,7 @@ import { RetainedPanel } from "@/components/retained-panel";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { WorkspaceOpenInEditorButton } from "@/workspace/open-in-editor/button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
+import { WorkLedgerPopup } from "@/components/work-ledger-popup";
 import { ImportSessionSheet } from "@/components/import-session-sheet";
 import { useNavigateToImportedAgent } from "@/hooks/use-import-session";
 import { useToast } from "@/contexts/toast-context";
@@ -1023,6 +1024,7 @@ function WorkspaceHeaderTitleBar({
         </View>
       )}
       <View style={styles.compactHeaderMenuCluster}>
+        <WorkLedgerPopup serverId={normalizedServerId} />
         {isMobile ? (
           <WorkspaceHeaderMenuMobile
             normalizedServerId={normalizedServerId}

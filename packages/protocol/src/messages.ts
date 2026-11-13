@@ -74,6 +74,17 @@ import {
   LoopStopResponseSchema,
 } from "./loop/rpc-schemas.js";
 import {
+  WorkLedgerListRequestSchema,
+  WorkLedgerListResponseSchema,
+  WorkLedgerUpdateSchema,
+  WorkLedgerItemGetRequestSchema,
+  WorkLedgerItemGetResponseSchema,
+  WorkLedgerItemListRequestSchema,
+  WorkLedgerItemListResponseSchema,
+  WorkLedgerItemSetStatusRequestSchema,
+  WorkLedgerItemSetStatusResponseSchema,
+} from "./work-ledger/rpc-schemas.js";
+import {
   BROWSER_AUTOMATION_COMMAND_NAMES,
   BrowserAutomationExecuteRequestSchema,
   BrowserAutomationExecuteResponseSchema,
@@ -3287,6 +3298,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
+  WorkLedgerListRequestSchema,
+  WorkLedgerItemGetRequestSchema,
+  WorkLedgerItemListRequestSchema,
+  WorkLedgerItemSetStatusRequestSchema,
   CheckoutStatusRequestSchema,
   CheckoutDiffGetRequestSchema,
   SubscribeCheckoutDiffRequestSchema,
@@ -3727,6 +3742,9 @@ export const ServerInfoStatusPayloadSchema = z
         agentProfiles: z.boolean().optional(),
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
+        // COMPAT(workLedger): added in v0.11.0; remove gate once the daemon floor
+        // serves work_ledger.* RPCs.
+        workLedger: z.boolean().optional(),
       })
       .optional(),
   })
@@ -6817,6 +6835,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceUpdateMessageSchema,
   WorkspaceLabelListResponseSchema,
   WorkspaceLabelUpdateSchema,
+  WorkLedgerListResponseSchema,
+  WorkLedgerUpdateSchema,
+  WorkLedgerItemGetResponseSchema,
+  WorkLedgerItemListResponseSchema,
+  WorkLedgerItemSetStatusResponseSchema,
   WorkspaceLabelAssignmentSetResponseSchema,
   WorkspaceLabelUpdateResponseSchema,
   WorkspaceLabelDeleteResponseSchema,

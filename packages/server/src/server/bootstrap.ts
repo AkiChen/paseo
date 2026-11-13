@@ -120,6 +120,7 @@ export async function fanOutReconciledWorkspaceUpdates(input: {
 import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { createWorkspaceLabelService } from "./workspace-labels/index.js";
+import { createWorkLedgerService } from "./work-ledger/index.js";
 import { createGitHubService } from "../services/github-service.js";
 import { createPaseoWorktree as createRegisteredPaseoWorktree } from "./paseo-worktree-service.js";
 import { createWorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
@@ -899,6 +900,12 @@ export async function createPaseoDaemon(
     paseoHome: config.paseoHome,
     workspaceRegistry,
   });
+  const workLedgerService = createWorkLedgerService({
+    paseoHome: config.paseoHome,
+    logger,
+    projectRegistry,
+    workspaceRegistry,
+  });
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
@@ -1391,6 +1398,36 @@ export async function createPaseoDaemon(
   );
   logger.info({ elapsed: elapsed() }, "Preparing voice and MCP runtime");
 
+  // Ledger scope references come from agent tool input, so they are resolved
+  // against the live registries rather than parsed into an id the tool trusts.
+  const resolveWorkLedgerScopeReference = async (reference: string) => {
+    const trimmed = reference.trim();
+    if (!trimmed) return null;
+    const workspaceMatch = /^workspace:(.+)$/i.exec(trimmed);
+    const workspaceId = workspaceMatch?.[1] ?? trimmed;
+    const workspace = await workspaceRegistry.get(workspaceId);
+    if (workspace && !workspace.archivedAt)
+      return { kind: "workspace" as const, id: workspace.workspaceId };
+    const projectMatch = /^project:(.+)$/i.exec(trimmed);
+    const projectId = projectMatch?.[1] ?? (workspaceMatch ? null : trimmed);
+    if (projectId && (await projectRegistry.get(projectId))) {
+      return { kind: "project" as const, id: projectId };
+    }
+    return null;
+  };
+
+  const searchActiveAgentIds = async (query: string): Promise<string[]> => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    // Archived agents leave the live manager, so this only ever proposes agents a
+    // candidate link could still resolve.
+    const ids = agentManager
+      .listAgents()
+      .map((agent) => agent.id)
+      .filter((id) => id.toLowerCase().includes(needle));
+    return ids.slice(0, 50);
+  };
+
   const createAgentToolHostDependencies = (
     runtime: PaseoToolRuntimeContext,
   ): PaseoToolHostDependencies => ({
@@ -1444,6 +1481,9 @@ export async function createPaseoDaemon(
     createPaseoWorktree: createAgentCommandDependencies.createPaseoWorktree,
     browserToolsEnabled: browserToolsPolicy.isEnabled(),
     browserToolsBroker,
+    workLedgerService,
+    resolveWorkLedgerScope: (reference) => resolveWorkLedgerScopeReference(reference),
+    searchWorkLedgerAgentIds: (query) => searchActiveAgentIds(query),
     paseoToolPolicy:
       runtime.paseoToolPolicy ??
       (runtime.callerAgentId ? agentManager.getPaseoToolPolicy(runtime.callerAgentId) : undefined),
@@ -1750,6 +1790,7 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              workLedgerService,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();

@@ -43,6 +43,8 @@ function KnownHostRoute() {
       <Stack.Screen name="settings" />
       <Stack.Screen name="plugin/[pluginId]/[surfaceId]" />
       <Stack.Screen name="plugin/[pluginId]/[contributionKind]/[contributionId]" />
+      <Stack.Screen name="work-ledger/index" />
+      <Stack.Screen name="work-ledger/item/[itemId]" />
     </ThemedStack>
   );
 

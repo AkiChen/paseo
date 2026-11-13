@@ -89,6 +89,8 @@ import {
   createPaseoWorktreeCommand,
 } from "../../worktree/commands.js";
 import { registerBrowserTools } from "../../browser-tools/tools.js";
+import { registerWorkLedgerTools } from "../../work-ledger/tools.js";
+import type { WorkLedgerService } from "../../work-ledger/index.js";
 import type { BrowserToolsBroker } from "../../browser-tools/broker.js";
 import type {
   PaseoToolCatalog,
@@ -135,6 +137,13 @@ export interface PaseoToolHostDependencies {
   ) => Promise<string>;
   browserToolsEnabled?: boolean;
   browserToolsBroker?: BrowserToolsBroker | null;
+  /** When present, the agent gets the work ledger tools. */
+  workLedgerService?: WorkLedgerService | null;
+  resolveWorkLedgerScope?: (reference: string) => Promise<{
+    kind: "project" | "workspace";
+    id: string;
+  } | null>;
+  searchWorkLedgerAgentIds?: (query: string) => Promise<string[]>;
   paseoToolPolicy?: ProviderPaseoToolsPolicy;
   paseoHome?: string;
   worktreesRoot?: string;
@@ -573,6 +582,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     resolveSpeakHandler,
     resolveCallerContext,
     logger,
+    workLedgerService,
   } = options;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
@@ -1230,6 +1240,21 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       broker: options.browserToolsBroker,
       callerAgentId,
       resolveCallerAgent,
+    });
+  }
+
+  if (workLedgerService) {
+    registerWorkLedgerTools({
+      service: workLedgerService,
+      registerTool,
+      callerAgentId,
+      resolveCallerAgent,
+      ...(options.resolveWorkLedgerScope
+        ? { resolveScopeReference: options.resolveWorkLedgerScope }
+        : {}),
+      ...(options.searchWorkLedgerAgentIds
+        ? { searchAgentIds: options.searchWorkLedgerAgentIds }
+        : {}),
     });
   }
 

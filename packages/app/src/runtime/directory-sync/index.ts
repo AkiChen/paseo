@@ -26,6 +26,7 @@ import {
   type DirectoryTransaction,
 } from "./transaction";
 import { workspaceLabels } from "@/workspace-labels";
+import { workLedger } from "@/work-ledger";
 import type {
   CachedDirectory,
   CachedWorkspace,
@@ -190,11 +191,13 @@ export class DirectorySync {
     this.flushAbortedTransactions();
     this.releaseSubscriptions();
     workspaceLabels.disconnect(this.serverId);
+    workLedger.disconnect(this.serverId);
     this.connection = connection;
     this.abortPendingSessionWaits();
     if (!connection.client || connection.status !== "online") return true;
     // Reattach labels here because route-only demand can satisfy the epoch before full demand requests them.
     void this.connectWorkspaceLabels().catch(() => undefined);
+    this.connectWorkLedger();
     if (this.hasDemand()) void this.requestDemandRefresh().catch(() => undefined);
     return true;
   }
@@ -233,6 +236,7 @@ export class DirectorySync {
     this.fullDemandSources.clear();
     this.routeDemandIds.clear();
     workspaceLabels.disconnect(this.serverId);
+    workLedger.disconnect(this.serverId);
   }
 
   private releaseSubscriptions(): void {
@@ -592,6 +596,23 @@ export class DirectorySync {
       serverId: this.serverId,
       client,
       supportsWorkspaceLabels: serverInfo?.features?.workspaceLabels === true,
+    });
+  }
+
+  /**
+   * The ledger is small and the index, popup, and detail screens all read it, so it
+   * stays subscribed for the connection's life instead of per-surface demand. A host
+   * without the feature is published as unsupported and shows an update hint rather
+   * than an empty index.
+   */
+  connectWorkLedger(): void {
+    const connection = this.getOnlineConnection();
+    if (!connection) return;
+    const { client } = connection;
+    workLedger.connect({
+      serverId: this.serverId,
+      client,
+      supportsWorkLedger: client.getLastServerInfoMessage()?.features?.workLedger === true,
     });
   }
 

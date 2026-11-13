@@ -93,6 +93,7 @@ import {
   WorkspaceLabelStorageUncertainError,
   type WorkspaceLabelService,
 } from "./workspace-labels/index.js";
+import { WorkLedgerError, type WorkLedgerService } from "./work-ledger/index.js";
 
 import { AgentManager, AgentRunCancellationError } from "./agent/agent-manager.js";
 import { buildTimelinePromptIndex } from "./agent/timeline-prompt-index.js";
@@ -638,11 +639,6 @@ function describeRegistryTransition(record: ArchivedRecordSnapshot | null): Regi
  * It owns all state management, orchestration logic, and message processing.
  * Session has no knowledge of WebSockets - it only emits and receives messages.
  */
-function resolveWorkspaceLabelService(
-  service: WorkspaceLabelService | undefined,
-): WorkspaceLabelService | null {
-  return service ?? null;
-}
 
 function hasInitialCreationPrompt(
   request?: Pick<AgentCreateRequest, "initialPrompt" | "images" | "attachments">,
@@ -652,6 +648,19 @@ function hasInitialCreationPrompt(
     buildAgentPrompt(request.initialPrompt?.trim() ?? "", request.images, request.attachments)
       .length,
   );
+}
+
+function resolveWorkspaceLabelService(
+  service: WorkspaceLabelService | undefined,
+): WorkspaceLabelService | null {
+  return service ?? null;
+}
+
+function workLedgerErrorCode(error: unknown): string {
+  if (error instanceof WorkLedgerError || error instanceof SessionRequestError) {
+    return error.code;
+  }
+  return "work_ledger_failed";
 }
 
 function workspaceLabelErrorCode(error: unknown): string {
@@ -768,6 +777,11 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  // Attached by the WebSocket server right after construction, before any frame is
+  // handled; read through requireWorkLedger(). Declared without an initializer and
+  // with a plain comment rather than a doc block: this constructor is already at its
+  // complexity ceiling and both forms are counted against it.
+  private workLedgerService!: WorkLedgerService | null;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -825,7 +839,6 @@ export class Session {
       projectRegistry,
       workspaceRegistry,
       directorySync,
-      workspaceLabelService,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -858,6 +871,7 @@ export class Session {
       daemonVersion,
       daemonRuntimeConfig,
       getWebSocketRuntimeMetrics,
+      workspaceLabelService,
     } = options;
     this.browserToolsBroker = options.browserToolsBroker;
     this.clientId = clientId;
@@ -3063,6 +3077,9 @@ export class Session {
   }
 
   private async dispatchMiscMessage(msg: SessionInboundMessage): Promise<void> {
+    if (msg.type.startsWith("work_ledger.")) {
+      return this.dispatchWorkLedgerMessage(msg);
+    }
     switch (msg.type) {
       case "list_commands_request":
         await this.handleListCommandsRequest(msg);
@@ -6535,6 +6552,200 @@ export class Session {
       });
     } catch (error) {
       this.emitWorkspaceLabelError(request, error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Work ledger — read-only. Agents write through Paseo tools; a client can only
+  // ask for a snapshot, a catch-up delta, or one item's history.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Attaches the daemon's ledger. Kept off SessionOptions because that destructuring
+   * list already sits at the constructor's complexity ceiling, and a read-only
+   * service needs no construction-time wiring. Until attached, ledger requests answer
+   * `work_ledger_unavailable` rather than pretending the index is empty.
+   */
+  setWorkLedgerService(service: WorkLedgerService | null): void {
+    this.workLedgerService = service;
+  }
+
+  private requireWorkLedger(): WorkLedgerService {
+    const service = this.workLedgerService;
+    if (!service) {
+      throw new SessionRequestError("work_ledger_unavailable", "Work ledger unavailable");
+    }
+    return service;
+  }
+
+  private emitWorkLedgerError(request: { requestId: string; type: string }, error: unknown): void {
+    this.emit({
+      type: "rpc_error",
+      payload: {
+        requestId: request.requestId,
+        requestType: request.type,
+        code: workLedgerErrorCode(error),
+        error: error instanceof Error ? error.message : "Work ledger operation failed",
+      },
+    });
+  }
+
+  private async handleWorkLedgerList(
+    request: Extract<SessionInboundMessage, { type: "work_ledger.list.request" }>,
+  ): Promise<void> {
+    const service = this.requireWorkLedger();
+    const read = () => service.synchronize({ cursor: request.sync, scope: request.scope });
+    if (!request.subscribe) {
+      const snapshot = await read();
+      this.emit({
+        type: "work_ledger.list.response",
+        payload: this.toWorkLedgerListPayload(request.requestId, snapshot),
+      });
+      return;
+    }
+
+    let unsubscribe: (() => void) | undefined;
+    const owner = this.delivery.begin("work-ledger", request.subscribe.subscriptionId, async () => {
+      unsubscribe?.();
+    });
+    try {
+      // Subscribe before snapshotting, then replay anything that landed while the
+      // snapshot was read. Subscribers already at headSeq ignore the duplicate.
+      const pending = new Map<string, string>();
+      let ready = false;
+      unsubscribe = service.subscribe(({ itemId }: { itemId: string }) => {
+        if (owner.signal.aborted) return;
+        if (!ready) pending.set(itemId, itemId);
+      });
+      const snapshot = await read();
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "work_ledger.list.response",
+        payload: this.toWorkLedgerListPayload(request.requestId, snapshot, owner.responseId),
+      });
+      ready = true;
+      for (const itemId of pending.values()) {
+        if (owner.signal.aborted) break;
+        await this.emitWorkLedgerItemChange(owner, service, itemId);
+      }
+      pending.clear();
+    } catch (error) {
+      await owner.release();
+      this.emitWorkLedgerError(request, error);
+    }
+  }
+
+  private async emitWorkLedgerItemChange(
+    owner: import("./session/owned-subscriptions/index.js").OwnedSubscription,
+    service: WorkLedgerService,
+    itemId: string,
+  ): Promise<void> {
+    const [item, counts] = await Promise.all([service.getItem(itemId), service.counts()]);
+    if (owner.signal.aborted) return;
+    owner.emit({
+      type: "work_ledger.update",
+      payload: item
+        ? {
+            kind: "upsert",
+            item,
+            counts,
+            generation: service.generation,
+            seq: service.seqFor(itemId),
+          }
+        : {
+            kind: "remove",
+            itemId,
+            counts,
+            generation: service.generation,
+            seq: service.seqFor(itemId),
+          },
+    });
+  }
+
+  private toWorkLedgerListPayload(
+    requestId: string,
+    snapshot: Awaited<ReturnType<WorkLedgerService["synchronize"]>>,
+    subscriptionId?: string,
+  ) {
+    return {
+      requestId,
+      ...(subscriptionId ? { subscriptionId } : {}),
+      items: snapshot.items,
+      counts: snapshot.counts,
+      generatedAt: snapshot.generatedAt,
+      sync: {
+        mode: snapshot.mode,
+        generation: snapshot.generation,
+        headSeq: snapshot.headSeq,
+        removedItemIds: snapshot.removedItemIds,
+        changedItemIds: snapshot.changedItemIds,
+      },
+    };
+  }
+
+  private async handleWorkLedgerItemList(
+    request: Extract<SessionInboundMessage, { type: "work_ledger.item.list.request" }>,
+  ): Promise<void> {
+    const service = this.requireWorkLedger();
+    try {
+      const [result, counts] = await Promise.all([
+        service.getItemsByIds(request.itemIds),
+        service.counts(),
+      ]);
+      this.emit({
+        type: "work_ledger.item.list.response",
+        payload: {
+          requestId: request.requestId,
+          items: result.items,
+          missingItemIds: result.missingItemIds,
+          counts,
+          generation: service.generation,
+          headSeq: service.headSeq,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      this.emitWorkLedgerError(request, error);
+    }
+  }
+
+  private async handleWorkLedgerItemGet(
+    request: Extract<SessionInboundMessage, { type: "work_ledger.item.get.request" }>,
+  ): Promise<void> {
+    const service = this.requireWorkLedger();
+    try {
+      const result = await service.getItemHistory({
+        itemId: request.itemId,
+        beforeEntryId: request.beforeEntryId,
+        limit: request.limit,
+      });
+      if (!result) {
+        throw new WorkLedgerError(
+          "item_not_found",
+          `Work ledger item not found: ${request.itemId}`,
+        );
+      }
+      this.emit({
+        type: "work_ledger.item.get.response",
+        payload: { requestId: request.requestId, ...result },
+      });
+    } catch (error) {
+      this.emitWorkLedgerError(request, error);
+    }
+  }
+
+  private dispatchWorkLedgerMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      // The ledger is daemon-global, so it is grouped with the other daemon-scope
+      // requests rather than with a workspace or agent family.
+      case "work_ledger.list.request":
+        return this.handleWorkLedgerList(msg);
+      case "work_ledger.item.list.request":
+        return this.handleWorkLedgerItemList(msg);
+      case "work_ledger.item.get.request":
+        return this.handleWorkLedgerItemGet(msg);
+      default:
+        return undefined;
     }
   }
 

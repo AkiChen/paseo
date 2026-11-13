@@ -11,6 +11,7 @@ import type { CreationSnapshot } from "@getpaseo/protocol/messages";
 import type { z } from "zod";
 import type { SessionEventSubscription } from "@getpaseo/protocol/messages";
 import type { ClientCapability } from "@getpaseo/protocol/client-capabilities";
+import type { WorkLedgerScope } from "@getpaseo/protocol/work-ledger/types";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import {
   AgentCreateFailedStatusPayloadSchema,
@@ -821,6 +822,18 @@ export type WorkspaceLabelDeletePayload = Extract<
 export type WorkspaceLabelDeleteInspectPayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.label.delete.inspect.response" }
+>["payload"];
+export type WorkLedgerListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "work_ledger.list.response" }
+>["payload"];
+export type WorkLedgerItemListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "work_ledger.item.list.response" }
+>["payload"];
+export type WorkLedgerItemGetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "work_ledger.item.get.response" }
 >["payload"];
 export type ProjectListPayload = Extract<
   SessionOutboundMessage,
@@ -2506,6 +2519,71 @@ export class DaemonClient {
       { type: "workspace.label.list.request", subscribe: {} },
       options,
     );
+  }
+
+  listWorkLedger(
+    options: {
+      scope?: WorkLedgerScope;
+      sync?: { generation: string; afterSeq: number };
+      requestId?: string;
+    } = {},
+  ): Promise<WorkLedgerListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "work_ledger.list.request",
+        ...(options.scope ? { scope: options.scope } : {}),
+        ...(options.sync ? { sync: options.sync } : {}),
+      },
+    });
+  }
+
+  /**
+   * Live, read-only view of the ledger. The daemon owns every write; this
+   * subscription only ever receives snapshots and change notifications.
+   */
+  observeWorkLedger(
+    options: {
+      scope?: WorkLedgerScope;
+      signal?: AbortSignal;
+    } = {},
+  ): OwnedSubscription<WorkLedgerListPayload> {
+    return this.observe(
+      "work_ledger.list.response",
+      {
+        type: "work_ledger.list.request",
+        subscribe: {},
+        ...(options.scope ? { scope: options.scope } : {}),
+      },
+      { signal: options.signal },
+    );
+  }
+
+  listWorkLedgerItems(options: {
+    itemIds: string[];
+    requestId?: string;
+  }): Promise<WorkLedgerItemListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: { type: "work_ledger.item.list.request", itemIds: options.itemIds },
+    });
+  }
+
+  getWorkLedgerItem(options: {
+    itemId: string;
+    beforeEntryId?: string;
+    limit?: number;
+    requestId?: string;
+  }): Promise<WorkLedgerItemGetPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "work_ledger.item.get.request",
+        itemId: options.itemId,
+        ...(options.beforeEntryId ? { beforeEntryId: options.beforeEntryId } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      },
+    });
   }
 
   setWorkspaceLabel(options: {
