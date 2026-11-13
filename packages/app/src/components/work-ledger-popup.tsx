@@ -1,7 +1,8 @@
-import { memo, useCallback, useMemo, type ReactElement } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { ClipboardList } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
@@ -17,6 +18,12 @@ import {
   selectPopupHosts,
 } from "@/screens/work-ledger-screen-state";
 import { formatRelativeAge, shortAgentId } from "@/work-ledger/format";
+import { isNative } from "@/constants/platform";
+import { HEADER_CONTROL_HEIGHT } from "@/components/ui/control-geometry";
+import { useHoverSafeZone } from "@/hooks/use-hover-safe-zone";
+
+/** Grace period before a hover-opened popover closes, absorbing edge jitter. */
+const HOVER_GRACE_MS = 260;
 import type { Theme } from "@/styles/theme";
 import type { WorkLedgerItem } from "@getpaseo/protocol/work-ledger/types";
 
@@ -91,51 +98,132 @@ export function WorkLedgerPopup({ serverId }: { serverId?: string }): ReactEleme
       ? `${t("workLedger.popup.title")} ${counts.attention}`
       : t("workLedger.popup.title");
 
+  // Hover opens it: the popup is a glance, and a click to look at a summary is a
+  // step too many. This follows docs/hover.md rather than Pressable's own hover
+  // state: hover is tracked on a plain View via pointerenter/pointerleave, press
+  // lives on a separate inner Pressable, and the popover (a portal, so there is a
+  // real gap) is bridged with useHoverSafeZone.
+  const triggerRef = useRef<View>(null);
+  const contentRef = useRef<View>(null);
+  const [open, setOpen] = useState(false);
+  const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearGraceTimer = useCallback(() => {
+    if (graceTimerRef.current) {
+      clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    if (graceTimerRef.current) return;
+    graceTimerRef.current = setTimeout(() => {
+      graceTimerRef.current = null;
+      setOpen(false);
+    }, HOVER_GRACE_MS);
+  }, []);
+
+  const handleTriggerEnter = useCallback(() => {
+    clearGraceTimer();
+    setOpen(true);
+  }, [clearGraceTimer]);
+
+  const handleTriggerLeave = useCallback(() => {
+    scheduleClose();
+  }, [scheduleClose]);
+
+  // Covers trigger + content + the bridge between them; leaving the zone starts the
+  // close, re-entering it cancels.
+  useHoverSafeZone({
+    enabled: open,
+    triggerRef,
+    contentRef,
+    onEnterSafeZone: clearGraceTimer,
+    onLeaveSafeZone: scheduleClose,
+  });
+
+  // A pointerleave that never arrives must not outlive the trigger. The popover renders
+  // through a portal, so navigating away with it open leaves it floating over whatever
+  // screen comes next, pointing at a trigger that no longer exists.
+  useEffect(
+    () => () => {
+      clearGraceTimer();
+      setOpen(false);
+    },
+    [clearGraceTimer],
+  );
+
+  // The workspace screen stays mounted across navigation, so unmount is not enough:
+  // losing route focus with the popover open is what stranded it on the next screen.
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused) {
+      clearGraceTimer();
+      setOpen(false);
+    }
+  }, [isFocused, clearGraceTimer]);
+
+  // Native has no hover, so a tap is the only way in there.
+  const handlePress = useCallback(() => {
+    setOpen((current) => !current);
+  }, []);
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        testID="work-ledger-popup-trigger"
-        accessibilityLabel={t("workLedger.popup.title")}
-        style={styles.trigger}
-      >
-        <ThemedIcon size={14} />
-        <Text style={styles.triggerText}>{triggerLabel}</Text>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent width={340} maxHeight={460} scrollable>
-        <View style={styles.menuBody}>
-          <Text style={styles.summary}>
-            {t("workLedger.hosts.summary", {
-              count: counts.total,
-              hosts: hosts
-                .filter((host) => host.items.length > 0)
-                .map((host) => host.serverName)
-                .join(", "),
-            })}
-          </Text>
-          <Text style={styles.summary}>
-            {t("workLedger.filters.attention")} {counts.attention} ·{" "}
-            {t("workLedger.filters.review")} {counts.review} · {t("workLedger.filters.in_progress")}{" "}
-            {counts.inProgress}
-          </Text>
-          {attention.length === 0 && recent.length === 0 ? (
-            <Text style={styles.muted}>{t("workLedger.popup.none")}</Text>
-          ) : null}
-          <PopupGroup
-            title={attention.length > 0 ? t("workLedger.popup.attention") : null}
-            entries={attention}
-            onOpen={openItem}
-          />
-          <PopupGroup
-            title={recent.length > 0 ? t("workLedger.popup.recent") : null}
-            entries={recent}
-            onOpen={openItem}
-          />
-          <DropdownMenuItem testID="work-ledger-popup-open-all" onSelect={openAll}>
-            {t("workLedger.popup.open")}
-          </DropdownMenuItem>
-        </View>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <View
+      ref={triggerRef}
+      collapsable={false}
+      onPointerEnter={handleTriggerEnter}
+      onPointerLeave={handleTriggerLeave}
+      style={styles.hoverRegion}
+      testID="work-ledger-popup-region"
+    >
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger
+          testID="work-ledger-popup-trigger"
+          accessibilityLabel={t("workLedger.popup.title")}
+          style={styles.trigger}
+        >
+          <Pressable onPress={isNative ? handlePress : undefined} style={styles.triggerContent}>
+            <ThemedIcon size={14} />
+            <Text style={styles.triggerText}>{triggerLabel}</Text>
+          </Pressable>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent width={340} maxHeight={460} scrollable>
+          <View ref={contentRef} collapsable={false} style={styles.menuBody}>
+            <Text style={styles.summary}>
+              {t("workLedger.hosts.summary", {
+                count: counts.total,
+                hosts: hosts
+                  .filter((host) => host.items.length > 0)
+                  .map((host) => host.serverName)
+                  .join(", "),
+              })}
+            </Text>
+            <Text style={styles.summary}>
+              {t("workLedger.filters.attention")} {counts.attention} ·{" "}
+              {t("workLedger.filters.review")} {counts.review} ·{" "}
+              {t("workLedger.filters.in_progress")} {counts.inProgress}
+            </Text>
+            {attention.length === 0 && recent.length === 0 ? (
+              <Text style={styles.muted}>{t("workLedger.popup.none")}</Text>
+            ) : null}
+            <PopupGroup
+              title={attention.length > 0 ? t("workLedger.popup.attention") : null}
+              entries={attention}
+              onOpen={openItem}
+            />
+            <PopupGroup
+              title={recent.length > 0 ? t("workLedger.popup.recent") : null}
+              entries={recent}
+              onOpen={openItem}
+            />
+            <DropdownMenuItem testID="work-ledger-popup-open-all" onSelect={openAll}>
+              {t("workLedger.popup.open")}
+            </DropdownMenuItem>
+          </View>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </View>
   );
 }
 
@@ -178,7 +266,7 @@ const PopupRow = memo(function PopupRow({
       onSelect={handleSelect}
       testID={`work-ledger-popup-item-${entry.item.number}`}
     >
-      {`${entry.item.number} · ${entry.item.title}`}
+      {entry.item.title}
     </DropdownMenuItem>
   );
 });
@@ -199,14 +287,27 @@ function describeEntry(item: WorkLedgerItem, t: (key: string) => string, locale:
 }
 
 const styles = StyleSheet.create((theme) => ({
+  // The hover region owns both the trigger and, on wide layouts, the space the
+  // popover opens into, so crossing the gap does not close it.
+  hoverRegion: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  triggerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
   trigger: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
+    height: HEADER_CONTROL_HEIGHT,
     paddingHorizontal: theme.spacing[2],
-    paddingVertical: 4,
-    borderRadius: theme.borderRadius.full,
     borderWidth: 1,
+    // Same geometry as the header's other pills (balance, commit): shared height
+    // token and radius, so the row reads as one set of controls.
+    borderRadius: theme.borderRadius.md,
     borderColor: theme.colors.border,
   },
   triggerText: {

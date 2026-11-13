@@ -542,6 +542,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
     <SidebarChrome
       mounted={isCompactLayout ? chromeEnabled : desktopSidebarMounted}
       visible={isCompactLayout ? chromeEnabled : desktopSidebarVisible}
+      routeAllowsSidebar={chromeEnabled}
       keyboardShortcutsEnabled={keyboardShortcutsEnabled}
     />
   );
@@ -631,10 +632,18 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
 function SidebarChrome({
   mounted,
   visible,
+  routeAllowsSidebar,
   keyboardShortcutsEnabled,
 }: {
   mounted: boolean;
   visible: boolean;
+  /**
+   * Whether this route renders app sidebar chrome at all. Distinct from both `mounted`
+   * (latched, so it survives navigation away from a route that had one) and `visible`
+   * (false whenever the user collapsed the sidebar, which is exactly when the hover
+   * peek is supposed to work).
+   */
+  routeAllowsSidebar: boolean;
   keyboardShortcutsEnabled: boolean;
 }) {
   const isCompactLayout = useIsCompactFormFactor();
@@ -651,7 +660,11 @@ function SidebarChrome({
   const peekEnabled = resolveSidebarPeekEnabled({
     isWeb,
     isCompactLayout,
-    mounted,
+    // Gate on the route, not on the pin state: settings and welcome render no app
+    // sidebar, so the peek there would slide one over the screen being read. A
+    // sidebar the user collapsed on a normal route keeps its peek, which is the
+    // whole point of the affordance.
+    mounted: mounted && routeAllowsSidebar,
     active,
   });
   const peekFallbackWidth = resolveDesktopSidebarWidth({

@@ -1024,7 +1024,6 @@ function WorkspaceHeaderTitleBar({
         </View>
       )}
       <View style={styles.compactHeaderMenuCluster}>
-        <WorkLedgerPopup serverId={normalizedServerId} />
         {isMobile ? (
           <WorkspaceHeaderMenuMobile
             normalizedServerId={normalizedServerId}
@@ -3797,6 +3796,9 @@ function WorkspaceScreenContent({
       <View style={styles.headerRight}>
         {!isMobile ? <AgentStatusSummary /> : null}
         <PluginHeaderButtons serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
+        {/* Immediately left of the balance badge: both are read-only status pills,
+            so they belong in one group rather than split by plugin buttons. */}
+        <WorkLedgerPopup serverId={normalizedServerId} />
         {!isMobile && getIsElectron() ? <MorphicBalance /> : null}
         {!isMobile && workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
