@@ -35,7 +35,7 @@ function makeService(responder: Responder, overrides: Partial<CreateGitLabServic
 }
 
 function currentMrListArgs(headRef: string): string[] {
-  return [
+  return withHost([
     "mr",
     "list",
     "--all",
@@ -49,7 +49,18 @@ function currentMrListArgs(headRef: string): string[] {
     "100",
     "-F",
     "json",
-  ];
+  ]);
+}
+
+/**
+ * Every glab call names its host explicitly, so the daemon's cwd and the user's
+ * default host cannot change which GitLab instance a command talks to. Keep this in
+ * step with `makeService`'s remote.
+ */
+const TEST_GITLAB_HOST = "gitlab.example.com";
+
+function withHost(args: string[]): string[] {
+  return [...args, "--hostname", TEST_GITLAB_HOST];
 }
 
 function gitlabAutoMergeStatus(
@@ -295,7 +306,7 @@ describe("createGitLabService", () => {
       mergeWhenPipelineSucceeds: false,
     });
     expect(calls[0]).toEqual(currentMrListArgs("release/v0.4.0"));
-    expect(calls[1]).toEqual(["mr", "view", "14", "-F", "json"]);
+    expect(calls[1]).toEqual(withHost(["mr", "view", "14", "-F", "json"]));
   });
 
   it("reports a conflicting merge request as CONFLICTING", async () => {
@@ -354,7 +365,7 @@ describe("createGitLabService", () => {
     });
 
     expect(status?.number).toBe(270);
-    expect(calls[1]).toEqual(["mr", "view", "270", "-F", "json"]);
+    expect(calls[1]).toEqual(withHost(["mr", "view", "270", "-F", "json"]));
   });
 
   it("does not attach the latest historical merge request after a reused branch advances", async () => {
@@ -413,8 +424,8 @@ describe("createGitLabService", () => {
       headRefName: "1234",
     });
     expect(calls[0]).toEqual(currentMrListArgs("1234"));
-    expect(calls[1]).toEqual(["mr", "view", "21", "-F", "json"]);
-    expect(calls).not.toContainEqual(["mr", "view", "1234", "-F", "json"]);
+    expect(calls[1]).toEqual(withHost(["mr", "view", "21", "-F", "json"]));
+    expect(calls).not.toContainEqual(withHost(["mr", "view", "1234", "-F", "json"]));
   });
 
   it("returns null when a numeric current branch has no open merge request", async () => {
@@ -442,7 +453,7 @@ describe("createGitLabService", () => {
     const list = await service.listPullRequests({ cwd: "/repo", limit: 5 });
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ number: 14, title: "chore(release): 0.4.0", state: "open" });
-    expect(calls[0]).toEqual(["mr", "list", "-F", "json", "-P", "5"]);
+    expect(calls[0]).toEqual(withHost(["mr", "list", "-F", "json", "-P", "5"]));
   });
 
   it("resolves the glab CLI path once per service instance, not per invocation", async () => {
@@ -478,7 +489,7 @@ describe("createGitLabService", () => {
       headRepositoryUrl: null,
       isCrossRepository: false,
     });
-    expect(calls[0]).toEqual(["mr", "view", "14", "-F", "json"]);
+    expect(calls[0]).toEqual(withHost(["mr", "view", "14", "-F", "json"]));
   });
 
   it("marks fork merge request checkout targets as cross-repository", async () => {
@@ -523,19 +534,21 @@ describe("createGitLabService", () => {
       url: "https://gitlab.example.com/example-group/example-project/-/merge_requests/15",
       number: 15,
     });
-    expect(calls[0]).toEqual([
-      "mr",
-      "create",
-      "--title",
-      "Ship it",
-      "--description",
-      "Body",
-      "--source-branch",
-      "release/v0.4.0",
-      "--target-branch",
-      "main",
-      "--yes",
-    ]);
+    expect(calls[0]).toEqual(
+      withHost([
+        "mr",
+        "create",
+        "--title",
+        "Ship it",
+        "--description",
+        "Body",
+        "--source-branch",
+        "release/v0.4.0",
+        "--target-branch",
+        "main",
+        "--yes",
+      ]),
+    );
   });
 
   it("merges with the requested strategy when GitLab reports the MR as mergeable", async () => {
@@ -560,7 +573,9 @@ describe("createGitLabService", () => {
       },
     });
     expect(result).toEqual({ success: true });
-    expect(calls[0]).toEqual(["mr", "merge", "14", "--auto-merge=false", "--yes", "--squash"]);
+    expect(calls[0]).toEqual(
+      withHost(["mr", "merge", "14", "--auto-merge=false", "--yes", "--squash"]),
+    );
   });
 
   it("refuses a direct merge when GitLab does not report the MR as mergeable", async () => {
@@ -598,7 +613,7 @@ describe("createGitLabService", () => {
       status: gitlabAutoMergeStatus(),
     });
     expect(result).toEqual({ success: true });
-    expect(calls[0]).toEqual(["mr", "merge", "14", "--auto-merge", "--yes", "--squash"]);
+    expect(calls[0]).toEqual(withHost(["mr", "merge", "14", "--auto-merge", "--yes", "--squash"]));
   });
 
   it("enables auto-merge without a strategy flag for the plain merge method", async () => {
@@ -609,7 +624,7 @@ describe("createGitLabService", () => {
       mergeMethod: "merge",
       status: gitlabAutoMergeStatus(),
     });
-    expect(calls[0]).toEqual(["mr", "merge", "14", "--auto-merge", "--yes"]);
+    expect(calls[0]).toEqual(withHost(["mr", "merge", "14", "--auto-merge", "--yes"]));
   });
 
   it("refuses to enable auto-merge without an active pipeline because it would merge immediately", async () => {
@@ -632,12 +647,14 @@ describe("createGitLabService", () => {
       prNumber: 14,
     });
     expect(result).toEqual({ success: true });
-    expect(calls[0]).toEqual([
-      "api",
-      "--method",
-      "POST",
-      "projects/:fullpath/merge_requests/14/cancel_merge_when_pipeline_succeeds",
-    ]);
+    expect(calls[0]).toEqual(
+      withHost([
+        "api",
+        "--method",
+        "POST",
+        "projects/:fullpath/merge_requests/14/cancel_merge_when_pipeline_succeeds",
+      ]),
+    );
   });
 
   it("surfaces the head pipeline id and url on the gitlab status facts", async () => {
@@ -704,15 +721,9 @@ describe("createGitLabService", () => {
       headRef: "release/v0.4.0",
     });
 
-    expect(calls[3]).toEqual([
-      "ci",
-      "get",
-      "--merge-request",
-      "14",
-      "--with-job-details",
-      "-F",
-      "json",
-    ]);
+    expect(calls[3]).toEqual(
+      withHost(["ci", "get", "--merge-request", "14", "--with-job-details", "-F", "json"]),
+    );
     expect(status?.checksStatus).toBe("success");
     expect(status?.checks).toEqual([
       {
@@ -790,15 +801,9 @@ describe("createGitLabService", () => {
       checkRunId: 306,
     });
 
-    expect(calls[0]).toEqual([
-      "ci",
-      "get",
-      "--pipeline-id",
-      "306",
-      "--with-job-details",
-      "-F",
-      "json",
-    ]);
+    expect(calls[0]).toEqual(
+      withHost(["ci", "get", "--pipeline-id", "306", "--with-job-details", "-F", "json"]),
+    );
     expect(details).toMatchObject({
       checkRunId: 306,
       name: "Pipeline (feat/sample-change)",
@@ -845,15 +850,9 @@ describe("createGitLabService", () => {
       changeRequestNumber: 14,
     });
 
-    expect(calls[0]).toEqual([
-      "ci",
-      "get",
-      "--merge-request",
-      "14",
-      "--with-job-details",
-      "-F",
-      "json",
-    ]);
+    expect(calls[0]).toEqual(
+      withHost(["ci", "get", "--merge-request", "14", "--with-job-details", "-F", "json"]),
+    );
   });
 
   it.each([
@@ -929,10 +928,9 @@ describe("createGitLabService", () => {
       approvalsRequired: 2,
       approvalsGiven: 1,
     });
-    expect(calls[2]).toEqual([
-      "api",
-      "projects/example-group%2Fexample-project/merge_requests/14/approvals",
-    ]);
+    expect(calls[2]).toEqual(
+      withHost(["api", "projects/example-group%2Fexample-project/merge_requests/14/approvals"]),
+    );
   });
 
   it("falls back to zero approvals when the approvals endpoint returns an error", async () => {
@@ -970,10 +968,12 @@ describe("createGitLabService", () => {
       repoName: "example-project",
     });
 
-    expect(calls[1]).toEqual([
-      "api",
-      "projects/example-group%2Fnested%2Fexample-project/merge_requests/73/discussions?per_page=100",
-    ]);
+    expect(calls[1]).toEqual(
+      withHost([
+        "api",
+        "projects/example-group%2Fnested%2Fexample-project/merge_requests/73/discussions?per_page=100",
+      ]),
+    );
     expect(timeline.error).toBeNull();
     expect(timeline.truncated).toBe(false);
     // System note 399 is dropped; the diff note (19:55) sorts before the comment (20:00).
@@ -1298,6 +1298,61 @@ describe("createGitLabService", () => {
     expect(calls).toHaveLength(0);
   });
 
+  /**
+   * A self-managed GitLab is reachable only when the host is named: glab otherwise
+   * falls back to the config's default host (commonly gitlab.com) and answers 404
+   * for a project that exists on the real instance.
+   */
+  it("names the remote's host on every call so a self-managed instance is reachable", async () => {
+    const { service, calls } = makeService(() => ok(JSON.stringify([OPEN_MR])), {
+      resolveRemoteUrl: async () => "https://code.example.internal/group/sub/project.git",
+    });
+    await service.listPullRequests({ cwd: "/repo", limit: 5 });
+    expect(calls[0]).toEqual(expect.arrayContaining(["--hostname", "code.example.internal"]));
+  });
+
+  it("omits the host when the checkout has no remote, leaving glab's own resolution", async () => {
+    const { service, calls } = makeService(() => ok(JSON.stringify([OPEN_MR])), {
+      resolveRemoteUrl: async () => null,
+    });
+    await service.listPullRequests({ cwd: "/repo", limit: 5 });
+    expect(calls[0]).not.toContain("--hostname");
+  });
+
+  /**
+   * glab gained `-F json` in later releases. On an older CLI the same data comes from
+   * `glab api`, so the feature degrades to "works" rather than "unknown flag".
+   */
+  it("falls back to glab api when the installed CLI cannot emit JSON", async () => {
+    const { service, calls } = makeService((args) => {
+      // An older glab: every `-F json` is rejected outright.
+      if (args.includes("-F")) {
+        throw { code: 1, stderr: "unknown shorthand flag: 'F' in -F" };
+      }
+      if (args[0] === "api" && args[1].includes("/merge_requests?")) {
+        return ok(JSON.stringify([OPEN_MR]));
+      }
+      if (args[0] === "api" && args[1].includes("/merge_requests/14")) {
+        return ok(JSON.stringify(OPEN_MR));
+      }
+      if (args[0] === "api" && args[1].endsWith("/approvals")) return ok("{}");
+      throw new Error(`unexpected glab args: ${args.join(" ")}`);
+    });
+
+    const status = await service.getCurrentPullRequestStatus({
+      cwd: "/repo",
+      headRef: "release/v0.4.0",
+    });
+
+    expect(status).not.toBeNull();
+    const listCall = calls.find((args) => args[0] === "api" && args[1].includes("source_branch="));
+    expect(listCall).toEqual(
+      expect.arrayContaining([
+        "projects/example-group%2Fexample-project/merge_requests?state=all&source_branch=release%2Fv0.4.0&order_by=updated_at&sort=desc&per_page=100",
+      ]),
+    );
+  });
+
   it("throws GlabCliMissingError when glab is not installed", async () => {
     const { service } = makeService(() => ok("{}"), { resolveGlabPath: async () => null });
     await expect(service.getPullRequest({ cwd: "/repo", number: 1 })).rejects.toBeInstanceOf(
@@ -1368,26 +1423,12 @@ describe("createGitLabService", () => {
       },
     ]);
 
-    expect(calls.find((args) => args[0] === "mr")).toEqual([
-      "mr",
-      "list",
-      "-F",
-      "json",
-      "--search",
-      "login",
-      "-P",
-      "10",
-    ]);
-    expect(calls.find((args) => args[0] === "issue")).toEqual([
-      "issue",
-      "list",
-      "-O",
-      "json",
-      "--search",
-      "login",
-      "-P",
-      "10",
-    ]);
+    expect(calls.find((args) => args[0] === "mr")).toEqual(
+      withHost(["mr", "list", "-F", "json", "--search", "login", "-P", "10"]),
+    );
+    expect(calls.find((args) => args[0] === "issue")).toEqual(
+      withHost(["issue", "list", "-O", "json", "--search", "login", "-P", "10"]),
+    );
   });
 
   it("parses the real glab issue list payload shape and uses the issue JSON flag", async () => {
@@ -1419,7 +1460,9 @@ describe("createGitLabService", () => {
         },
       ],
     });
-    expect(calls.find((args) => args[0] === "issue")).toEqual(["issue", "list", "-O", "json"]);
+    expect(calls.find((args) => args[0] === "issue")).toEqual(
+      withHost(["issue", "list", "-O", "json"]),
+    );
   });
 
   it("restricts search to merge requests when only the PR kind is requested", async () => {
@@ -1436,7 +1479,7 @@ describe("createGitLabService", () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ kind: "change_request", number: 14 });
-    expect(calls).toEqual([["mr", "list", "-F", "json", "--search", "release"]]);
+    expect(calls).toEqual([withHost(["mr", "list", "-F", "json", "--search", "release"])]);
   });
 
   it("reports forge features disabled when glab is unavailable or unauthenticated", async () => {

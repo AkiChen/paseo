@@ -258,6 +258,12 @@ type GitLabApprovals = z.infer<typeof GitLabApprovalsSchema>;
 
 const TIMELINE_PAGE_SIZE = 100;
 
+/**
+ * Subcommands that either pick their own host (`auth`) or take one as their subject
+ * (`config`); appending `--hostname` to them would change their meaning.
+ */
+const SELECTS_OWN_HOST: ReadonlySet<string> = new Set(["auth", "config", "completion", "help"]);
+
 async function resolveGlabPath(): Promise<string | null> {
   return findExecutable("glab");
 }
@@ -287,6 +293,43 @@ async function runGlabCommand(
 
 export function parseGitLabHostFromRemoteUrl(url: string): string | null {
   return parseGitRemoteLocation(url)?.host ?? null;
+}
+
+/**
+ * Percent-encodes a value for a `glab api` path or query. `glab api` takes the path
+ * as one argument and does not encode it, so a branch's `/` would otherwise split
+ * the route.
+ */
+function csv(value: string): string {
+  return encodeURIComponent(value);
+}
+
+/**
+ * `glab` gained its JSON output flag (`-F json`) in later releases; older ones reject
+ * it outright. When the CLI cannot produce JSON, the same data comes from
+ * `glab api`, which every version exposes.
+ */
+function isUnsupportedJsonFlagError(error: unknown): boolean {
+  // The CLI's own wording is on `stderr`; `message` wraps the whole invocation.
+  const stderr =
+    typeof error === "object" && error !== null && "stderr" in error
+      ? String((error as { stderr?: unknown }).stderr ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return /unknown (shorthand )?flag/i.test(`${stderr}\n${message}`);
+}
+
+/**
+ * The project path (`group/sub/name`) behind a checkout, taken from its remote. This
+ * is what `glab api` routes address; the remote's URL form would not work.
+ */
+function projectPathFromRemoteUrl(remoteUrl: string | null): string | null {
+  const path = remoteUrl ? parseGitRemoteLocation(remoteUrl)?.path : null;
+  const trimmed = path
+    ?.replace(/^\/+/, "")
+    .replace(/\.git$/, "")
+    .trim();
+  return trimmed ? trimmed : null;
 }
 
 function mapMergeRequestState(state: string): string {
@@ -892,18 +935,37 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
     if (!glabPath) {
       throw new GlabCliMissingError();
     }
+    const withHost = await addHostSelection(args, runOptions.cwd);
     try {
-      const result = await runner(args, runOptions);
+      const result = await runner(withHost, runOptions);
       return result.stdout.trim();
     } catch (error) {
-      throw glabCliRunner.normalizeError(error, { args, cwd: runOptions.cwd });
+      throw glabCliRunner.normalizeError(error, { args: withHost, cwd: runOptions.cwd });
     }
+  }
+
+  /**
+   * `glab` resolves its host from a git remote in the cwd, and otherwise falls back
+   * to the config's default host (often `gitlab.com`). A self-managed host then
+   * answers 404/401 for a project that exists. Naming the host explicitly makes the
+   * call independent of where the daemon happens to run it and of the user's default.
+   * Commands that already choose a host are left alone.
+   */
+  async function addHostSelection(args: string[], cwd: string): Promise<string[]> {
+    if (SELECTS_OWN_HOST.has(args[0] ?? "")) return args;
+    if (args.includes("--hostname")) return args;
+    const remoteUrl = await resolveRemoteUrl(cwd).catch(() => null);
+    const host = remoteUrl ? parseGitLabHostFromRemoteUrl(remoteUrl) : null;
+    if (!host) return args;
+    // `-H` is the shorthand every glab version accepts; the long form is not
+    // available on older releases.
+    return [...args, "--hostname", host];
   }
 
   // Centralize parse + validate so a malformed or empty glab payload surfaces as
   // a classified GlabCommandError (with args + cwd) instead of a raw
   // SyntaxError/ZodError that bypasses the Glab* error classification.
-  async function runJson<T>(
+  async function parseJson<T>(
     args: string[],
     runOptions: GlabCommandRunnerOptions,
     schema: z.ZodType<T>,
@@ -919,16 +981,65 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
     });
   }
 
+  async function runJson<T>(
+    args: string[],
+    runOptions: GlabCommandRunnerOptions,
+    schema: z.ZodType<T>,
+  ): Promise<T> {
+    return parseJson(args, runOptions, schema);
+  }
+
+  /**
+   * Run a JSON command, falling back to `glab api` when the installed CLI is too old
+   * to emit JSON. `apiPath` builds the equivalent route lazily: it costs a remote
+   * read, and only a CLI that cannot do the job needs it.
+   */
+  async function runJsonWithApiFallback<T>(
+    args: string[],
+    fallback: { apiPath: () => Promise<string | null> },
+    runOptions: GlabCommandRunnerOptions,
+    schema: z.ZodType<T>,
+  ): Promise<T> {
+    try {
+      return await parseJson(args, runOptions, schema);
+    } catch (error) {
+      if (!isUnsupportedJsonFlagError(error)) throw error;
+      const path = await fallback.apiPath();
+      if (!path) throw error;
+      return parseJson(["api", path], runOptions, schema);
+    }
+  }
+
+  async function resolveProjectPath(cwd: string): Promise<string | null> {
+    const remoteUrl = await resolveRemoteUrl(cwd).catch(() => null);
+    return projectPathFromRemoteUrl(remoteUrl);
+  }
+
   async function viewMergeRequest(cwd: string, ref: string): Promise<GitLabMergeRequest> {
     assertSafeGlabPositional(ref);
-    return runJson(["mr", "view", ref, "-F", "json"], { cwd }, GitLabMergeRequestSchema);
+    return runJsonWithApiFallback(
+      ["mr", "view", ref, "-F", "json"],
+      {
+        // `glab api` addresses an MR by project + iid; the branch form of `mr view`
+        // resolves through the same list the caller already matched.
+        apiPath: async () => {
+          const project = await resolveProjectPath(cwd);
+          if (!project) return null;
+          // Callers pass an iid here (see resolveCurrentMergeRequest); GitLab also
+          // accepts a source branch on this route, so both forms are encoded.
+          return `projects/${csv(project)}/merge_requests/${csv(ref)}`;
+        },
+      },
+      { cwd },
+      GitLabMergeRequestSchema,
+    );
   }
 
   async function listMergeRequestsBySourceBranch(
     cwd: string,
     sourceBranch: string,
   ): Promise<GitLabMergeRequest[]> {
-    return runJson(
+    return runJsonWithApiFallback(
       [
         "mr",
         "list",
@@ -944,6 +1055,16 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
         "-F",
         "json",
       ],
+      {
+        // GitLab sorts newest-first by `updated_at` with these params directly, so
+        // the API path reproduces the CLI intent rather than approximating it.
+        apiPath: async () => {
+          const project = await resolveProjectPath(cwd);
+          return project
+            ? `projects/${csv(project)}/merge_requests?state=all&source_branch=${csv(sourceBranch)}&order_by=updated_at&sort=desc&per_page=100`
+            : null;
+        },
+      },
       { cwd },
       z.array(GitLabMergeRequestSchema),
     );
