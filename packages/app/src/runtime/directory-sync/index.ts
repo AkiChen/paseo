@@ -186,6 +186,10 @@ export class DirectorySync {
     const wentOffline = this.connection.status === "online" && connection.status === "offline";
     if (!changed && !wentOffline) {
       this.connection = connection;
+      // The ledger subscription is independent of directory demand, so a host that
+      // reports the same connection repeatedly must not lose it: re-running only the
+      // attach step is a no-op when it is already connected.
+      this.connectWorkLedger();
       return false;
     }
     this.flushAbortedTransactions();
@@ -587,6 +591,9 @@ export class DirectorySync {
       checkpoint: this.cursors,
     });
     if (this.getOnlineConnection()) await this.connectWorkspaceLabels();
+    // Belt and braces beside connectionChanged: a host whose connection was already
+    // current when it came online still needs its ledger subscription.
+    this.connectWorkLedger();
   }
 
   async connectWorkspaceLabels(): Promise<void> {
@@ -609,10 +616,13 @@ export class DirectorySync {
     const connection = this.getOnlineConnection();
     if (!connection) return;
     const { client } = connection;
+    const features = client.getLastServerInfoMessage()?.features;
     workLedger.connect({
       serverId: this.serverId,
       client,
-      supportsWorkLedger: client.getLastServerInfoMessage()?.features?.workLedger === true,
+      // Undecided until server_info lands, so a race at connect time cannot pinch the
+      // host into "unsupported" for the rest of the session.
+      supportsWorkLedger: features === undefined ? null : features.workLedger === true,
     });
   }
 

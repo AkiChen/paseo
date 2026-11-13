@@ -198,7 +198,7 @@ describe("work ledger body state", () => {
     ).toBe("load-error");
   });
 
-  test("popup counts skip hosts that are not online", () => {
+  test("popup counts include cached items from hosts whose status has not settled", () => {
     const counts = collectAttentionCounts([
       host({ items: [item({ attention: ["blocked"] }), item({ id: "b", status: "review" })] }),
       host({
@@ -207,31 +207,36 @@ describe("work ledger body state", () => {
         items: [item({ id: "c", attention: ["stalled"] })],
       }),
     ]);
-    // The offline host's items are not current, so they never reach the counts.
-    expect(counts).toEqual({ attention: 1, review: 1, inProgress: 1 });
+    // Real work must not disappear from the summary because a host's status lags.
+    expect(counts).toEqual({ attention: 2, review: 1, inProgress: 2, total: 3 });
   });
 });
 
 describe("popup host selection", () => {
-  test("inside a workspace only that host is read, and an unsupported host reads nothing", () => {
+  test("every host with items is summarized, whichever one the workspace is on", () => {
+    const hosts = [
+      host({ serverId: "s1", items: [item({ id: "local" })] }),
+      host({ serverId: "s2", items: [item({ id: "remote" })] }),
+      host({ serverId: "s3", status: "offline" }),
+      host({ serverId: "s4", status: "unsupported", syncedAt: null }),
+    ];
+    expect(selectPopupHosts({ hosts, serverId: "s1" }).map((entry) => entry.serverId)).toEqual([
+      "s1",
+      "s2",
+    ]);
+    expect(selectPopupHosts({ hosts }).map((entry) => entry.serverId)).toEqual(["s1", "s2"]);
+  });
+
+  test("an empty host only shows while it is the current one, and unsupported never shows", () => {
     const hosts = [
       host({ serverId: "s1" }),
       host({ serverId: "s2", status: "unsupported", syncedAt: null }),
     ];
+    expect(selectPopupHosts({ hosts, serverId: "s2" })).toEqual([]);
+    expect(selectPopupHosts({ hosts, serverId: "missing" })).toEqual([]);
     expect(selectPopupHosts({ hosts, serverId: "s1" }).map((entry) => entry.serverId)).toEqual([
       "s1",
     ]);
-    expect(selectPopupHosts({ hosts, serverId: "s2" })).toEqual([]);
-    expect(selectPopupHosts({ hosts, serverId: "missing" })).toEqual([]);
-  });
-
-  test("outside a workspace every online host is read", () => {
-    const hosts = [
-      host({ serverId: "s1" }),
-      host({ serverId: "s2", status: "offline" }),
-      host({ serverId: "s3", status: "unsupported", syncedAt: null }),
-    ];
-    expect(selectPopupHosts({ hosts }).map((entry) => entry.serverId)).toEqual(["s1"]);
   });
 });
 

@@ -1139,6 +1139,10 @@ export const ar: TranslationResources = {
     },
     filterEmpty: "لا توجد مهام مطابقة لهذه المرشّحات.",
     errors: { load: "تعذّر تحميل فهرس العمل", item: "تعذّر تحميل هذه المهمة" },
+    hosts: {
+      summary: "{{count}} مهمة من {{hosts}}",
+      merged: "لكل مضيف فهرسه الخاص؛ تعرض هذه الصفحة الجميع معًا.",
+    },
     time: {
       justNow: "الآن",
       minutesAgo: "قبل {{count}} د",

@@ -1146,6 +1146,10 @@ export const ko: TranslationResources = {
     },
     filterEmpty: "조건에 맞는 작업이 없습니다.",
     errors: { load: "작업 인덱스를 불러올 수 없습니다", item: "이 작업을 불러올 수 없습니다" },
+    hosts: {
+      summary: "{{hosts}}의 작업 {{count}}개",
+      merged: "호스트마다 자체 인덱스를 가지며, 이 화면은 모두 함께 보여줍니다.",
+    },
     time: {
       justNow: "방금",
       minutesAgo: "{{count}}분 전",

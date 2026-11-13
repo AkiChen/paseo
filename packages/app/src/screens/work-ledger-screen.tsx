@@ -205,8 +205,19 @@ function WorkLedgerBody({
   }
 
   const staleHosts = hosts.filter((host) => host.status !== "online");
+  const onlineHosts = hosts.filter((host) => host.status === "online");
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      {/* Which daemons this list is drawn from. Hosts keep separate ledgers, so
+          saying so is the difference between "one list" and "one merged truth". */}
+      {onlineHosts.length > 0 ? (
+        <Text style={styles.hostSummary} testID="work-ledger-host-summary">
+          {t("workLedger.hosts.summary", {
+            hosts: onlineHosts.map((host) => host.serverName).join(", "),
+            count: onlineHosts.reduce((total, host) => total + host.items.length, 0),
+          })}
+        </Text>
+      ) : null}
       {staleHosts.length > 0 ? (
         <Text style={styles.staleNote} testID="work-ledger-stale-hosts">
           {staleHosts.map((host) => host.serverName).join(", ")} · {t("workLedger.offline")}
@@ -327,6 +338,10 @@ const styles = StyleSheet.create((theme) => ({
     padding: { xs: theme.spacing[3], md: theme.spacing[6] },
   },
   staleNote: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+  },
+  hostSummary: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
   },

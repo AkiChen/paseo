@@ -1159,6 +1159,10 @@ export const ja: TranslationResources = {
     },
     filterEmpty: "条件に一致するタスクはありません。",
     errors: { load: "作業インデックスを読み込めません", item: "このタスクを読み込めません" },
+    hosts: {
+      summary: "{{hosts}} の {{count}} 件",
+      merged: "ホストごとに独自のインデックスを持ち、この画面ではまとめて表示します。",
+    },
     time: {
       justNow: "たった今",
       minutesAgo: "{{count}} 分前",

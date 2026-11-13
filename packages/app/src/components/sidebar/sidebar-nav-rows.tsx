@@ -1,5 +1,5 @@
 import { router, usePathname } from "expo-router";
-import { CalendarClock, History, Plus, Search } from "lucide-react-native";
+import { CalendarClock, ClipboardList, History, Plus, Search } from "lucide-react-native";
 import { memo, useCallback, useMemo, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { View, type StyleProp, type ViewStyle } from "react-native";
@@ -165,6 +165,31 @@ function SidebarSchedulesRow({ onBeforeNavigate }: SidebarNavRowProps) {
       onPress={handlePress}
       isActive={pathname.includes("/schedules")}
       testID="sidebar-schedules"
+      variant="compact"
+    />
+  );
+}
+
+/**
+ * The work index across every connected daemon. It is reached from the workspace
+ * header menu rather than from a sidebar row: sidebar rows are driven by a persisted
+ * user preference, so a new builtin would be invisible until the user enabled it.
+ */
+export function SidebarWorkLedgerRow({ onBeforeNavigate }: SidebarNavRowProps) {
+  const { t } = useTranslation();
+  const pathname = usePathname();
+  const handlePress = useCallback(() => {
+    onBeforeNavigate?.();
+    router.push("/work-ledger");
+  }, [onBeforeNavigate]);
+
+  return (
+    <SidebarHeaderRow
+      icon={ClipboardList}
+      label={t("workLedger.title")}
+      onPress={handlePress}
+      isActive={pathname === "/work-ledger"}
+      testID="sidebar-work-ledger"
       variant="compact"
     />
   );

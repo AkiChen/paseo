@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { useTranslation } from "react-i18next";
 import {
+  ClipboardList,
   Copy,
   Ellipsis,
   Globe,
@@ -42,6 +43,7 @@ const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
 const ThemedTrash = withUnistyles(Trash2);
+const ThemedClipboardList = withUnistyles(ClipboardList);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destructive });
@@ -53,6 +55,7 @@ const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const MENU_DELETE_AGENT_ICON = <ThemedTrash size={16} uniProps={destructiveColorMapping} />;
+const MENU_WORK_LEDGER_ICON = <ThemedClipboardList size={16} uniProps={mutedColorMapping} />;
 function WorkspaceHeaderMenuTriggerIcon() {
   return (
     <ThemedEllipsis
@@ -95,6 +98,12 @@ function WorkspaceHeaderWorkspaceActionItems({
   onOpenSetupTab,
 }: WorkspaceHeaderWorkspaceActions) {
   const { t } = useTranslation();
+  const router = useRouter();
+  // The work index spans every connected daemon, so it is not a workspace action a
+  // caller passes in; it lives here because this menu is always reachable.
+  const onOpenWorkLedger = useCallback(() => {
+    router.push("/work-ledger" as Href);
+  }, [router]);
   return (
     <>
       <DropdownMenuItem
@@ -122,6 +131,17 @@ function WorkspaceHeaderWorkspaceActionItems({
       >
         {t("workspace.header.actions.importSession")}
       </DropdownMenuItem>
+      {/* The header popup is scoped to this host; this is where a user goes to see
+          the index across every connected daemon. */}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        testID="workspace-header-open-work-ledger"
+        leading={MENU_WORK_LEDGER_ICON}
+        onSelect={onOpenWorkLedger}
+      >
+        {t("workLedger.popup.open")}
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
       {showWorkspaceSetup ? (
         <>
           <DropdownMenuSeparator />

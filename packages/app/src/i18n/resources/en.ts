@@ -1148,6 +1148,10 @@ export const en = {
     },
     filterEmpty: "No tasks match these filters.",
     errors: { load: "Unable to load the work index", item: "Unable to load this task" },
+    hosts: {
+      summary: "{{count}} tasks from {{hosts}}",
+      merged: "Each host keeps its own index; this page shows them together.",
+    },
     time: {
       justNow: "just now",
       minutesAgo: "{{count}}m ago",

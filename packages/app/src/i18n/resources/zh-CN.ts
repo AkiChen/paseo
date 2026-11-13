@@ -1131,6 +1131,10 @@ export const zhCN: TranslationResources = {
     },
     filterEmpty: "没有符合筛选条件的事项。",
     errors: { load: "无法加载工作索引", item: "无法加载该事项" },
+    hosts: {
+      summary: "{{count}} 项，来自 {{hosts}}",
+      merged: "每台主机各自保存索引，这里汇总展示。",
+    },
     time: {
       justNow: "刚刚",
       minutesAgo: "{{count}} 分钟前",

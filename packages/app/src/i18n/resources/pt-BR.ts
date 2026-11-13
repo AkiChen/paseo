@@ -1168,6 +1168,10 @@ export const ptBR: TranslationResources = {
       load: "Não foi possível carregar o índice de trabalho",
       item: "Não foi possível carregar esta tarefa",
     },
+    hosts: {
+      summary: "{{count}} tarefas de {{hosts}}",
+      merged: "Cada host mantém seu próprio índice; esta página mostra todos juntos.",
+    },
     time: {
       justNow: "agora mesmo",
       minutesAgo: "há {{count}} min",

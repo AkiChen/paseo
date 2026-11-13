@@ -55,9 +55,19 @@ export function WorkLedgerPopup({ serverId }: { serverId?: string }): ReactEleme
     () => entries.filter((entry) => entry.item.attention.length > 0).slice(0, 4),
     [entries],
   );
-  const review = useMemo(
-    () => entries.filter((entry) => entry.item.status === "review").slice(0, 4),
-    [entries],
+  // Everything not already shown above, newest first. The popup is the only surface
+  // reachable from a workspace, so restricting it to two buckets left in-progress and
+  // pending work invisible.
+  const attentionIds = useMemo(
+    () => new Set(attention.map((entry) => `${entry.serverId}:${entry.item.id}`)),
+    [attention],
+  );
+  const recent = useMemo(
+    () =>
+      entries
+        .filter((entry) => !attentionIds.has(`${entry.serverId}:${entry.item.id}`))
+        .slice(0, 6),
+    [entries, attentionIds],
   );
 
   const openItem = useCallback(
@@ -67,9 +77,14 @@ export function WorkLedgerPopup({ serverId }: { serverId?: string }): ReactEleme
     [router],
   );
   const openAll = useCallback(() => {
-    const target = serverId ?? entries[0]?.serverId;
-    if (target) router.push(`/h/${target}/work-ledger`);
-  }, [router, serverId, entries]);
+    // From a workspace header the popup is host-scoped; without a host it is the
+    // cross-host summary, so "view all" opens the all-hosts index.
+    if (serverId) {
+      router.push(`/h/${serverId}/work-ledger`);
+      return;
+    }
+    router.push("/work-ledger");
+  }, [router, serverId]);
 
   const triggerLabel =
     counts.attention > 0
@@ -89,11 +104,20 @@ export function WorkLedgerPopup({ serverId }: { serverId?: string }): ReactEleme
       <DropdownMenuContent width={340} maxHeight={460} scrollable>
         <View style={styles.menuBody}>
           <Text style={styles.summary}>
+            {t("workLedger.hosts.summary", {
+              count: counts.total,
+              hosts: hosts
+                .filter((host) => host.items.length > 0)
+                .map((host) => host.serverName)
+                .join(", "),
+            })}
+          </Text>
+          <Text style={styles.summary}>
             {t("workLedger.filters.attention")} {counts.attention} ·{" "}
             {t("workLedger.filters.review")} {counts.review} · {t("workLedger.filters.in_progress")}{" "}
             {counts.inProgress}
           </Text>
-          {attention.length === 0 && review.length === 0 ? (
+          {attention.length === 0 && recent.length === 0 ? (
             <Text style={styles.muted}>{t("workLedger.popup.none")}</Text>
           ) : null}
           <PopupGroup
@@ -102,8 +126,8 @@ export function WorkLedgerPopup({ serverId }: { serverId?: string }): ReactEleme
             onOpen={openItem}
           />
           <PopupGroup
-            title={review.length > 0 ? t("workLedger.popup.review") : null}
-            entries={review}
+            title={recent.length > 0 ? t("workLedger.popup.recent") : null}
+            entries={recent}
             onOpen={openItem}
           />
           <DropdownMenuItem testID="work-ledger-popup-open-all" onSelect={openAll}>

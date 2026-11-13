@@ -148,7 +148,15 @@ class WorkLedgerController {
   private readonly connections = new Map<string, HostConnection>();
   private readonly itemRequests = new Map<string, Promise<void>>();
 
-  connect(input: { serverId: string; client: DaemonClient; supportsWorkLedger: boolean }): void {
+  connect(input: {
+    serverId: string;
+    client: DaemonClient;
+    /** `null` means server_info has not arrived yet; do not cache a decision on it. */
+    supportsWorkLedger: boolean | null;
+  }): void {
+    // Same client AND a live subscription means nothing to do. Comparing the client
+    // alone is not enough: a disconnect drops the entry's subscription, and reusing
+    // the same client afterwards must re-attach rather than silently return.
     const existing = this.connections.get(input.serverId);
     if (existing?.client === input.client) return;
     this.disconnect(input.serverId);
@@ -156,7 +164,14 @@ class WorkLedgerController {
     const replica =
       this.replicas.get(input.serverId) ?? createWorkLedgerHostReplica(input.serverId);
     this.replicas.set(input.serverId, replica);
-    if (!input.supportsWorkLedger) {
+    if (input.supportsWorkLedger === null) {
+      // Undecided: stay offline without an error, and let the next connection pass
+      // (directory refresh, reconnect) retry once server_info is known.
+      replica.markStatus("offline");
+      this.publish(input.serverId, replica);
+      return;
+    }
+    if (input.supportsWorkLedger === false) {
       replica.markStatus("unsupported");
       this.publish(input.serverId, replica);
       return;

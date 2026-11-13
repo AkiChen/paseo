@@ -11,14 +11,13 @@ import {
   type WorkLedgerHostSnapshot,
 } from "@/work-ledger";
 
-function selectHosts(
-  state: { hosts: Record<string, WorkLedgerHostSnapshot> },
-  serverIds: readonly string[],
-): WorkLedgerHostSnapshot[] {
-  return serverIds.flatMap((serverId) => {
-    const host = state.hosts[serverId];
-    return host ? [host] : [];
-  });
+/**
+ * `useSyncExternalStore` compares snapshots by reference, so the selector must
+ * return the stored object itself, never a rebuilt array: a fresh array on every
+ * call reads as "the store changed" and renders forever (React error #185).
+ */
+function selectHostState(state: { hosts: Record<string, WorkLedgerHostSnapshot> }) {
+  return state.hosts;
 }
 
 /**
@@ -29,45 +28,26 @@ function selectHosts(
 export function useWorkLedgerHosts(): WorkLedgerHostView[] {
   const hosts = useHosts();
   const serverIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
-  const serverIdKey = serverIds.join("\u0000");
-  const snapshots = useSyncExternalStore(
+  const hostState = useSyncExternalStore(
     (onStoreChange) => useWorkLedger.subscribe(onStoreChange),
-    () => selectHosts(useWorkLedger.getState(), serverIds),
-    () => selectHosts(useWorkLedger.getState(), serverIds),
+    () => selectHostState(useWorkLedger.getState()),
+    () => selectHostState(useWorkLedger.getState()),
   );
 
   return useMemo(() => {
-    void serverIdKey;
     return serverIds.map((serverId, index) => {
       const host = hosts[index];
-      const snapshot = snapshots.find((candidate) => candidate.serverId === serverId);
-      const fallback: WorkLedgerHostSnapshot = {
-        serverId,
-        items: workLedgerHostItems(snapshot),
-        counts: snapshot?.counts ?? {
-          total: 0,
-          pending: 0,
-          inProgress: 0,
-          review: 0,
-          completed: 0,
-          cancelled: 0,
-          attention: 0,
-        },
-        status: "offline",
-        syncedAt: null,
-        error: null,
-      };
-      const resolved = snapshot ?? fallback;
+      const snapshot = hostState[serverId];
       return {
         serverId,
         serverName: normalizeHostLabel(host?.label, serverId),
-        items: resolved.items,
-        status: resolved.status,
-        error: resolved.error,
-        syncedAt: resolved.syncedAt,
+        items: workLedgerHostItems(snapshot),
+        status: snapshot?.status ?? "offline",
+        error: snapshot?.error ?? null,
+        syncedAt: snapshot?.syncedAt ?? null,
       } satisfies WorkLedgerHostView;
     });
-  }, [hosts, serverIds, snapshots, serverIdKey]);
+  }, [hosts, serverIds, hostState]);
 }
 
 /** Ledger data for one host, plus whether it is trustworthy enough to render. */

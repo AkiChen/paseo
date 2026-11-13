@@ -1174,6 +1174,10 @@ export const fr: TranslationResources = {
       load: "Impossible de charger l'index de travail",
       item: "Impossible de charger cette tâche",
     },
+    hosts: {
+      summary: "{{count}} tâches de {{hosts}}",
+      merged: "Chaque hôte garde son propre index ; cette page les affiche ensemble.",
+    },
     time: {
       justNow: "à l'instant",
       minutesAgo: "il y a {{count}} min",

@@ -1159,6 +1159,10 @@ export const ru: TranslationResources = {
     },
     filterEmpty: "Нет задач, подходящих под фильтры.",
     errors: { load: "Не удалось загрузить индекс работ", item: "Не удалось загрузить задачу" },
+    hosts: {
+      summary: "{{count}} задач с {{hosts}}",
+      merged: "У каждого хоста свой индекс; эта страница показывает их вместе.",
+    },
     time: {
       justNow: "только что",
       minutesAgo: "{{count}} мин назад",

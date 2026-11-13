@@ -1178,6 +1178,10 @@ export const es: TranslationResources = {
       load: "No se pudo cargar el índice de trabajo",
       item: "No se pudo cargar esta tarea",
     },
+    hosts: {
+      summary: "{{count}} tareas de {{hosts}}",
+      merged: "Cada host mantiene su propio índice; esta página los muestra juntos.",
+    },
     time: {
       justNow: "hace un momento",
       minutesAgo: "hace {{count}} min",
