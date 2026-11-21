@@ -4,6 +4,7 @@ import {
   mergePersistedCollapsedProjects,
   serializeCollapsedProjects,
   setProjectCollapsed,
+  toggleFavoritesCollapsed,
   togglePinnedCollapsed,
   toggleProjectCollapsed,
   toggleWorkspaceGroupCollapsed,
@@ -14,6 +15,7 @@ function emptyState(): CollapsedProjectsState {
     collapsedProjectKeys: new Set(),
     collapsedWorkspaceGroupKeys: new Set(),
     collapsedPinned: false,
+    collapsedFavorites: false,
   };
 }
 
@@ -35,12 +37,14 @@ describe("sidebar collapsed projects transitions", () => {
       collapsedProjectKeys: new Set(["project-a", "project-b"]),
       collapsedWorkspaceGroupKeys: new Set(["running"]),
       collapsedPinned: true,
+      collapsedFavorites: true,
     };
 
     expect(serializeCollapsedProjects(state)).toEqual({
       collapsedProjectKeys: ["project-a", "project-b"],
       collapsedWorkspaceGroupKeys: ["running"],
       collapsedPinned: true,
+      collapsedFavorites: true,
     });
   });
 
@@ -50,6 +54,16 @@ describe("sidebar collapsed projects transitions", () => {
 
     const restored = mergePersistedCollapsedProjects({ collapsedPinned: true }, emptyState());
     expect(restored.collapsedPinned).toBe(true);
+  });
+
+  it("toggles and restores the favorites section collapse flag on its own", () => {
+    const toggled = toggleFavoritesCollapsed(emptyState());
+    expect(toggled.collapsedFavorites).toBe(true);
+    expect(toggled.collapsedPinned).toBe(false);
+
+    const restored = mergePersistedCollapsedProjects({ collapsedFavorites: true }, emptyState());
+    expect(restored.collapsedFavorites).toBe(true);
+    expect(restored.collapsedPinned).toBe(false);
   });
 
   it("rejects the complete value when a persisted project key is invalid", () => {

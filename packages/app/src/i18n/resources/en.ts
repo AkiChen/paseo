@@ -1286,6 +1286,9 @@ export const en = {
     pinned: {
       title: "Pinned",
     },
+    favorites: {
+      title: "Favorites",
+    },
     host: {
       noHost: "No host",
       switchTitle: "Switch host",
@@ -1373,6 +1376,8 @@ export const en = {
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
+        favorite: "Add to favorites",
+        unfavorite: "Remove from favorites",
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",

@@ -21,6 +21,31 @@ export function PinnedSectionHeader({
   onToggle: () => void;
 }) {
   const { t } = useTranslation();
+  return (
+    <SidebarSectionHeader
+      title={t("sidebar.pinned.title")}
+      collapsed={collapsed}
+      onToggle={onToggle}
+      testID="sidebar-pinned-section-header"
+    />
+  );
+}
+
+/**
+ * The collapse toggle above a hoisted sidebar section — Pinned, Favorites. Both are one flat
+ * list of rows under a muted title, so they share the header rather than growing a variant each.
+ */
+export function SidebarSectionHeader({
+  title,
+  collapsed,
+  onToggle,
+  testID,
+}: {
+  title: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  testID: string;
+}) {
   const isCompact = useIsCompactFormFactor();
   const accessibilityState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
   const Chevron = collapsed ? ThemedChevronRight : ThemedChevronDown;
@@ -31,11 +56,11 @@ export function PinnedSectionHeader({
       accessibilityState={accessibilityState}
       onPress={onToggle}
       style={styles.header}
-      testID="sidebar-pinned-section-header"
+      testID={testID}
     >
       {({ hovered }) => (
         <>
-          <Text style={styles.title}>{t("sidebar.pinned.title")}</Text>
+          <Text style={styles.title}>{title}</Text>
           {hovered || isNative || isCompact ? (
             <Chevron size={12} uniProps={foregroundMutedColorMapping} />
           ) : null}

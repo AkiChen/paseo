@@ -1319,6 +1319,9 @@ export const es: TranslationResources = {
     pinned: {
       title: "Anclados",
     },
+    favorites: {
+      title: "Favoritos",
+    },
     host: {
       noHost: "Sin anfitrión",
       switchTitle: "Cambiar de anfitrión",
@@ -1406,6 +1409,8 @@ export const es: TranslationResources = {
         rename: "Cambiar nombre del espacio de trabajo",
         pin: "Anclar arriba",
         unpin: "Desanclar",
+        favorite: "Añadir a favoritos",
+        unfavorite: "Quitar de favoritos",
         archive: "Archivo",
         archiveWorkspace: "Archivar espacio de trabajo",
         hideFromSidebar: "Ocultar de la barra lateral",

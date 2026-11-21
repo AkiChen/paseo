@@ -69,11 +69,15 @@ import {
   type SidebarWorkspaceTrailing,
 } from "@/components/sidebar/workspace-trailing";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
+import { useSidebarFavoriteAgentsStore } from "@/stores/sidebar-favorite-agents-store";
 import {
   SidebarWorkspaceContextMenu,
   SidebarWorkspaceMenu,
 } from "@/components/sidebar/sidebar-workspace-menu";
-import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
+import {
+  PinnedSectionHeader,
+  SidebarSectionHeader,
+} from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pin";
@@ -112,9 +116,21 @@ function statusWorkspaceKeyExtractor(workspace: SidebarWorkspaceEntry): string {
   return workspace.workspaceKey;
 }
 
+/** What a grouped row needs to answer "is this one starred", threaded down unchanged. */
+interface FavoriteRowTokens {
+  isFavoriteByKey: ReadonlySet<string>;
+  onToggleFavorite: (workspaceKey: string) => void;
+}
+
 interface StatusWorkspaceListProps {
   groups: SidebarWorkspaceGroup[];
   pinnedWorkspaces: SidebarWorkspaceEntry[];
+  /**
+   * Every row the list can show, before any grouping or hoisting. Starred or pinned rows drop
+   * out of the grouped lists below, so their entries are what the Favorites and Pinned sections
+   * look up to render a row.
+   */
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectIconByProjectViewKey: ReadonlyMap<string, string | null>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
   showShortcutBadges: boolean;
@@ -133,6 +149,7 @@ interface StatusWorkspaceListProps {
 export function SidebarStatusWorkspaceList({
   groups,
   pinnedWorkspaces,
+  workspaceEntriesByKey,
   projectIconByProjectViewKey,
   shortcutIndexByWorkspaceKey,
   showShortcutBadges,
@@ -153,12 +170,46 @@ export function SidebarStatusWorkspaceList({
   const togglePinnedCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.togglePinnedCollapsed,
   );
+  const favoritesCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedFavorites);
+  const toggleFavoritesCollapsed = useSidebarCollapsedSectionsStore(
+    (state) => state.toggleFavoritesCollapsed,
+  );
+  const favoriteAgentKeys = useSidebarFavoriteAgentsStore((state) => state.favoriteAgentKeys);
+  const toggleFavoriteAgent = useSidebarFavoriteAgentsStore((state) => state.toggleFavoriteAgent);
+  const { t } = useTranslation();
   const {
     visibleItems: visiblePinnedWorkspaces,
     expanded: pinnedWorkspacesExpanded,
     canToggle: canTogglePinnedWorkspaces,
     toggleExpanded: togglePinnedWorkspacesExpanded,
   } = useLimitedSidebarGroup(pinnedWorkspaces);
+
+  // Starred rows are hoisted into Favorites the way pinned chats are hoisted into Pinned: the
+  // star itself is the membership test, so nothing here has to be pruned when a row goes away.
+  // A starred row usually also appears in the status groups that follow — the two sections
+  // answer different questions ("what did I mark" vs "what changed") and both stay truthful.
+  const starredKeys = useMemo(() => new Set(favoriteAgentKeys), [favoriteAgentKeys]);
+  const favoriteWorkspaces = useMemo(
+    () =>
+      favoriteAgentKeys.flatMap((workspaceKey) => {
+        const entry = workspaceEntriesByKey.get(workspaceKey);
+        return entry ? [entry] : [];
+      }),
+    [favoriteAgentKeys, workspaceEntriesByKey],
+  );
+  const {
+    visibleItems: visibleFavoriteWorkspaces,
+    expanded: favoriteWorkspacesExpanded,
+    canToggle: canToggleFavoriteWorkspaces,
+    toggleExpanded: toggleFavoriteWorkspacesExpanded,
+  } = useLimitedSidebarGroup(favoriteWorkspaces);
+  const favoriteTokens = useMemo(
+    () => ({
+      isFavoriteByKey: starredKeys,
+      onToggleFavorite: toggleFavoriteAgent,
+    }),
+    [starredKeys, toggleFavoriteAgent],
+  );
 
   const statusShortcutIndex = showShortcutBadges
     ? shortcutIndexByWorkspaceKey
@@ -183,6 +234,8 @@ export function SidebarStatusWorkspaceList({
         canPin={supportsPinningByServerId.get(workspace.serverId) === true}
         onToggleWorkspacePin={onToggleWorkspacePin}
         onWorkspacePress={onWorkspacePress}
+        isFavorite={starredKeys.has(workspace.workspaceKey)}
+        onToggleFavorite={toggleFavoriteAgent}
         drag={drag}
         isDragging={isActive}
         dragHandleProps={dragHandleProps}
@@ -194,12 +247,69 @@ export function SidebarStatusWorkspaceList({
       onWorkspacePress,
       projectIconByProjectViewKey,
       showShortcutBadges,
+      starredKeys,
       statusShortcutIndex,
       supportsPinningByServerId,
+      toggleFavoriteAgent,
+    ],
+  );
+  const renderFavoriteWorkspace = useCallback(
+    ({ item: workspace }: { item: SidebarWorkspaceEntry }) => (
+      <StatusWorkspaceRow
+        key={workspace.workspaceKey}
+        workspace={workspace}
+        {...buildStatusRowProjectPresentation({
+          workspace,
+          projectIconByProjectViewKey,
+          hostBadgeByServerId,
+        })}
+        inStatusGroup={false}
+        shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
+        showShortcutBadge={showShortcutBadges}
+        canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+        onToggleWorkspacePin={onToggleWorkspacePin}
+        onWorkspacePress={onWorkspacePress}
+        isFavorite={true}
+        onToggleFavorite={toggleFavoriteAgent}
+      />
+    ),
+    [
+      hostBadgeByServerId,
+      onToggleWorkspacePin,
+      onWorkspacePress,
+      projectIconByProjectViewKey,
+      showShortcutBadges,
+      statusShortcutIndex,
+      supportsPinningByServerId,
+      toggleFavoriteAgent,
     ],
   );
   const content = (
     <>
+      {favoriteWorkspaces.length > 0 ? (
+        <View style={styles.favoritesSection} testID="sidebar-favorites-section">
+          <SidebarSectionHeader
+            title={t("sidebar.favorites.title")}
+            collapsed={favoritesCollapsed}
+            onToggle={toggleFavoritesCollapsed}
+            testID="sidebar-favorites-section-header"
+          />
+          {favoritesCollapsed ? null : (
+            <>
+              {visibleFavoriteWorkspaces.map((workspace) =>
+                renderFavoriteWorkspace({ item: workspace }),
+              )}
+              {canToggleFavoriteWorkspaces ? (
+                <SidebarGroupToggleRow
+                  expanded={favoriteWorkspacesExpanded}
+                  onPress={toggleFavoriteWorkspacesExpanded}
+                  testID="sidebar-favorites-show-more"
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
       {pinnedWorkspaces.length > 0 ? (
         <View style={styles.pinnedSection} testID="sidebar-pinned-section">
           <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
@@ -242,6 +352,7 @@ export function SidebarStatusWorkspaceList({
           hostBadgeByServerId={hostBadgeByServerId}
           supportsPinningByServerId={supportsPinningByServerId}
           onToggleWorkspacePin={onToggleWorkspacePin}
+          favoriteTokens={favoriteTokens}
         />
       )}
     </>
@@ -282,6 +393,7 @@ function StatusGroupList({
   hostBadgeByServerId,
   supportsPinningByServerId,
   onToggleWorkspacePin,
+  favoriteTokens,
 }: {
   groups: SidebarWorkspaceGroup[];
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
@@ -292,6 +404,7 @@ function StatusGroupList({
   hostBadgeByServerId: ReadonlyMap<string, HostBadgeModel>;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  favoriteTokens: FavoriteRowTokens;
 }) {
   return (
     <>
@@ -307,6 +420,7 @@ function StatusGroupList({
           hostBadgeByServerId={hostBadgeByServerId}
           supportsPinningByServerId={supportsPinningByServerId}
           onToggleWorkspacePin={onToggleWorkspacePin}
+          favoriteTokens={favoriteTokens}
         />
       ))}
     </>
@@ -323,6 +437,7 @@ function StatusGroupRows({
   hostBadgeByServerId,
   supportsPinningByServerId,
   onToggleWorkspacePin,
+  favoriteTokens,
 }: {
   group: SidebarWorkspaceGroup;
   collapsed: boolean;
@@ -333,6 +448,7 @@ function StatusGroupRows({
   hostBadgeByServerId: ReadonlyMap<string, HostBadgeModel>;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  favoriteTokens: FavoriteRowTokens;
 }) {
   const {
     visibleItems: visibleWorkspaces,
@@ -363,6 +479,8 @@ function StatusGroupRows({
               canPin={supportsPinningByServerId.get(workspace.serverId) === true}
               onToggleWorkspacePin={onToggleWorkspacePin}
               onWorkspacePress={onWorkspacePress}
+              isFavorite={favoriteTokens.isFavoriteByKey.has(workspace.workspaceKey)}
+              onToggleFavorite={favoriteTokens.onToggleFavorite}
             />
           ))}
           {canToggleWorkspaces ? (
@@ -498,6 +616,8 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   showShortcutBadge,
   canPin,
   onToggleWorkspacePin,
+  isFavorite = false,
+  onToggleFavorite,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
   onWorkspacePress,
@@ -513,6 +633,8 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   showShortcutBadge: boolean;
   canPin: boolean;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  isFavorite?: boolean;
+  onToggleFavorite?: (workspaceKey: string) => void;
   reserveIdleStatusIndicatorSpace?: boolean;
   /**
    * Whether the row sits under a status header, which is what it indents from. Pinned rows
@@ -546,6 +668,8 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
       showShortcutBadge={showShortcutBadge}
       canPin={canPin}
       onToggleWorkspacePin={onToggleWorkspacePin}
+      isFavorite={isFavorite}
+      onToggleFavorite={onToggleFavorite}
       reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       inStatusGroup={inStatusGroup}
       onPress={handlePress}
@@ -566,6 +690,8 @@ function StatusWorkspaceRowWithMenu({
   showShortcutBadge,
   canPin,
   onToggleWorkspacePin,
+  isFavorite = false,
+  onToggleFavorite,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
   onPress,
@@ -582,6 +708,8 @@ function StatusWorkspaceRowWithMenu({
   showShortcutBadge: boolean;
   canPin: boolean;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  isFavorite?: boolean;
+  onToggleFavorite?: (workspaceKey: string) => void;
   reserveIdleStatusIndicatorSpace?: boolean;
   /**
    * Whether the row sits under a status header, which is what it indents from. Pinned rows
@@ -640,6 +768,10 @@ function StatusWorkspaceRowWithMenu({
     onToggleWorkspacePin(workspace);
   }, [onToggleWorkspacePin, workspace]);
   const onTogglePin = canPin ? handleTogglePin : undefined;
+  const handleToggleFavorite = useCallback(() => {
+    onToggleFavorite?.(workspace.workspaceKey);
+  }, [onToggleFavorite, workspace.workspaceKey]);
+  const toggleFavorite = onToggleFavorite ? handleToggleFavorite : undefined;
 
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
   const { hasClearableAttention, canMarkUnread, clearAttention, markUnread } =
@@ -693,6 +825,8 @@ function StatusWorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        isFavorite={isFavorite}
+        onToggleFavorite={toggleFavorite}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
         inStatusGroup={inStatusGroup}
         drag={drag}
@@ -731,6 +865,8 @@ interface StatusWorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   reserveIdleStatusIndicatorSpace?: boolean;
   /** Pinned rows are flat under their own header; status-group rows indent from theirs. */
   inStatusGroup?: boolean;
@@ -778,6 +914,8 @@ function StatusWorkspaceRowInnerContent({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
   isDragging = false,
@@ -878,6 +1016,8 @@ function StatusWorkspaceRowInnerContent({
               archiveShortcutKeys={archiveShortcutKeys}
               isPinned={isPinned}
               onTogglePin={onTogglePin}
+              isFavorite={isFavorite}
+              onToggleFavorite={onToggleFavorite}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
               accessibilityRole="button"
@@ -902,6 +1042,7 @@ function StatusWorkspaceRowInnerContent({
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+                isFavorite={isFavorite}
               >
                 {renderSlot ? (
                   <StatusWorkspaceActionSlot
@@ -914,6 +1055,8 @@ function StatusWorkspaceRowInnerContent({
                     reserveSlotWidth={reserveSlotWidth}
                     isPinned={isPinned}
                     onTogglePin={onTogglePin}
+                    isFavorite={isFavorite}
+                    onToggleFavorite={onToggleFavorite}
                     onCopyPath={onCopyPath}
                     onCopyBranchName={onCopyBranchName}
                     onRename={onRename}
@@ -945,6 +1088,8 @@ function StatusWorkspaceActionSlot({
   reserveSlotWidth,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
   onCopyPath,
   onCopyBranchName,
   onRename,
@@ -965,6 +1110,8 @@ function StatusWorkspaceActionSlot({
   reserveSlotWidth: boolean;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   onCopyPath?: () => void;
   onCopyBranchName?: () => void;
   onRename?: () => void;
@@ -1005,6 +1152,8 @@ function StatusWorkspaceActionSlot({
             archiveShortcutKeys={archiveShortcutKeys}
             isPinned={isPinned}
             onTogglePin={onTogglePin}
+            isFavorite={isFavorite}
+            onToggleFavorite={onToggleFavorite}
           />
         ) : null}
       </SidebarWorkspaceTrailingActionOverlay>
@@ -1049,6 +1198,10 @@ const styles = StyleSheet.create((theme) => ({
     paddingBottom: theme.spacing[4],
   },
   pinnedSection: {
+    marginBottom: theme.spacing[1],
+  },
+  // Same block rhythm as Pinned: a title, then a flat list of ungrouped rows.
+  favoritesSection: {
     marginBottom: theme.spacing[1],
   },
   // Matches `projectBlockExpanded` in sidebar-workspace-list.tsx. See the note there.

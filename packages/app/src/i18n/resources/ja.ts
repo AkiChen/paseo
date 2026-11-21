@@ -1298,6 +1298,9 @@ export const ja: TranslationResources = {
     pinned: {
       title: "固定済み",
     },
+    favorites: {
+      title: "お気に入り",
+    },
     host: {
       noHost: "ホストなし",
       switchTitle: "ホストを切り替え",
@@ -1385,6 +1388,8 @@ export const ja: TranslationResources = {
         rename: "ワークスペースの名前を変更",
         pin: "上部に固定",
         unpin: "固定解除",
+        favorite: "お気に入りに追加",
+        unfavorite: "お気に入りから削除",
         archive: "アーカイブ",
         archiveWorkspace: "ワークスペースをアーカイブ",
         hideFromSidebar: "サイドバーから非表示",

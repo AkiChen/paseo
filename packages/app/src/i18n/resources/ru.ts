@@ -1298,6 +1298,9 @@ export const ru: TranslationResources = {
     pinned: {
       title: "Закреплённые",
     },
+    favorites: {
+      title: "Избранное",
+    },
     host: {
       noHost: "Нет хоста",
       switchTitle: "Сменить хост",
@@ -1385,6 +1388,8 @@ export const ru: TranslationResources = {
         rename: "Переименовать рабочее пространство",
         pin: "Закрепить вверху",
         unpin: "Открепить",
+        favorite: "Добавить в избранное",
+        unfavorite: "Удалить из избранного",
         archive: "Архивировать",
         archiveWorkspace: "Архивировать рабочее пространство",
         hideFromSidebar: "Скрыть на боковой панели",

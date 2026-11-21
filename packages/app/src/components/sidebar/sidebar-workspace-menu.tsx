@@ -33,6 +33,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Shortcut } from "@/components/ui/shortcut";
+import { FavoriteMenuItemContent } from "@/components/sidebar/favorite-menu-item";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 import { resolveSidebarWorkspaceAccessibilityLabel } from "@/components/sidebar/sidebar-workspace-title";
 import {
@@ -96,6 +97,8 @@ export interface SidebarWorkspaceMenuProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   openInFileManagerPath?: string | null;
   /**
    * Lifted so the row that reveals the kebab can keep it mounted while its menu is up. See
@@ -144,9 +147,12 @@ function SidebarWorkspaceMenuItems({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
+  const favorite = FavoriteMenuItemContent({ isFavorite: Boolean(isFavorite) });
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
@@ -218,6 +224,16 @@ function SidebarWorkspaceMenuItems({
           {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
         </WorkspaceMenuItem>
       ) : null}
+      {onToggleFavorite ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-favorite-${workspaceKey}`}
+          leading={favorite.leading}
+          onSelect={onToggleFavorite}
+        >
+          {favorite.label}
+        </WorkspaceMenuItem>
+      ) : null}
       {serverId && workspaceId ? (
         <DropdownMenuSubTrigger
           id={WORKSPACE_LABEL_PAGE_ID}
@@ -266,6 +282,8 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
   openInFileManagerPath,
   open,
   onOpenChange,
@@ -312,6 +330,8 @@ export function SidebarWorkspaceMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          isFavorite={isFavorite}
+          onToggleFavorite={onToggleFavorite}
           openInFileManagerPath={openInFileManagerPath}
         />
       </DropdownMenuContent>
@@ -345,6 +365,8 @@ export function SidebarWorkspaceContextMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
@@ -425,6 +447,8 @@ export function SidebarWorkspaceContextMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          isFavorite={isFavorite}
+          onToggleFavorite={onToggleFavorite}
           openInFileManagerPath={openInFileManagerPath}
         />
       </ContextMenuContent>

@@ -28,6 +28,7 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { SidebarStarBadge } from "@/components/sidebar/sidebar-star-badge";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -100,6 +101,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   shortcutNumber = null,
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
+  isFavorite = false,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -117,6 +119,13 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   showShortcutBadge?: boolean;
   /** Keep the empty leading slot when the workspace has no active status. */
   reserveIdleStatusIndicatorSpace?: boolean;
+  /**
+   * Draw the star at the head of the title. Workspace rows put it here rather than on the
+   * leading icon's corner, which already carries the aggregate status badge — two marks on one
+   * 16pt icon overlap. The slot only exists while starred, so unstarred rows keep their text
+   * on the same rail as before.
+   */
+  isFavorite?: boolean;
   children?: ReactNode;
 }) {
   const {
@@ -158,6 +167,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         )}
         <View style={styles.workspaceContentColumn}>
           <View style={styles.workspaceTitleRow}>
+            {isFavorite ? <SidebarStarBadge placement="inline" /> : null}
             <Text style={workspaceBranchTextStyle} numberOfLines={1}>
               {workspaceLabel}
             </Text>

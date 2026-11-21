@@ -1269,6 +1269,9 @@ export const zhCN: TranslationResources = {
     pinned: {
       title: "已置顶",
     },
+    favorites: {
+      title: "已收藏",
+    },
     host: {
       noHost: "没有 Host",
       switchTitle: "切换 Host",
@@ -1354,6 +1357,8 @@ export const zhCN: TranslationResources = {
         rename: "重命名 workspace",
         pin: "置顶",
         unpin: "取消置顶",
+        favorite: "收藏加星",
+        unfavorite: "取消收藏",
         archive: "归档",
         archiveWorkspace: "归档工作区",
         hideFromSidebar: "从侧边栏隐藏",

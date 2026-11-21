@@ -1277,6 +1277,9 @@ export const ar: TranslationResources = {
     pinned: {
       title: "المثبتة",
     },
+    favorites: {
+      title: "المفضلة",
+    },
     host: {
       noHost: "لا مضيف",
       switchTitle: "تبديل المضيف",
@@ -1364,6 +1367,8 @@ export const ar: TranslationResources = {
         rename: "إعادة تسمية مساحة العمل",
         pin: "تثبيت في الأعلى",
         unpin: "إلغاء التثبيت",
+        favorite: "أضف إلى المفضلة",
+        unfavorite: "إزالة من المفضلة",
         archive: "أرشيف",
         archiveWorkspace: "أرشفة مساحة العمل",
         hideFromSidebar: "إخفاء من الشريط الجانبي",

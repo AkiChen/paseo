@@ -4,6 +4,7 @@ export interface CollapsedProjectsState {
   collapsedProjectKeys: Set<string>;
   collapsedWorkspaceGroupKeys: Set<string>;
   collapsedPinned: boolean;
+  collapsedFavorites: boolean;
 }
 
 export interface PersistedCollapsedProjects {
@@ -11,6 +12,7 @@ export interface PersistedCollapsedProjects {
   collapsedWorkspaceGroupKeys?: string[];
   collapsedStatusGroupKeys?: string[];
   collapsedPinned?: boolean;
+  collapsedFavorites?: boolean;
 }
 
 export const PersistedCollapsedProjectsSchema: z.ZodType<PersistedCollapsedProjects> =
@@ -20,10 +22,15 @@ export const PersistedCollapsedProjectsSchema: z.ZodType<PersistedCollapsedProje
     // COMPAT(sidebarWorkspaceGroupCollapse): added in v0.4.0, remove after 2027-02-14.
     collapsedStatusGroupKeys: z.array(z.string()).optional(),
     collapsedPinned: z.boolean().optional(),
+    collapsedFavorites: z.boolean().optional(),
   });
 
 export function togglePinnedCollapsed(state: CollapsedProjectsState): CollapsedProjectsState {
   return { ...state, collapsedPinned: !state.collapsedPinned };
+}
+
+export function toggleFavoritesCollapsed(state: CollapsedProjectsState): CollapsedProjectsState {
+  return { ...state, collapsedFavorites: !state.collapsedFavorites };
 }
 
 export function toggleProjectCollapsed(
@@ -70,11 +77,13 @@ export function serializeCollapsedProjects(state: CollapsedProjectsState): {
   collapsedProjectKeys: string[];
   collapsedWorkspaceGroupKeys: string[];
   collapsedPinned: boolean;
+  collapsedFavorites: boolean;
 } {
   return {
     collapsedProjectKeys: Array.from(state.collapsedProjectKeys),
     collapsedWorkspaceGroupKeys: Array.from(state.collapsedWorkspaceGroupKeys),
     collapsedPinned: state.collapsedPinned,
+    collapsedFavorites: state.collapsedFavorites,
   };
 }
 
@@ -96,10 +105,12 @@ export function mergePersistedCollapsedProjects<S extends CollapsedProjectsState
       Array.from(current.collapsedWorkspaceGroupKeys),
   );
   const restoredPinned = persisted.collapsedPinned ?? current.collapsedPinned;
+  const restoredFavorites = persisted.collapsedFavorites ?? current.collapsedFavorites;
   if (
     areSetsEqual(current.collapsedProjectKeys, restoredProjects) &&
     areSetsEqual(current.collapsedWorkspaceGroupKeys, restoredWorkspaceGroups) &&
-    current.collapsedPinned === restoredPinned
+    current.collapsedPinned === restoredPinned &&
+    current.collapsedFavorites === restoredFavorites
   ) {
     return current;
   }
@@ -108,6 +119,7 @@ export function mergePersistedCollapsedProjects<S extends CollapsedProjectsState
     collapsedProjectKeys: restoredProjects,
     collapsedWorkspaceGroupKeys: restoredWorkspaceGroups,
     collapsedPinned: restoredPinned,
+    collapsedFavorites: restoredFavorites,
   };
 }
 

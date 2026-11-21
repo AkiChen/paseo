@@ -47,6 +47,7 @@ import {
   type ToggleSidebarWorkspacePin,
 } from "@/hooks/use-sidebar-workspace-pin";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
+import { useSidebarFavoriteAgentsStore } from "@/stores/sidebar-favorite-agents-store";
 import { useHostFeatureMap } from "@/runtime/host-features";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useProjectIcons } from "@/projects/icons";
@@ -288,6 +289,8 @@ interface WorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   reserveIdleStatusIndicatorSpace?: boolean;
 }
 
@@ -619,6 +622,8 @@ function WorkspaceRowRightGroup({
   onRename,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
 }: {
   workspace: SidebarWorkspaceEntry;
   backdrop: SidebarSurfaceBackdrop;
@@ -639,6 +644,8 @@ function WorkspaceRowRightGroup({
   onRename?: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }) {
   const workspacePath = workspace.workspaceDirectory ?? workspace.projectRootPath;
   const { t } = useTranslation();
@@ -693,6 +700,8 @@ function WorkspaceRowRightGroup({
                 archiveShortcutKeys={archiveShortcutKeys}
                 isPinned={isPinned}
                 onTogglePin={onTogglePin}
+                isFavorite={isFavorite}
+                onToggleFavorite={onToggleFavorite}
                 openInFileManagerPath={workspacePath}
               />
             ) : null}
@@ -1074,6 +1083,8 @@ function WorkspaceRowInner({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
   reserveIdleStatusIndicatorSpace = true,
 }: WorkspaceRowInnerProps) {
   const isCompact = useIsCompactFormFactor();
@@ -1150,6 +1161,8 @@ function WorkspaceRowInner({
               archiveShortcutKeys={archiveShortcutKeys}
               isPinned={isPinned}
               onTogglePin={onTogglePin}
+              isFavorite={isFavorite}
+              onToggleFavorite={onToggleFavorite}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
               aria-selected={selected}
@@ -1176,6 +1189,7 @@ function WorkspaceRowInner({
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+                isFavorite={isFavorite}
               >
                 <WorkspaceRowRightGroup
                   workspace={workspace}
@@ -1197,6 +1211,8 @@ function WorkspaceRowInner({
                   onMarkAsUnread={onMarkAsUnread}
                   isPinned={isPinned}
                   onTogglePin={onTogglePin}
+                  isFavorite={isFavorite}
+                  onToggleFavorite={onToggleFavorite}
                 />
               </SidebarWorkspaceRowContent>
             </SidebarWorkspaceContextMenu>
@@ -1295,6 +1311,18 @@ function WorkspaceRowWithMenu({
   }, [onToggleWorkspacePin, workspace]);
   const onTogglePin = canPin ? handleTogglePin : undefined;
 
+  // Read the star here rather than threading it through the project rows above: this row is the
+  // one place both menus (context and kebab) are mounted from, and the store subscription is
+  // what marks it dirty when the star changes. Grouped and project modes therefore star the same
+  // row from the same preference.
+  const isFavorite = useSidebarFavoriteAgentsStore((state) =>
+    state.favoriteAgentKeys.includes(workspace.workspaceKey),
+  );
+  const toggleFavoriteAgent = useSidebarFavoriteAgentsStore((state) => state.toggleFavoriteAgent);
+  const handleToggleFavorite = useCallback(() => {
+    toggleFavoriteAgent(workspace.workspaceKey);
+  }, [toggleFavoriteAgent, workspace.workspaceKey]);
+
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
   const { hasClearableAttention, canMarkUnread, clearAttention, markUnread } =
     useWorkspaceReadState({
@@ -1352,6 +1380,8 @@ function WorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        isFavorite={isFavorite}
+        onToggleFavorite={handleToggleFavorite}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       />
       <WorkspaceRenameModal
@@ -2061,6 +2091,7 @@ function SidebarGroupedModeList({
     <SidebarStatusWorkspaceList
       groups={workspaceGroups}
       pinnedWorkspaces={pinnedWorkspaces}
+      workspaceEntriesByKey={workspaceEntriesByKey}
       projectIconByProjectViewKey={projectIconByProjectViewKey}
       shortcutIndexByWorkspaceKey={_projectShortcutIndex}
       showShortcutBadges={showShortcutBadges}

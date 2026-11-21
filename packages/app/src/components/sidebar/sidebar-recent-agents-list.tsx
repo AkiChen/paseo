@@ -22,6 +22,16 @@ import { useDeleteAgent, type DeleteAgentInput } from "@/hooks/use-delete-agent"
 import { useHosts } from "@/runtime/host-runtime";
 import { useHostProjects } from "@/projects/host-projects";
 import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import {
+  favoriteAgentKey,
+  useSidebarFavoriteAgentsStore,
+} from "@/stores/sidebar-favorite-agent-rows-store";
+import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
+import { FavoriteMenuItemContent } from "@/components/sidebar/favorite-menu-item";
+import { SidebarStarBadge } from "@/components/sidebar/sidebar-star-badge";
+import { SidebarSectionHeader } from "@/components/sidebar/pinned-section-header";
+import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
+import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import { deriveIdentityColorName, identityForeground } from "@/styles/identity-colors";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { confirmDialog } from "@/utils/confirm-dialog";
@@ -86,6 +96,31 @@ export function SidebarRecentAgentsList({
   });
   const groups = useMemo(() => buildRecentAgentGroups(agents), [agents]);
 
+  // Starred agents get their own block above the status groups, the way Pinned sits above the
+  // workspace list. The star is the membership test, so nothing has to be pruned when an agent
+  // is archived out of the list; a starred agent that is no longer recent simply stops
+  // resolving. Starred agents still appear in their status group below.
+  const favoriteAgentIds = useSidebarFavoriteAgentsStore((state) => state.favoriteAgentIds);
+  const toggleFavoriteAgent = useSidebarFavoriteAgentsStore((state) => state.toggleFavoriteAgent);
+  const favoriteAgentIdSet = useMemo(() => new Set(favoriteAgentIds), [favoriteAgentIds]);
+  const favoriteAgents = useMemo(() => {
+    const agentsByKey = new Map(agents.map((agent) => [favoriteAgentKey(agent), agent] as const));
+    return favoriteAgentIds.flatMap((key) => {
+      const agent = agentsByKey.get(key);
+      return agent ? [agent] : [];
+    });
+  }, [agents, favoriteAgentIds]);
+  const favoritesCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedFavorites);
+  const toggleFavoritesCollapsed = useSidebarCollapsedSectionsStore(
+    (state) => state.toggleFavoritesCollapsed,
+  );
+  const {
+    visibleItems: visibleFavoriteAgents,
+    expanded: favoritesExpanded,
+    canToggle: canToggleFavorites,
+    toggleExpanded: toggleFavoritesExpanded,
+  } = useLimitedSidebarGroup(favoriteAgents);
+
   const handleRefresh = useCallback(() => {
     refreshAll();
   }, [refreshAll]);
@@ -121,6 +156,39 @@ export function SidebarRecentAgentsList({
       testID="sidebar-recent-agents-scroll"
       refreshControl={refreshControl}
     >
+      {favoriteAgents.length > 0 ? (
+        <View style={styles.favoriteSection} testID="sidebar-recent-agents-favorites">
+          <SidebarSectionHeader
+            title={t("sidebar.favorites.title")}
+            collapsed={favoritesCollapsed}
+            onToggle={toggleFavoritesCollapsed}
+            testID="sidebar-recent-agents-favorites-header"
+          />
+          {favoritesCollapsed
+            ? null
+            : visibleFavoriteAgents.map((agent) => (
+                <SidebarRecentAgentRow
+                  key={`${agent.serverId}:${agent.id}`}
+                  agent={agent}
+                  projectViewKey={projectKeysByWorkspace.get(
+                    `${agent.serverId}:${agent.workspaceId}`,
+                  )}
+                  onArchive={archiveAgent}
+                  onDelete={deleteAgent}
+                  onBeforeNavigate={onBeforeNavigate}
+                  isFavorite
+                  onToggleFavorite={toggleFavoriteAgent}
+                />
+              ))}
+          {!favoritesCollapsed && canToggleFavorites ? (
+            <SidebarGroupToggleRow
+              expanded={favoritesExpanded}
+              onPress={toggleFavoritesExpanded}
+              testID="sidebar-recent-agents-favorites-show-more"
+            />
+          ) : null}
+        </View>
+      ) : null}
       {groups.map((group) => (
         <View key={group.bucket} style={styles.group}>
           <RecentAgentGroupHeader bucket={group.bucket} label={group.label} />
@@ -132,6 +200,8 @@ export function SidebarRecentAgentsList({
               onArchive={archiveAgent}
               onDelete={deleteAgent}
               onBeforeNavigate={onBeforeNavigate}
+              isFavorite={favoriteAgentIdSet.has(favoriteAgentKey(agent))}
+              onToggleFavorite={toggleFavoriteAgent}
             />
           ))}
         </View>
@@ -174,16 +244,24 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
   onArchive,
   onDelete,
   onBeforeNavigate,
+  isFavorite = false,
+  onToggleFavorite,
 }: {
   agent: AggregatedAgent;
   projectViewKey?: string;
   onArchive: (input: DeleteAgentInput) => Promise<void>;
   onDelete: (input: DeleteAgentInput) => Promise<void>;
   onBeforeNavigate?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (agentKey: string) => void;
 }) {
   const { t } = useTranslation();
+  const favorite = FavoriteMenuItemContent({ isFavorite });
   const timeAgo = useCompactTimeAgo(agent.lastActivityAt);
   const [isBusy, setIsBusy] = useState(false);
+  const handleToggleFavorite = useCallback(() => {
+    onToggleFavorite?.(favoriteAgentKey(agent));
+  }, [agent, onToggleFavorite]);
   const ProviderIcon = getModelIcon({
     provider: agent.provider,
     modelId: agent.model,
@@ -274,6 +352,7 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
       >
         <View style={styles.iconSlot}>
           <ThemedProviderIcon size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />
+          {isFavorite ? <SidebarStarBadge /> : null}
         </View>
         <View style={styles.content}>
           <Text numberOfLines={1} style={styles.title}>
@@ -313,6 +392,16 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
         <ContextMenuItem leading={archiveLeadingIcon} onSelect={handleArchive} disabled={isBusy}>
           {t("agentList.archiveSheet.archive")}
         </ContextMenuItem>
+        {onToggleFavorite ? (
+          <ContextMenuItem
+            leading={favorite.leading}
+            onSelect={handleToggleFavorite}
+            disabled={isBusy}
+            testID={`sidebar-recent-agent-favorite-${agent.serverId}-${agent.id}`}
+          >
+            {favorite.label}
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuSeparator />
         <ContextMenuItem
           leading={deleteLeadingIcon}
@@ -342,6 +431,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   // The same shape as a workspace status group: a 16pt leading glyph and a muted label, so the
   // two lists read as one sidebar rather than two different ones.
+  favoriteSection: {
+    marginBottom: theme.spacing[1],
+  },
   group: {
     gap: theme.spacing[0.5],
   },
@@ -383,6 +475,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   iconSlot: {
+    position: "relative",
     width: theme.iconSize.md,
     height: theme.iconSize.md,
     alignItems: "center",
