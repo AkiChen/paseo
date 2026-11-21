@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
+import { Portal } from "@gorhom/portal";
 import { ClipboardList } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
@@ -16,7 +17,9 @@ import {
   collectAttentionCounts,
   orderAgentLinks,
   selectPopupHosts,
+  sortAttentionReasons,
 } from "@/screens/work-ledger-screen-state";
+import { WorkLedgerStatusPill } from "@/work-ledger/status-pill";
 import { formatRelativeAge, shortAgentId } from "@/work-ledger/format";
 import { isNative } from "@/constants/platform";
 import { HEADER_CONTROL_HEIGHT } from "@/components/ui/control-geometry";
@@ -59,21 +62,19 @@ export function WorkLedgerPopup({ serverId }: { serverId?: string }): ReactEleme
     [hosts],
   );
   const attention = useMemo(
-    () => entries.filter((entry) => entry.item.attention.length > 0).slice(0, 4),
+    () => entries.filter((entry) => entry.item.attention.length > 0),
     [entries],
   );
   // Everything not already shown above, newest first. The popup is the only surface
   // reachable from a workspace, so restricting it to two buckets left in-progress and
-  // pending work invisible.
+  // pending work invisible. The list is not truncated: the surface scrolls, and a
+  // count that says "13 items" must be reachable by scrolling through them.
   const attentionIds = useMemo(
     () => new Set(attention.map((entry) => `${entry.serverId}:${entry.item.id}`)),
     [attention],
   );
   const recent = useMemo(
-    () =>
-      entries
-        .filter((entry) => !attentionIds.has(`${entry.serverId}:${entry.item.id}`))
-        .slice(0, 6),
+    () => entries.filter((entry) => !attentionIds.has(`${entry.serverId}:${entry.item.id}`)),
     [entries, attentionIds],
   );
 
@@ -260,16 +261,134 @@ const PopupRow = memo(function PopupRow({
     [entry.item, t, i18n.language],
   );
   const handleSelect = useCallback(() => onOpen(entry), [onOpen, entry]);
+
+  // Hovering a row opens the item's detail as a bubble to the left of the list. It is
+  // positioned in a portal rather than mounted in flow, because growing the row would
+  // move every row under the pointer and the list would shuffle while being read.
+  // Per docs/hover.md the hover target is a plain View with pointer events; the row
+  // itself stays the menu item, so the two state machines never meet.
+  const rowRef = useRef<View>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const handlePointerEnter = useCallback(() => {
+    const node = rowRef.current;
+    if (!node) return;
+    node.measureInWindow((x, y, _width, height) => setAnchor({ x, y: y + height / 2 }));
+  }, []);
+  const handlePointerLeave = useCallback(() => setAnchor(null), []);
+  // A row scrolled out of view must not leave its bubble behind.
+  useEffect(() => () => setAnchor(null), []);
+
   return (
-    <DropdownMenuItem
-      description={description}
-      onSelect={handleSelect}
-      testID={`work-ledger-popup-item-${entry.item.number}`}
+    <View
+      ref={rowRef}
+      collapsable={false}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
     >
-      {entry.item.title}
-    </DropdownMenuItem>
+      <DropdownMenuItem
+        description={description}
+        onSelect={handleSelect}
+        testID={`work-ledger-popup-item-${entry.item.number}`}
+      >
+        {entry.item.title}
+      </DropdownMenuItem>
+      {anchor ? <PopupDetailBubble item={entry.item} anchor={anchor} /> : null}
+    </View>
   );
 });
+
+const DETAIL_BUBBLE_WIDTH = 320;
+const DETAIL_BUBBLE_GAP = 12;
+const DETAIL_BUBBLE_MARGIN = 8;
+
+/**
+ * The detail bubble sits to the left of its row, vertically centred on it. It falls
+ * back to the right of the row when there is no room on the left (narrow window), and
+ * is clamped to the screen on both axes so it never opens offscreen.
+ */
+function PopupDetailBubble({
+  item,
+  anchor,
+}: {
+  item: WorkLedgerItem;
+  anchor: { x: number; y: number };
+}): ReactElement {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+
+  const left = anchor.x - DETAIL_BUBBLE_GAP - (size?.width ?? DETAIL_BUBBLE_WIDTH);
+  const flipRight = left < DETAIL_BUBBLE_MARGIN;
+  const x = flipRight
+    ? Math.min(
+        anchor.x + DETAIL_BUBBLE_GAP,
+        screenWidth - DETAIL_BUBBLE_WIDTH - DETAIL_BUBBLE_MARGIN,
+      )
+    : left;
+  const height = size?.height ?? 0;
+  const y = Math.max(
+    DETAIL_BUBBLE_MARGIN,
+    Math.min(anchor.y - (height || 0) / 2, screenHeight - height - DETAIL_BUBBLE_MARGIN),
+  );
+
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height: measured } = event.nativeEvent.layout;
+    setSize({ width, height: measured });
+  }, []);
+
+  return (
+    <Portal>
+      <View
+        pointerEvents="none"
+        onLayout={handleLayout}
+        style={[styles.bubble, { left: x, top: y }]}
+        testID={`work-ledger-popup-detail-${item.number}`}
+      >
+        <PopupDetail item={item} />
+      </View>
+    </Portal>
+  );
+}
+
+/**
+ * The fields a reader needs to judge an item at a glance. The list route shows the
+ * same facts with room to breathe; this is the compact form, drawn from what the
+ * snapshot already carries so hovering never a costs a request.
+ */
+function PopupDetail({ item }: { item: WorkLedgerItem }): ReactElement {
+  const { t } = useTranslation();
+  const agents = orderAgentLinks(item.agents);
+  const reasons = sortAttentionReasons(item.attention);
+
+  return (
+    <View style={styles.detail} testID={`work-ledger-popup-detail-${item.number}`}>
+      <View style={styles.detailMeta}>
+        <WorkLedgerStatusPill status={item.status} />
+        {reasons.length > 0 ? (
+          <Text style={styles.detailAttention}>
+            {reasons.map((reason) => t(`workLedger.attention.${reason}`)).join(" · ")}
+          </Text>
+        ) : null}
+      </View>
+      {item.blockedReason ? <Text style={styles.detailLine}>{item.blockedReason}</Text> : null}
+      {item.latestSummary ? (
+        <Text style={styles.detailLine} numberOfLines={4}>
+          {item.latestSummary}
+        </Text>
+      ) : null}
+      {item.goal ? (
+        <Text style={styles.detailMuted} numberOfLines={3}>
+          {t("workLedger.detail.goal")}: {item.goal}
+        </Text>
+      ) : null}
+      <Text style={styles.detailMuted}>
+        {t("workLedger.detail.agents")}:{" "}
+        {agents.length > 0
+          ? agents.map((link) => shortAgentId(link.agentId)).join(", ")
+          : t("workLedger.agents.none")}
+      </Text>
+    </View>
+  );
+}
 
 function describeEntry(item: WorkLedgerItem, t: (key: string) => string, locale: string): string {
   const agents = orderAgentLinks(item.agents);
@@ -317,6 +436,43 @@ const styles = StyleSheet.create((theme) => ({
   menuBody: {
     padding: theme.spacing[2],
     gap: theme.spacing[1],
+  },
+  // Hover detail: a floating card beside the row. It is absolutely positioned in a
+  // portal, so it never takes part in the list's layout.
+  bubble: {
+    position: "absolute",
+    width: DETAIL_BUBBLE_WIDTH,
+    padding: theme.spacing[3],
+    gap: theme.spacing[2],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.popover,
+    // Lifts it above the menu it annotates.
+    zIndex: 1,
+  },
+  detail: {
+    gap: theme.spacing[1],
+  },
+  detailMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    flexWrap: "wrap",
+  },
+  detailAttention: {
+    color: theme.colors.statusWarning,
+    fontSize: theme.fontSize.sm,
+  },
+  detailLine: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 18,
+  },
+  detailMuted: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 18,
   },
   summary: {
     color: theme.colors.foregroundMuted,
