@@ -27,7 +27,7 @@ import invariant from "tiny-invariant";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { AgentStatusSummary } from "@/components/headers/agent-status-summary";
 import { ScreenHeader } from "@/components/headers/screen-header";
-import { ScreenTitle } from "@/components/headers/screen-title";
+import { WorkspaceHeaderTitleEditor } from "@/screens/workspace/workspace-header-title-editor";
 import { HostBadge } from "@/hosts/host-badge";
 import { useHostBadges } from "@/hosts/use-host-badges";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
@@ -910,13 +910,16 @@ function useCloseTabs(): UseCloseTabsResult {
 /**
  * Which project the workspace belongs to, and which machine it runs on.
  *
- * Compact gets both, on their own line under the workspace name: this header is the only thing on
- * screen that says where the workspace lives, because the sidebar that normally carries the host
- * badge is closed. It still follows the host's own badge setting, so a purely local setup stays
- * quiet. A project name that only repeats the workspace name is dropped on wide, where the two sit
- * side by side, and kept on compact, where the line exists for the host anyway.
+ * This comes before the workspace name, not after it: the project is the stable half (`moravla5`,
+ * the repo directory), the name is the part that gets rewritten — auto-named from the first
+ * prompt, or renamed by hand — so it reads as the qualifier that follows.
+ *
+ * The host badge only exists when the sidebar that normally carries it is closed, on compact. It
+ * still follows the host's own badge setting, so a purely local setup stays quiet. A project name
+ * that only repeats the workspace name is dropped on wide, where the two sit side by side, and
+ * kept on compact, where the line exists for the host anyway.
  */
-function WorkspaceHeaderProjectRow({
+function WorkspaceHeaderProjectLabel({
   subtitle,
   isSubtitleDistinct,
   serverId,
@@ -928,21 +931,15 @@ function WorkspaceHeaderProjectRow({
   const isCompact = useIsCompactFormFactor();
   const hostBadge = useHostBadges({ enabled: isCompact }).get(serverId) ?? null;
   const showProject = isSubtitleDistinct || isCompact;
-  if (!showProject && !hostBadge) {
-    return null;
+  if (!showProject) {
+    return hostBadge ? <HostBadge badge={hostBadge} /> : null;
   }
   return (
     <View style={styles.headerProjectRow}>
-      {showProject ? (
-        <Text
-          testID="workspace-header-subtitle"
-          style={styles.headerProjectTitle}
-          numberOfLines={1}
-        >
-          {subtitle}
-        </Text>
-      ) : null}
-      {showProject && hostBadge ? <Text style={styles.headerProjectSeparator}>·</Text> : null}
+      <Text testID="workspace-header-subtitle" style={styles.headerProjectTitle} numberOfLines={1}>
+        {subtitle}
+      </Text>
+      {hostBadge ? <Text style={styles.headerProjectSeparator}>·</Text> : null}
       {hostBadge ? <HostBadge badge={hostBadge} /> : null}
     </View>
   );
@@ -1015,11 +1012,15 @@ function WorkspaceHeaderTitleBar({
         </View>
       ) : (
         <View style={styles.headerTitleTextGroup}>
-          <ScreenTitle testID="workspace-header-title">{title}</ScreenTitle>
-          <WorkspaceHeaderProjectRow
+          <WorkspaceHeaderProjectLabel
             subtitle={subtitle}
             isSubtitleDistinct={isSubtitleDistinct}
             serverId={normalizedServerId}
+          />
+          <WorkspaceHeaderTitleEditor
+            serverId={normalizedServerId}
+            workspaceId={normalizedWorkspaceId}
+            title={title}
           />
         </View>
       )}
@@ -4236,12 +4237,15 @@ const styles = StyleSheet.create((theme) => ({
   // No width cap. A percentage cap resolves against the title group, whose own width comes from
   // this row's content, so it clips the project name while there is still room beside it.
   // `flexShrink` on both this row and the title already gives up space only when there is none.
+  // This row is the first thing in the group: the project is the stable half, the workspace name
+  // after it is the part that gets rewritten.
   headerProjectRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1.5],
     minWidth: 0,
     flexShrink: 1,
+    marginRight: theme.spacing[1],
   },
   headerProjectTitle: {
     color: theme.colors.foregroundMuted,
