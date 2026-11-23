@@ -22,6 +22,30 @@ const MODEL_UNIT_PRICES: Record<string, ModelUnitPrice> = {
 };
 
 /**
+ * The model id out of whatever the daemon recorded as the agent's model.
+ *
+ * A harness that routes several vendors (DeepSeek Harness here) records the selection as the
+ * `[routeId, modelId]` pair it made, serialized — `["morphic-kimi","kimi-k3-1-pro-261024"]` — and
+ * the same array can surface as a list or a comma-joined string. The model is the id that has a
+ * price, so the pair is unwrapped before lookup.
+ */
+export function normalizeModelId(model: string | null | undefined): string | null {
+  if (!model) return null;
+  const trimmed = model.trim();
+  if (trimmed.startsWith("[") || trimmed.includes(",")) {
+    const ids = trimmed
+      .replace(/^\[|\]$/g, "")
+      .split(",")
+      .map((part) => part.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+    const priced = ids.find((id) => id in MODEL_UNIT_PRICES);
+    if (priced) return priced;
+    return ids.at(-1) ?? null;
+  }
+  return trimmed || null;
+}
+
+/**
  * Session-cumulative token count across every bucket the provider reports.
  *
  * The three prompt buckets are disjoint and `outputTokens` is the completion side, so the total
@@ -52,8 +76,9 @@ export function estimateSessionCostUsd(
   usage: AgentUsage | null | undefined,
   model: string | null | undefined,
 ): number | null {
-  if (!usage || !model) return null;
-  const price = MODEL_UNIT_PRICES[model];
+  if (!usage) return null;
+  const modelId = normalizeModelId(model);
+  const price = modelId ? MODEL_UNIT_PRICES[modelId] : undefined;
   if (!price) return null;
   const uncached = countTokens(usage.sessionUncachedInputTokens);
   const cacheRead = countTokens(usage.sessionCacheReadTokens);

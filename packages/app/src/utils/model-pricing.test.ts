@@ -1,5 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { estimateSessionCostUsd, sessionTotalTokens } from "@/utils/model-pricing";
+import {
+  estimateSessionCostUsd,
+  normalizeModelId,
+  sessionTotalTokens,
+} from "@/utils/model-pricing";
+
+describe("normalizeModelId", () => {
+  it("unwraps the serialized route/model pair the daemon records", () => {
+    expect(normalizeModelId('["morphic-kimi","kimi-k3-1-pro-261024"]')).toBe(
+      "kimi-k3-1-pro-261024",
+    );
+  });
+
+  it("takes the model out of a comma-joined pair", () => {
+    expect(normalizeModelId("morphic-kimi,kimi-k3-1-pro-261024")).toBe("kimi-k3-1-pro-261024");
+  });
+
+  it("keeps a plain model id as it is", () => {
+    expect(normalizeModelId("deepseek-v4.1-flash-1017")).toBe("deepseek-v4.1-flash-1017");
+    expect(normalizeModelId(null)).toBeNull();
+  });
+
+  it("falls back to the last id when nothing in the pair is priced", () => {
+    expect(normalizeModelId('["route","unlisted-model"]')).toBe("unlisted-model");
+  });
+});
 
 describe("sessionTotalTokens", () => {
   it("sums the four disjoint buckets", () => {
@@ -60,6 +85,17 @@ describe("estimateSessionCostUsd", () => {
       "kimi-k3-1-pro-261024",
     );
     expect(cost).toBeCloseTo(2, 6);
+  });
+
+  it("prices a model recorded as a route/model pair", () => {
+    const usage = { sessionUncachedInputTokens: 1_000_000, sessionOutputTokens: 0 };
+    expect(estimateSessionCostUsd(usage, '["morphic-kimi","kimi-k3-1-pro-261024"]')).toBeCloseTo(
+      2,
+      6,
+    );
+    expect(
+      estimateSessionCostUsd(usage, '["deepseek-official","deepseek-v4.1-flash-1017"]'),
+    ).toBeCloseTo(0.286, 6);
   });
 
   it("refuses to guess for an unknown model", () => {
