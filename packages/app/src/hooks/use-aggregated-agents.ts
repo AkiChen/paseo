@@ -1,6 +1,7 @@
 import { useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import equal from "fast-deep-equal";
 import { useShallow } from "zustand/shallow";
+import type { AgentUsage } from "@getpaseo/protocol/agent-types";
 import { useSessionStore } from "@/stores/session-store";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import type { Agent } from "@/stores/session-store";
@@ -14,6 +15,11 @@ export interface AggregatedAgent extends AgentDirectoryEntry {
   parentAgentId?: string | null;
   /** Current model, so list glyphs can follow the model instead of the provider. */
   model?: string | null;
+  /**
+   * The provider's own usage snapshot. Session-cumulative buckets arrive here for providers that
+   * can report a whole session (DeepSeek Harness today); the rest only fill the per-turn fields.
+   */
+  usage?: AgentUsage | null;
 }
 
 export interface AggregatedAgentsResult {
@@ -105,6 +111,7 @@ export function useAggregatedAgents(options?: {
           projectPlacement: agent.projectPlacement,
           parentAgentId: agent.parentAgentId,
           model: agent.runtimeInfo?.model ?? agent.model ?? null,
+          usage: agent.lastUsage ?? null,
         };
         const cacheKey = `${serverId}:${agent.id}`;
         const prev = prevAgentsRef.current.get(cacheKey);

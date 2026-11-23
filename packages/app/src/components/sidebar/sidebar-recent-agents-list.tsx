@@ -30,6 +30,7 @@ import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sec
 import { FavoriteMenuItemContent } from "@/components/sidebar/favorite-menu-item";
 import { SidebarStarBadge } from "@/components/sidebar/sidebar-star-badge";
 import { SidebarSectionHeader } from "@/components/sidebar/pinned-section-header";
+import { SidebarAgentUsage } from "@/components/sidebar/sidebar-agent-usage";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import { deriveIdentityColorName, identityForeground } from "@/styles/identity-colors";
@@ -382,6 +383,11 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
             )}
           </View>
           <Text style={styles.time}>{timeAgo}</Text>
+          <SidebarAgentUsage
+            usage={agent.usage}
+            model={agent.model}
+            testID={`sidebar-recent-agent-usage-${agent.serverId}-${agent.id}`}
+          />
         </View>
       </ContextMenuTrigger>
       <ContextMenuContent
