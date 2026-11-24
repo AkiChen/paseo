@@ -41,9 +41,7 @@ export function SidebarAgentUsage({ usage, model, testID }: SidebarAgentUsagePro
       testID={testID}
     >
       {/* Money first, both to read as "[what it cost] / [how big it got]" and because the token
-          count keeps growing while the amount spent is what the row is asked about. The `~` rides
-          on the number rather than the label: the pill's glyph already says "dollars", and the
-          figure stays an estimate until a real invoice exists. */}
+          count keeps growing while the amount spent is what the row is asked about. */}
       {costParts ? (
         <>
           <Text style={styles.cost} numberOfLines={1}>
@@ -65,7 +63,7 @@ const COST_GLYPH = "💲";
 const TOKENS_GLYPH = "🔹";
 
 export interface EstimatedCostLabel {
-  /** What the pill prints after the dollar glyph, e.g. `~0.72` or `~<0.01`. */
+  /** What the pill prints after the dollar glyph, e.g. `0.72` or `<0.01`. */
   display: string;
   /** The same figure as a sentence can carry it, e.g. `≈ $0.72` — screen readers get the unit. */
   spoken: string;
@@ -75,20 +73,20 @@ export interface EstimatedCostLabel {
  * Dollars at the magnitude the row can carry, without the currency symbol.
  *
  * The pill prints its own `💲`, so the label never repeats `$`. Below a cent the exact figure is
- * meaningless next to a token count, so it collapses to `~<0.01`. `~` stays on the number: the
- * price table is published per-model and re-priced by the gateway, so this is never an invoice.
+ * meaningless next to a token count, so it collapses to `<0.01`. No estimate marker: the figure is
+ * read as a magnitude on a sidebar row, and the row is not an invoice either way.
  */
 export function formatEstimatedCost(costUsd: number): EstimatedCostLabel {
   if (costUsd < 0.01) {
-    return { display: "~<0.01", spoken: "≈ <$0.01" };
+    return { display: "<0.01", spoken: "≈ <$0.01" };
   }
   if (costUsd < 1) {
-    return { display: `~${costUsd.toFixed(2)}`, spoken: `≈ $${costUsd.toFixed(2)}` };
+    return { display: costUsd.toFixed(2), spoken: `≈ $${costUsd.toFixed(2)}` };
   }
   if (costUsd < 100) {
-    return { display: `~${costUsd.toFixed(1)}`, spoken: `≈ $${costUsd.toFixed(1)}` };
+    return { display: costUsd.toFixed(1), spoken: `≈ $${costUsd.toFixed(1)}` };
   }
-  return { display: `~${Math.round(costUsd)}`, spoken: `≈ $${Math.round(costUsd)}` };
+  return { display: `${Math.round(costUsd)}`, spoken: `≈ $${Math.round(costUsd)}` };
 }
 
 const styles = StyleSheet.create((theme) => ({

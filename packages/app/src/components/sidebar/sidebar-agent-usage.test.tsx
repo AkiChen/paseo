@@ -56,19 +56,19 @@ const UNPRICED_USAGE = {
 };
 
 describe("formatEstimatedCost", () => {
-  it("keeps the estimate marker on the number, never repeating the dollar sign", () => {
-    expect(formatEstimatedCost(0.72).display).toBe("~0.72");
+  it("prints the figure bare, never repeating the dollar sign", () => {
+    expect(formatEstimatedCost(0.72).display).toBe("0.72");
     expect(formatEstimatedCost(0.72).spoken).toBe("≈ $0.72");
   });
 
   it("collapses a sub-cent estimate instead of printing zero", () => {
-    expect(formatEstimatedCost(0.003).display).toBe("~<0.01");
+    expect(formatEstimatedCost(0.003).display).toBe("<0.01");
     expect(formatEstimatedCost(0.003).spoken).toBe("≈ <$0.01");
   });
 
   it("drops a decimal once the figure is a dollar or more", () => {
-    expect(formatEstimatedCost(1.44).display).toBe("~1.4");
-    expect(formatEstimatedCost(132.4).display).toBe("~132");
+    expect(formatEstimatedCost(1.44).display).toBe("1.4");
+    expect(formatEstimatedCost(132.4).display).toBe("132");
   });
 });
 
