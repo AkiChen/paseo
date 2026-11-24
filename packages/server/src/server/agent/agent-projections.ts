@@ -16,6 +16,8 @@ import type {
   AgentRuntimeInfo,
   AgentUsage,
   ImportableProviderSession,
+  SessionUsageBuckets,
+  SessionUsageByModel,
 } from "./agent-sdk-types.js";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { JsonValue } from "../json-utils.js";
@@ -445,7 +447,18 @@ function sanitizeMetadataArray(value: unknown): AgentMetadata[] | undefined {
   return sanitized.length > 0 ? sanitized : undefined;
 }
 
-type UsageNumericField = Exclude<keyof AgentUsage, never>;
+/** The numeric keys of `AgentUsage`; `sessionUsageByModel` is an object and not one of them. */
+type UsageNumericField =
+  | "inputTokens"
+  | "cachedInputTokens"
+  | "outputTokens"
+  | "totalCostUsd"
+  | "contextWindowMaxTokens"
+  | "contextWindowUsedTokens"
+  | "sessionUncachedInputTokens"
+  | "sessionCacheReadTokens"
+  | "sessionCacheWriteTokens"
+  | "sessionOutputTokens";
 
 function assignFiniteNumber(
   source: { [key: string]: JsonValue },
@@ -482,6 +495,49 @@ function sanitizeUsage(value: unknown): AgentUsage | undefined {
     if (!assignFiniteNumber(sanitized, result, field)) {
       return undefined;
     }
+  }
+  const byModel = sanitizeSessionUsageByModel(sanitized.sessionUsageByModel);
+  if (byModel !== undefined) {
+    result.sessionUsageByModel = byModel;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+/**
+ * The per-model split of a session's buckets.
+ *
+ * Every entry is all-or-nothing: a model whose numbers are not all finite numbers is dropped
+ * rather than carried through partially, because the client prices that entry.
+ */
+function sanitizeSessionUsageByModel(value: unknown): SessionUsageByModel | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const result: SessionUsageByModel = {};
+  for (const [model, raw] of Object.entries(value)) {
+    if (!model.trim() || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    const buckets: SessionUsageBuckets = {
+      uncachedInputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+    };
+    let valid = true;
+    for (const field of [
+      "uncachedInputTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "outputTokens",
+    ] as const) {
+      const number = entry[field];
+      if (typeof number !== "number" || !Number.isFinite(number) || number < 0) {
+        valid = false;
+        break;
+      }
+      buckets[field] = number;
+    }
+    if (valid) result[model] = buckets;
   }
   return Object.keys(result).length ? result : undefined;
 }

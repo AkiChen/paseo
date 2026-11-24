@@ -96,6 +96,7 @@ describe("buildACPClientCapabilities", () => {
 
 interface ACPSessionInternals {
   sessionId: string | null;
+  currentModel: string | null;
   connection: { prompt: (...args: unknown[]) => Promise<PromptResponse> };
   activeForegroundTurnId: string | null;
   configOptions: SessionConfigOption[];
@@ -4488,6 +4489,24 @@ function hasSessionTotals(
   return usage.sessionOutputTokens !== undefined;
 }
 
+/** True once the split has attributed anything to the deepseek model. */
+function hasDeepseekDelta(
+  usage: Extract<AgentStreamEvent, { type: "usage_updated" }>["usage"],
+): boolean {
+  const bucket = usage.sessionUsageByModel?.["deepseek-v4.1-flash-1017"];
+  return bucket !== undefined && bucket.uncachedInputTokens > 0;
+}
+
+/**
+ * A reader over a mutable snapshot, for tests whose totals grow between reads.
+ *
+ * A named factory rather than an inline arrow: a callback written inside a test is one nesting
+ * level deeper than the lint budget allows.
+ */
+function bridgedUsageReader(live: Record<string, unknown>): () => Record<string, unknown> {
+  return () => live;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -5119,11 +5138,20 @@ describe("ACPAgentSession question bridge", () => {
       outputTokens: 900,
     };
 
-    /** Answer usage requests the way the plugin does, after announcing them. */
-    function serveUsagePlugin(usage: Record<string, unknown> | null) {
+    /**
+     * Answer usage requests the way the plugin does, after announcing them.
+     *
+     * Either a fixed snapshot or a reader, so a test can make the total grow the way a real turn does.
+     */
+    function serveUsagePlugin(
+      usage: Record<string, unknown> | null | (() => Record<string, unknown> | null),
+    ) {
+      const read = typeof usage === "function" ? usage : () => usage;
       return servePlugin(announceDshUsage, (message, socket) => {
         if (message.op === "usage") {
-          socket.write(`${JSON.stringify({ op: "usage", id: message.id, ok: true, usage })}\n`);
+          socket.write(
+            `${JSON.stringify({ op: "usage", id: message.id, ok: true, usage: read() })}\n`,
+          );
         }
       });
     }
@@ -5168,11 +5196,64 @@ describe("ACPAgentSession question bridge", () => {
         sessionCacheReadTokens: 44_000,
         sessionCacheWriteTokens: 300,
         sessionOutputTokens: 900,
+        // The session has no model on record yet, so the whole first snapshot is unattributed.
+        sessionUsageByModel: {
+          unknown: {
+            uncachedInputTokens: 1_200,
+            cacheReadTokens: 44_000,
+            cacheWriteTokens: 300,
+            outputTokens: 900,
+          },
+        },
       });
       expect(plugin.received).toContainEqual({
         op: "usage",
         id: expect.any(String),
         agentId: "session-1",
+      });
+      await session.close();
+    });
+
+    test("splits the session's totals by the model that billed each delta", async () => {
+      const bridged = {
+        uncachedInputTokens: 1_000,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 100,
+      };
+      const bridge = createBridgeFor(await createHome());
+      const plugin = await serveUsagePlugin(bridgedUsageReader(bridged));
+      const session = await connectedBridgeSession(bridge, plugin.channel);
+      await waitFor(plugin.connected, "the channel connection");
+      const events: AgentStreamEvent[] = [];
+      session.subscribe(collectSessionEvents(events));
+      const internals = asInternals<ACPSessionInternals>(session);
+      internals.currentModel = "kimi-k3-1-pro-261024";
+
+      // First snapshot: billed on kimi.
+      internals.translateSessionUpdate({ sessionUpdate: "usage_update", used: 10, size: 128_000 });
+      await waitForUsageEvents(events, hasSessionTotals);
+
+      // The next turn switches models; only what the total gained since then is deepseek's.
+      internals.currentModel = "deepseek-v4.1-flash-1017";
+      bridged.uncachedInputTokens = 3_000;
+      bridged.outputTokens = 150;
+      internals.translateSessionUpdate({ sessionUpdate: "usage_update", used: 20, size: 128_000 });
+
+      const reported = await waitForUsageEvents(events, hasDeepseekDelta);
+      expect(reported.usage.sessionUsageByModel).toEqual({
+        "kimi-k3-1-pro-261024": {
+          uncachedInputTokens: 1_000,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          outputTokens: 100,
+        },
+        "deepseek-v4.1-flash-1017": {
+          uncachedInputTokens: 2_000,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          outputTokens: 50,
+        },
       });
       await session.close();
     });

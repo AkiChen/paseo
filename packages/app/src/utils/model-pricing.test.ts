@@ -118,4 +118,74 @@ describe("estimateSessionCostUsd", () => {
       ),
     ).toBeNull();
   });
+
+  it("prices each model in the session's split at its own rate", () => {
+    // The same session billed one million uncached input tokens on kimi and one on deepseek.
+    const cost = estimateSessionCostUsd(
+      {
+        sessionUncachedInputTokens: 2_000_000,
+        sessionCacheReadTokens: 0,
+        sessionCacheWriteTokens: 0,
+        sessionOutputTokens: 0,
+        sessionUsageByModel: {
+          "kimi-k3-1-pro-261024": {
+            uncachedInputTokens: 1_000_000,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 0,
+          },
+          "deepseek-v4.1-flash-1017": {
+            uncachedInputTokens: 1_000_000,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 0,
+          },
+        },
+      },
+      // The agent is now set to kimi; the deepseek half must not be re-priced at kimi rates.
+      '["morphic-kimi","kimi-k3-1-pro-261024"]',
+    );
+    expect(cost).toBeCloseTo(2 + 0.286, 6);
+  });
+
+  it("skips models in the split that have no published price", () => {
+    const cost = estimateSessionCostUsd(
+      {
+        sessionUsageByModel: {
+          "kimi-k3-1-pro-261024": {
+            uncachedInputTokens: 1_000_000,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 0,
+          },
+          "gpt-6.1-sol": {
+            uncachedInputTokens: 1_000_000,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 0,
+          },
+        },
+      },
+      null,
+    );
+    expect(cost).toBeCloseTo(2, 6);
+  });
+
+  it("returns null when no model in the split is priced", () => {
+    expect(
+      estimateSessionCostUsd(
+        {
+          sessionUsageByModel: {
+            "gpt-6.1-sol": {
+              uncachedInputTokens: 1_000_000,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 0,
+            },
+          },
+        },
+        null,
+      ),
+    ).toBeNull();
+  });
 });

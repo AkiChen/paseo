@@ -246,7 +246,23 @@ export interface AgentUsage {
   sessionCacheWriteTokens?: number;
   /** Session-cumulative output tokens. */
   sessionOutputTokens?: number;
+  /**
+   * The same cumulative buckets split by the model that was selected while they were billed.
+   * Present only for providers whose session total Paseo observes incrementally (the DSH bridge).
+   */
+  sessionUsageByModel?: SessionUsageByModel;
 }
+
+/** One model's share of a session's cumulative token buckets. */
+export interface SessionUsageBuckets {
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
+}
+
+/** Keyed by the model id recorded on the agent, e.g. "kimi-k3-1-pro-261024". */
+export type SessionUsageByModel = Record<string, SessionUsageBuckets>;
 
 export const TOOL_CALL_ICON_NAMES = [
   "wrench",

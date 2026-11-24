@@ -393,6 +393,13 @@ const AgentCapabilityFlagsSchema: z.ZodType<AgentCapabilityFlags> = z
   })
   .catchall(z.boolean());
 
+const SessionUsageBucketsSchema = z.object({
+  uncachedInputTokens: z.number(),
+  cacheReadTokens: z.number(),
+  cacheWriteTokens: z.number(),
+  outputTokens: z.number(),
+});
+
 const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
   inputTokens: z.number().optional(),
   cachedInputTokens: z.number().optional(),
@@ -404,6 +411,8 @@ const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
   sessionCacheReadTokens: z.number().optional(),
   sessionCacheWriteTokens: z.number().optional(),
   sessionOutputTokens: z.number().optional(),
+  // COMPAT(sessionUsageByModel): added in v0.10.2-custom.54, drop when floor >= it.
+  sessionUsageByModel: z.record(z.string(), SessionUsageBucketsSchema).optional(),
 });
 
 const McpStdioServerConfigSchema = z.object({

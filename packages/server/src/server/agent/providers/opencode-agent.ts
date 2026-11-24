@@ -750,7 +750,20 @@ function maxFiniteNumber(left: number | undefined, right: number): number {
   return left === undefined ? right : Math.max(left, right);
 }
 
-function assignUsageNumber(usage: AgentUsage, key: keyof AgentUsage, value: number | undefined) {
+/** The numeric keys of `AgentUsage`; `sessionUsageByModel` is an object and not one of them. */
+type UsageNumberKey =
+  | "inputTokens"
+  | "cachedInputTokens"
+  | "outputTokens"
+  | "totalCostUsd"
+  | "contextWindowMaxTokens"
+  | "contextWindowUsedTokens"
+  | "sessionUncachedInputTokens"
+  | "sessionCacheReadTokens"
+  | "sessionCacheWriteTokens"
+  | "sessionOutputTokens";
+
+function assignUsageNumber(usage: AgentUsage, key: UsageNumberKey, value: number | undefined) {
   if (value !== undefined) {
     usage[key] = value;
   }

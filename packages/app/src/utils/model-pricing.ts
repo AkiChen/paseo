@@ -69,25 +69,74 @@ export function sessionTotalTokens(usage: AgentUsage | null | undefined): number
 /**
  * Rough USD cost of the session so far, or null when it cannot be estimated.
  *
- * Null rather than a guess when the model has no published price: a wrong dollar figure is worse
- * than none on a row that is read at a glance.
+ * A session that switched models mid-flight is priced per model, from the split the daemon
+ * attributes as it watches the session — that is the same session total, just billed at each
+ * model's own rates. Without a split (an older daemon, or a provider that reports one figure for
+ * everything) the whole session is priced at the model the agent is set to now, which is also what
+ * a session with a single model needs.
+ *
+ * Null rather than a guess when nothing in play has a published price: a wrong dollar figure is
+ * worse than none on a row that is read at a glance.
  */
 export function estimateSessionCostUsd(
   usage: AgentUsage | null | undefined,
   model: string | null | undefined,
 ): number | null {
   if (!usage) return null;
-  const modelId = normalizeModelId(model);
-  const price = modelId ? MODEL_UNIT_PRICES[modelId] : undefined;
+  const byModel = usage.sessionUsageByModel;
+  if (byModel && Object.keys(byModel).length > 0) {
+    let total = 0;
+    let priced = false;
+    for (const [bucketedModel, buckets] of Object.entries(byModel)) {
+      const price = priceFor(bucketedModel);
+      if (!price) continue;
+      const cost = costOfBuckets(buckets, price);
+      if (cost === null) continue;
+      total += cost;
+      priced = true;
+    }
+    return priced ? total : null;
+  }
+
+  const price = priceFor(model);
   if (!price) return null;
-  const uncached = countTokens(usage.sessionUncachedInputTokens);
-  const cacheRead = countTokens(usage.sessionCacheReadTokens);
-  const cacheWrite = countTokens(usage.sessionCacheWriteTokens);
-  const output = countTokens(usage.sessionOutputTokens);
+  return costOfBuckets(
+    {
+      uncachedInputTokens: usage.sessionUncachedInputTokens ?? 0,
+      cacheReadTokens: usage.sessionCacheReadTokens ?? 0,
+      cacheWriteTokens: usage.sessionCacheWriteTokens ?? 0,
+      outputTokens: usage.sessionOutputTokens ?? 0,
+    },
+    price,
+  );
+}
+
+function priceFor(model: string | null | undefined): ModelUnitPrice | null {
+  const modelId = normalizeModelId(model);
+  return modelId ? (MODEL_UNIT_PRICES[modelId] ?? null) : null;
+}
+
+/**
+ * The bill for one bucket set at one price, or null when the bucket set says nothing.
+ *
+ * A cache write is billed at the input rate; the gateway only publishes a discounted read rate.
+ */
+function costOfBuckets(
+  buckets: {
+    uncachedInputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+  },
+  price: ModelUnitPrice,
+): number | null {
+  const uncached = countTokens(buckets.uncachedInputTokens);
+  const cacheRead = countTokens(buckets.cacheReadTokens);
+  const cacheWrite = countTokens(buckets.cacheWriteTokens);
+  const output = countTokens(buckets.outputTokens);
   if (uncached + cacheRead + cacheWrite + output === 0) {
     return null;
   }
-  // A cache write is billed at the input rate; the gateway only publishes a discounted read rate.
   return (
     (uncached * price.input +
       cacheRead * price.cacheRead +

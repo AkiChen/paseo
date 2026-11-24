@@ -96,6 +96,7 @@ import {
   type ProviderCatalog,
   type ResolveAgentCreateConfigInput,
   type ResolveAgentCreateConfigResult,
+  type SessionUsageByModel,
   type ToolCallDetail,
   type ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
@@ -134,6 +135,7 @@ import {
   mapDshSlashCommands,
   parseDshSlashCommandLine,
 } from "./dsh-questions/commands.js";
+import { addSessionUsage, sessionUsageDelta } from "../session-usage-by-model.js";
 import {
   createSessionMetadataReader,
   mergeSessionMetadata,
@@ -1822,6 +1824,14 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private bridgedCommands: AgentSlashCommand[] | null = null;
   /** The session's cumulative token buckets, as last reported by the plugin. */
   private bridgedSessionUsage: DshSessionUsage | null = null;
+  /**
+   * Those same buckets split by the model that was selected when each delta landed.
+   *
+   * The provider ships one cumulative total, so the only per-request fact Paseo owns is which
+   * model was current when the total moved. Attribution therefore happens here, on every snapshot,
+   * not inside the provider.
+   */
+  private bridgedUsageByModel: SessionUsageByModel = {};
   /** Occupancy and cost facts the agent itself reported over ACP. */
   private sessionContextUsage: AgentUsage = {};
   private bridgedUsageRefresh: Promise<void> | null = null;
@@ -3697,6 +3707,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       usage.sessionCacheReadTokens = this.bridgedSessionUsage.cacheReadTokens;
       usage.sessionCacheWriteTokens = this.bridgedSessionUsage.cacheWriteTokens;
       usage.sessionOutputTokens = this.bridgedSessionUsage.outputTokens;
+      if (Object.keys(this.bridgedUsageByModel).length > 0) {
+        usage.sessionUsageByModel = { ...this.bridgedUsageByModel };
+      }
     }
     return usage;
   }
@@ -3730,7 +3743,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.bridgedUsageRefresh = (async () => {
       const usage = await connection.readUsage(sessionId);
       if (usage !== null && !this.closed) {
-        this.bridgedSessionUsage = usage;
+        this.attributeBridgedUsage(usage);
         this.emitUsageSnapshot();
       }
     })()
@@ -3744,6 +3757,35 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           this.refreshBridgedSessionUsage();
         }
       });
+  }
+
+  /**
+   * Fold a fresh cumulative snapshot into the per-model split.
+   *
+   * Anything that moved since the previous snapshot was billed on the model that is current now,
+   * which makes a model switch between turns exact. The first snapshot of a session is all
+   * attributed to the current model: Paseo has no earlier one to diff against, and a session
+   * that switched before Paseo attached is the one case this cannot undo.
+   */
+  private attributeBridgedUsage(next: DshSessionUsage): void {
+    const delta = sessionUsageDelta(
+      this.bridgedSessionUsage === null
+        ? null
+        : {
+            uncachedInputTokens: this.bridgedSessionUsage.uncachedInputTokens,
+            cacheReadTokens: this.bridgedSessionUsage.cacheReadTokens,
+            cacheWriteTokens: this.bridgedSessionUsage.cacheWriteTokens,
+            outputTokens: this.bridgedSessionUsage.outputTokens,
+          },
+      {
+        uncachedInputTokens: next.uncachedInputTokens,
+        cacheReadTokens: next.cacheReadTokens,
+        cacheWriteTokens: next.cacheWriteTokens,
+        outputTokens: next.outputTokens,
+      },
+    );
+    this.bridgedUsageByModel = addSessionUsage(this.bridgedUsageByModel, this.currentModel, delta);
+    this.bridgedSessionUsage = next;
   }
 
   /**

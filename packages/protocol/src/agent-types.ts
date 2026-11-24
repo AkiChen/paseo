@@ -203,7 +203,29 @@ export interface AgentUsage {
   sessionCacheWriteTokens?: number;
   /** Session-cumulative output tokens. */
   sessionOutputTokens?: number;
+  /**
+   * The same session-cumulative buckets split by the model that was selected
+   * when they were billed.
+   *
+   * A session can outlive its model: switching models mid-session keeps the
+   * totals, but the tokens before and after the switch were billed at different
+   * rates. Paseo attributes each delta at the snapshot boundary, so the split is
+   * exact between turns. Null/absent from providers that cannot report session
+   * totals at all, and from daemons older than this field.
+   */
+  sessionUsageByModel?: SessionUsageByModel;
 }
+
+/** One model's share of a session's cumulative token buckets. */
+export interface SessionUsageBuckets {
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
+}
+
+/** Keyed by the provider's model id as recorded for the agent, e.g. "kimi-k3-1-pro-261024". */
+export type SessionUsageByModel = Record<string, SessionUsageBuckets>;
 
 export const TOOL_CALL_ICON_NAMES = [
   "wrench",
