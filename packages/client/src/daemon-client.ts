@@ -37,6 +37,7 @@ import type {
   CreateAgentRequestMessage,
   CreatePaseoWorktreeRequest,
   FileDownloadTokenResponse,
+  FileMediaTokenResponse,
   FileUploadResponse,
   FileExplorerResponse,
   FileVersion,
@@ -553,6 +554,7 @@ export interface FileUploadInput {
 }
 export type FileUploadResult = FileUploadResponse["payload"];
 type FileDownloadTokenPayload = FileDownloadTokenResponse["payload"];
+type FileMediaTokenPayload = FileMediaTokenResponse["payload"];
 type ListProviderFeaturesPayload = ListProviderFeaturesResponseMessage["payload"];
 type ListProviderModelsPayload = ListProviderModelsResponseMessage["payload"];
 type ListProviderModesPayload = ListProviderModesResponseMessage["payload"];
@@ -5079,6 +5081,22 @@ export class DaemonClient {
         path,
       },
       responseType: "file_download_token_response",
+    });
+  }
+
+  async requestMediaToken(
+    cwd: string,
+    path: string,
+    requestId?: string,
+  ): Promise<FileMediaTokenPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "file_media_token_request",
+        cwd,
+        path,
+      },
+      responseType: "file_media_token_response",
     });
   }
 

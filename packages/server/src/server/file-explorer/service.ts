@@ -4,6 +4,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
 import { runGitCommand } from "../../utils/run-git-command.js";
+import { mediaMimeTypeOf } from "@getpaseo/protocol/media-types";
 
 export type ExplorerEntryKind = "file" | "directory";
 export type ExplorerFileKind = "text" | "image" | "binary";
@@ -603,9 +604,12 @@ export async function getDownloadableFileInfo({ root, relativePath }: ReadFilePa
     }
 
     const ext = path.extname(filePath.resolvedPath).toLowerCase();
+    const mediaMimeType = mediaMimeTypeOf(filePath.resolvedPath);
     let mimeType = "application/octet-stream";
     const extensionImageMimeType = imageMimeTypeForExtension(ext);
-    if (extensionImageMimeType !== null) {
+    if (mediaMimeType !== null) {
+      mimeType = mediaMimeType;
+    } else if (extensionImageMimeType !== null) {
       mimeType = extensionImageMimeType;
     } else {
       const header = await readFileHandleHeader(handle, stats.size);

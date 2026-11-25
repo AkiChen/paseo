@@ -126,6 +126,8 @@ import { createPaseoWorktree as createRegisteredPaseoWorktree } from "./paseo-wo
 import { createWorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
 import { createPaseoWorktreeWorkflow } from "./worktree-session.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
+import { createMediaRouteHandler, MEDIA_ROUTE } from "./file-download/media-route.js";
+import { isLoopbackRemoteAddress } from "./loopback.js";
 import type { OpenAiSpeechProviderConfig } from "./speech/providers/openai/config.js";
 import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.js";
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
@@ -293,12 +295,6 @@ const TERMINAL_ACTIVITY_STATE_MAP = {
   idle: "idle",
   "needs-input": "attention",
 } as const;
-
-const LOOPBACK_REMOTE_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-
-function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
-  return remoteAddress !== undefined && LOOPBACK_REMOTE_ADDRESSES.has(remoteAddress);
-}
 
 export function createTerminalActivityRouteHandler(
   terminalManager: TerminalManager,
@@ -764,7 +760,11 @@ export async function createPaseoDaemon(
     if (origin && (allowedOrigins.has("*") || allowedOrigins.has(origin))) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Range, If-Range");
+      res.setHeader(
+        "Access-Control-Expose-Headers",
+        "Content-Range, Accept-Ranges, Content-Length, ETag",
+      );
       res.setHeader("Access-Control-Allow-Credentials", "true");
     }
     if (req.method === "OPTIONS") {
@@ -779,6 +779,19 @@ export async function createPaseoDaemon(
     "/api/terminal-activity",
     express.json(),
     createTerminalActivityRouteHandler(terminalManager),
+  );
+
+  // Workspace media (video/audio) for the file pane. A media token is the
+  // capability and the peer must be loopback, so this route lives beside the
+  // download route below: above daemon bearer auth, which media elements
+  // cannot send. Range requests are answered here rather than by express.static
+  // so a token can be checked and a remote peer refused first.
+  app.get(
+    MEDIA_ROUTE,
+    createMediaRouteHandler({
+      resolveToken: (token) => downloadTokenStore.peekMediaToken(token),
+      logger,
+    }),
   );
 
   // Serve the bundled browser web UI when enabled. Mounted after service-proxy

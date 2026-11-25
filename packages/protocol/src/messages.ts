@@ -2873,6 +2873,33 @@ export const FileUploadRequestSchema = z.object({
   requestId: z.string(),
 });
 
+/**
+ * Asks the daemon for a reusable token the media route accepts for HTTP Range
+ * reads. Separate from the download token because the right to *stream* a
+ * video is not the right to *download* it, and because a player issues many
+ * range requests while a one-shot download token is already spent.
+ */
+export const FileMediaTokenRequestSchema = z.object({
+  type: z.literal("file_media_token_request"),
+  cwd: z.string(),
+  path: z.string(),
+  requestId: z.string(),
+});
+
+export const FileMediaTokenResponseSchema = z.object({
+  type: z.literal("file_media_token_response"),
+  payload: z.object({
+    cwd: z.string(),
+    path: z.string(),
+    token: z.string().nullable(),
+    fileName: z.string().nullable(),
+    mimeType: z.string().nullable(),
+    size: z.number().nullable(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const ClearAgentAttentionMessageSchema = z.object({
   type: z.literal("clear_agent_attention"),
   agentId: z.union([z.string(), z.array(z.string())]),
@@ -3372,6 +3399,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectIconGetRequestSchema,
   FileDownloadTokenRequestSchema,
   FileUploadRequestSchema,
+  FileMediaTokenRequestSchema,
   ClearAgentAttentionMessageSchema,
   ClientHeartbeatMessageSchema,
   PingMessageSchema,
@@ -3675,6 +3703,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRecovery: z.boolean().optional(),
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: z.boolean().optional(),
+        // COMPAT(workspaceMediaPreview): added in v0.10.3, remove gate after 2027-05-25.
+        workspaceMediaPreview: z.boolean().optional(),
         // COMPAT(providerUsageList): added in v0.1.98, drop the gate when daemon floor >= v0.1.98.
         providerUsageList: z.boolean().optional(),
         // COMPAT(agentDetach): added in v0.1.98, remove gate after 2026-12-19 once daemon floor >= v0.1.98.
@@ -6981,6 +7011,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectIconGetResponseSchema,
   FileDownloadTokenResponseSchema,
   FileUploadResponseSchema,
+  FileMediaTokenResponseSchema,
   ListProviderModelsResponseMessageSchema,
   ListProviderModesResponseMessageSchema,
   ListProviderFeaturesResponseMessageSchema,
@@ -7428,6 +7459,8 @@ export type ProjectIconGetResponse = z.infer<typeof ProjectIconGetResponseSchema
 export type ProjectIcon = z.infer<typeof ProjectIconSchema>;
 export type FileDownloadTokenRequest = z.infer<typeof FileDownloadTokenRequestSchema>;
 export type FileDownloadTokenResponse = z.infer<typeof FileDownloadTokenResponseSchema>;
+export type FileMediaTokenRequest = z.infer<typeof FileMediaTokenRequestSchema>;
+export type FileMediaTokenResponse = z.infer<typeof FileMediaTokenResponseSchema>;
 export type FileUploadRequest = z.infer<typeof FileUploadRequestSchema>;
 export type FileUploadResponse = z.infer<typeof FileUploadResponseSchema>;
 export type RestartServerRequestMessage = z.infer<typeof RestartServerRequestMessageSchema>;

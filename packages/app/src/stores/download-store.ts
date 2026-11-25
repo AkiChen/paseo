@@ -3,7 +3,7 @@ import { File as FSFile, Paths } from "expo-file-system";
 import * as LegacyFileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import type { HostProfile } from "@/types/host-connection";
-import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
+import { resolveDaemonHttpTarget } from "@/utils/daemon-http-target";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { isWeb } from "@/constants/platform";
 import { i18n } from "@/i18n/i18next";
@@ -245,44 +245,7 @@ interface DownloadTarget {
 }
 
 function resolveDaemonDownloadTarget(daemon?: HostProfile): DownloadTarget {
-  const connection = daemon?.connections.find((conn) => conn.type === "directTcp") ?? null;
-  if (!connection) {
-    return { baseUrl: null, authHeader: null, authCredentials: null };
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(
-      buildDaemonWebSocketUrl(connection.endpoint, { useTls: connection.useTls ?? false }),
-    );
-  } catch {
-    return { baseUrl: null, authHeader: null, authCredentials: null };
-  }
-
-  if (parsed.protocol === "ws:") {
-    parsed.protocol = "http:";
-  } else if (parsed.protocol === "wss:") {
-    parsed.protocol = "https:";
-  }
-
-  let authCredentials: { username: string; password: string } | null = null;
-  if (parsed.username || parsed.password) {
-    authCredentials = {
-      username: decodeURIComponent(parsed.username),
-      password: decodeURIComponent(parsed.password),
-    };
-    parsed.username = "";
-    parsed.password = "";
-  }
-
-  parsed.pathname = parsed.pathname.replace(/\/ws\/?$/, "/");
-
-  const baseUrl = parsed.origin;
-  const authHeader = authCredentials
-    ? `Basic ${btoa(`${authCredentials.username}:${authCredentials.password}`)}`
-    : null;
-
-  return { baseUrl, authHeader, authCredentials };
+  return resolveDaemonHttpTarget(daemon);
 }
 
 function buildDownloadUrl(

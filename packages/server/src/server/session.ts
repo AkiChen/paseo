@@ -2990,6 +2990,8 @@ export class Session {
         return this.handleProjectIconGetRequest(msg.projectId, msg.requestId);
       case "file_download_token_request":
         return this.workspaceFilesSession.handleFileDownloadTokenRequest(msg);
+      case "file_media_token_request":
+        return this.workspaceFilesSession.handleFileMediaTokenRequest(msg);
       case "file.upload.request":
         this.workspaceFilesSession.handleFileUploadRequest(msg, this.delivery);
         return undefined;

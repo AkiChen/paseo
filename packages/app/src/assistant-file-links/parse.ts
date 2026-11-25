@@ -1,4 +1,5 @@
 import { isAbsolutePath } from "@/utils/path";
+import { mediaMimeTypeOf } from "@getpaseo/protocol/media-types";
 
 function safeDecodeURIComponent(value: string): string {
   try {
@@ -625,7 +626,7 @@ function isPlausibleAssistantFileName(fileName: string | undefined): boolean {
   }
 
   const extension = fileName.slice(lastDot + 1).toLowerCase();
-  return ASSISTANT_FILE_EXTENSIONS.has(extension);
+  return ASSISTANT_FILE_EXTENSIONS.has(extension) || mediaMimeTypeOf(fileName) !== null;
 }
 
 function isDomainLikePathSegment(segment: string): boolean {

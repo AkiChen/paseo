@@ -167,6 +167,22 @@ describe("classifyAssistantFileLink", () => {
     });
   });
 
+  it("classifies a bare media file name like any other file link", () => {
+    expect(
+      classifyAssistantFileLink("eeff_overlay_v0_seg.mp4", {
+        workspaceRoot: "/root/joey_local/codes/pretrain_4",
+      }),
+    ).toEqual({
+      kind: "ambiguousFileCandidate",
+      target: {
+        raw: "eeff_overlay_v0_seg.mp4",
+        path: "/root/joey_local/codes/pretrain_4/eeff_overlay_v0_seg.mp4",
+        lineStart: undefined,
+        lineEnd: undefined,
+      },
+    });
+  });
+
   it("does not classify normal bare domains as file candidates", () => {
     expect(
       classifyAssistantFileLink("google.com", {

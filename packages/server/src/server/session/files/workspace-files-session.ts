@@ -2,6 +2,7 @@ import type pino from "pino";
 import type { SessionDelivery } from "../owned-subscriptions/index.js";
 import type { FileVersion } from "@getpaseo/protocol/messages";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
+import { mediaMimeTypeOf } from "@getpaseo/protocol/media-types";
 import {
   encodeFileTransferFrame,
   FileTransferOpcode,
@@ -9,6 +10,7 @@ import {
 } from "@getpaseo/protocol/binary-frames/index";
 import type {
   FileDownloadTokenRequest,
+  FileMediaTokenRequest,
   FileEntryCreateRequest,
   FileEntryDeleteRequest,
   FileEntryDuplicateRequest,
@@ -492,6 +494,75 @@ export class WorkspaceFilesSession {
           requestId,
         },
       });
+    }
+  }
+
+  /**
+   * Issue a reusable token the media route accepts for HTTP Range reads.
+   *
+   * The token is bound to one workspace file and one MIME type; the media route
+   * only serves it from loopback. It is not a download token: the player keeps
+   * requesting ranges while it plays and seeks, so it is valid until its longer
+   * TTL expires rather than being consumed by the first request.
+   */
+  async handleFileMediaTokenRequest(request: FileMediaTokenRequest): Promise<void> {
+    const { cwd: workspaceCwd, path: requestedPath, requestId } = request;
+    const cwd = workspaceCwd.trim();
+    const fail = (error: string): void => {
+      this.host.emit({
+        type: "file_media_token_response",
+        payload: {
+          cwd: workspaceCwd,
+          path: requestedPath,
+          token: null,
+          fileName: null,
+          mimeType: null,
+          size: null,
+          error,
+          requestId,
+        },
+      });
+    };
+
+    if (!cwd) {
+      fail("cwd is required");
+      return;
+    }
+
+    try {
+      const info = await getDownloadableFileInfo({ root: cwd, relativePath: requestedPath });
+      if (mediaMimeTypeOf(info.absolutePath) === null) {
+        fail("Not a media file");
+        return;
+      }
+
+      const entry = this.downloadTokenStore.issueMediaToken({
+        path: info.path,
+        absolutePath: info.absolutePath,
+        fileName: info.fileName,
+        mimeType: info.mimeType,
+        size: info.size,
+      });
+
+      this.host.emit({
+        type: "file_media_token_response",
+        payload: {
+          cwd,
+          path: info.path,
+          token: entry.token,
+          fileName: entry.fileName,
+          mimeType: entry.mimeType,
+          size: entry.size,
+          error: null,
+          requestId,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, cwd, path: requestedPath },
+        `Failed to issue media token for workspace ${cwd}`,
+      );
+      fail(getErrorMessage(error));
     }
   }
 }

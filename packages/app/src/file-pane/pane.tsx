@@ -12,6 +12,7 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { ScrollView as RNScrollView, Text, View } from "react-native";
 import { StyleSheet, UnistylesRuntime, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
+import { isMediaFile } from "@getpaseo/protocol/media-types";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useSessionStore, type ExplorerFile } from "@/stores/session-store";
 import { filePreviewRenderKind } from "@/components/file-pane-render-mode";
@@ -25,6 +26,7 @@ import { isFileQueryEnabled } from "@/components/file-pane-enabled";
 import { isWeb } from "@/constants/platform";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useLiveFile } from "./live-file/hook";
+import { FileMediaPreview } from "./media-preview";
 import { useFilePreview } from "./preview-lifecycle/hook";
 import { resolveFilePreviewLifecycle } from "./preview-lifecycle/model";
 import { FilePanelBar } from "./bar";
@@ -219,17 +221,54 @@ function FilePreviewBody({
   );
 }
 
-export function FilePane({
-  serverId,
-  workspaceRoot,
-  location,
-  navigationRevision,
-}: {
+interface FilePaneProps {
   serverId: string;
   workspaceRoot: string;
   location: WorkspaceFileLocation;
   navigationRevision: number;
+}
+
+/**
+ * Route a media path to the streaming preview before the file is read.
+ *
+ * The split is a wrapper rather than a branch inside the pane: a media path
+ * would otherwise run the text read pipeline (which buffers the whole file) and
+ * change the hook order between renders when a tab switches from a video to a
+ * text file.
+ */
+export function FilePane(props: FilePaneProps) {
+  // COMPAT(workspaceMediaPreview): added in v0.10.3, remove gate after 2027-05-25.
+  const supportsMediaPreview = useSessionStore(
+    (state) => state.sessions[props.serverId]?.serverInfo?.features?.workspaceMediaPreview === true,
+  );
+  const path = props.location.path;
+  if (supportsMediaPreview && isMediaFile(path)) {
+    return (
+      <MediaFilePane serverId={props.serverId} workspaceRoot={props.workspaceRoot} path={path} />
+    );
+  }
+  return <RegularFilePane {...props} />;
+}
+
+function MediaFilePane({
+  serverId,
+  workspaceRoot,
+  path,
+}: {
+  serverId: string;
+  workspaceRoot: string;
+  path: string;
 }) {
+  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const cwd = useMemo(() => workspaceRoot.trim(), [workspaceRoot]);
+  return (
+    <View style={styles.container} testID="workspace-file-pane">
+      <FileMediaPreview serverId={serverId} cwd={cwd} path={path} client={client} />
+    </View>
+  );
+}
+
+function RegularFilePane({ serverId, workspaceRoot, location, navigationRevision }: FilePaneProps) {
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
   const [previewMode, setPreviewMode] = useState<"preview" | "source">("preview");
