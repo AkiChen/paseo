@@ -370,6 +370,12 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
           ) : null}
         </View>
         <View style={styles.trailing}>
+          <Text style={styles.time}>{timeAgo}</Text>
+          <SidebarAgentUsage
+            usage={agent.usage}
+            model={agent.model}
+            testID={`sidebar-recent-agent-usage-${agent.serverId}-${agent.id}`}
+          />
           <View style={styles.statusSlot}>
             {statusBucket === "running" ? (
               <StatusRing />
@@ -382,12 +388,6 @@ const SidebarRecentAgentRow = memo(function SidebarRecentAgentRow({
               />
             )}
           </View>
-          <Text style={styles.time}>{timeAgo}</Text>
-          <SidebarAgentUsage
-            usage={agent.usage}
-            model={agent.model}
-            testID={`sidebar-recent-agent-usage-${agent.serverId}-${agent.id}`}
-          />
         </View>
       </ContextMenuTrigger>
       <ContextMenuContent
