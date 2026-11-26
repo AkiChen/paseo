@@ -1,7 +1,8 @@
 import { usePaneContext } from "@/panels/pane-context";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PluginFile, PluginTab } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
+import { Download } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { FilePanelLoading } from "@/file-panels/loading";
 import { FilePanelPicker, FilePanelView, useFilePanelChoice, type FilePanel } from "@/file-panels";
 import { isMediaFile } from "@getpaseo/protocol/media-types";
 import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
+import { useFileDownload } from "@/hooks/use-file-download";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
 import { usePublishPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
 import { useSessionStore } from "@/stores/session-store";
@@ -26,11 +28,13 @@ import { FileMediaPreview } from "./media-preview";
  */
 export function FilePane({
   serverId,
+  workspaceId,
   workspaceRoot,
   location,
   navigationRevision,
 }: {
   serverId: string;
+  workspaceId?: string | null;
   workspaceRoot: string;
   location: WorkspaceFileLocation;
   navigationRevision: number;
@@ -44,6 +48,7 @@ export function FilePane({
     <MediaFilePane serverId={serverId} workspaceRoot={workspaceRoot} path={mediaPath} />
   ) : (
     <LoadedFilePane
+      workspaceId={workspaceId}
       serverId={serverId}
       workspaceRoot={workspaceRoot}
       location={location}
@@ -53,11 +58,13 @@ export function FilePane({
 }
 
 function LoadedFilePane({
+  workspaceId,
   serverId,
   workspaceRoot,
   location,
   navigationRevision,
 }: {
+  workspaceId?: string | null;
   serverId: string;
   workspaceRoot: string;
   location: WorkspaceFileLocation;
@@ -71,6 +78,16 @@ function LoadedFilePane({
     () => (path ? resolveFilePreviewReadTarget({ path, workspaceRoot: root }) : null),
     [path, root],
   );
+  const downloadFile = useFileDownload({
+    serverId,
+    workspaceId,
+    workspaceRoot: target?.cwd ?? root,
+  });
+  const handleDownload = useCallback(() => {
+    if (target) {
+      downloadFile({ fileName: path.split(/[\\/]/).pop() ?? path, path: target.path });
+    }
+  }, [downloadFile, path, target]);
   const absolutePath = useMemo(
     () => buildAbsoluteExplorerPath({ workspaceRoot: root, entryPath: path }),
     [path, root],
@@ -130,6 +147,9 @@ function LoadedFilePane({
       <>
         <Text style={styles.mutedText}>{t("panels.file.binaryPreviewUnavailable")}</Text>
         <Text style={styles.mutedText}>{formatFileSize(snapshot.size)}</Text>
+        <Button variant="outline" leftIcon={Download} onPress={handleDownload}>
+          {t("workspace.fileActions.download")}
+        </Button>
       </>
     );
   } else {

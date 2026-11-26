@@ -120,12 +120,17 @@ export function SidebarRecentAgentsList({
     (state) => state.toggleFavoritesCollapsed,
   );
   const activeWorkspaceSelection = useActiveWorkspaceSelection();
-  const {
-    visibleItems: visibleFavoriteAgents,
-    expanded: favoritesExpanded,
-    canToggle: canToggleFavorites,
-    toggleExpanded: toggleFavoritesExpanded,
-  } = useLimitedSidebarGroup({ items: favoriteAgents, selection: activeWorkspaceSelection });
+  const [favoritesExpanded, setFavoritesExpanded] = useState(false);
+  const toggleFavoritesExpanded = useCallback(
+    () => setFavoritesExpanded((current) => !current),
+    [],
+  );
+  const { visibleItems: visibleFavoriteAgents, canToggle: canToggleFavorites } =
+    useLimitedSidebarGroup<FavoriteAgent>({
+      items: favoriteAgents,
+      selection: activeWorkspaceSelection,
+      expanded: favoritesExpanded,
+    });
 
   const handleRefresh = useCallback(() => {
     refreshAll();

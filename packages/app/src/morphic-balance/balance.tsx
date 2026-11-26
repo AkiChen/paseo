@@ -8,7 +8,7 @@ import {
   type SheetHeader,
 } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
-import { CONTROL_HEIGHTS, HEADER_CONTROL_HEIGHT } from "@/components/ui/control-geometry";
+import { CONTROL_HEIGHTS } from "@/components/ui/control-geometry";
 import {
   MORPHIC_BALANCE_REFRESH_INTERVAL_MS,
   getBalanceTone,
@@ -245,18 +245,9 @@ export function MorphicBalance() {
 
 const styles = StyleSheet.create((theme) => ({
   badge: {
-    minHeight: {
-      xs: CONTROL_HEIGHTS.sm,
-      md: HEADER_CONTROL_HEIGHT,
-    },
-    height: {
-      xs: CONTROL_HEIGHTS.sm,
-      md: HEADER_CONTROL_HEIGHT,
-    },
-    paddingHorizontal: {
-      xs: theme.spacing[3],
-      md: theme.spacing[2],
-    },
+    minHeight: CONTROL_HEIGHTS.sm,
+    height: CONTROL_HEIGHTS.sm,
+    paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.md,
   },
   badgeText: {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HEADER_INNER_HEIGHT, WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
-import { hasActiveWebOverlay } from "@/lib/overlay-root";
+import { getTopOverlayLayer } from "@/keyboard";
 
 // Dwell before the hidden sidebar floats out, and the grace period that keeps
 // it from blinking when the pointer crosses the panel edge.
@@ -17,7 +17,7 @@ export const SIDEBAR_PEEK_MIN_TRIGGER_WIDTH = 8;
 // The title row and the workspace tab row own the pointer; the peek must not
 // open while the pointer is over either of them.
 export const SIDEBAR_PEEK_TOP_EXCLUSION_HEIGHT =
-  HEADER_INNER_HEIGHT + WORKSPACE_SECONDARY_HEADER_HEIGHT;
+  HEADER_INNER_HEIGHT + WORKSPACE_SECONDARY_HEADER_HEIGHT.md;
 
 export interface SidebarPeekControls {
   /** False on compact layouts and while the sidebar is pinned open. */
@@ -215,7 +215,8 @@ export function useSidebarPeek({
     const handlePointerMove = (event: PointerEvent) => {
       if (openRef.current) return;
       // A menu or modal owns the pointer; do not open the sidebar behind it.
-      if (hasActiveWebOverlay()) {
+      // A dialog above the workspace owns the pointer; peeking out from under it would fight it.
+      if (getTopOverlayLayer() > 0) {
         insideHotspotRef.current = false;
         clearOpenTimer();
         return;
