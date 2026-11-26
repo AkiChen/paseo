@@ -1,4 +1,5 @@
 import { shareCheckoutDiff } from "./diff-sharing";
+import { useSessionStore } from "@/stores/session-store";
 import { useMemo } from "react";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useReplicaQuery } from "@/data/query";
@@ -10,10 +11,9 @@ import { checkoutDiffQueryKey } from "@/git/query-keys";
 interface UseCheckoutDiffQueryOptions {
   serverId: string;
   cwd: string;
-  mode: "uncommitted" | "base";
+  mode: "uncommitted" | "base" | "all";
   baseRef?: string;
   ignoreWhitespace?: boolean;
-  contextLines?: number;
   enabled?: boolean;
   queryScope?: string;
 }
@@ -27,25 +27,18 @@ export type DiffLine = DiffHunk["lines"][number];
 export type HighlightToken = NonNullable<DiffLine["tokens"]>[number];
 
 function normalizeCheckoutDiffCompare(compare: {
-  mode: "uncommitted" | "base";
+  mode: "uncommitted" | "base" | "all";
   baseRef?: string;
   ignoreWhitespace?: boolean;
-  contextLines?: number;
-}): {
-  mode: "uncommitted" | "base";
-  baseRef?: string;
-  ignoreWhitespace?: boolean;
-  contextLines?: number;
-} {
+}): { mode: "uncommitted" | "base" | "all"; baseRef?: string; ignoreWhitespace?: boolean } {
   const ignoreWhitespace = compare.ignoreWhitespace === true;
-  const contextLines = compare.contextLines;
   if (compare.mode === "uncommitted") {
-    return { mode: "uncommitted", ignoreWhitespace, contextLines };
+    return { mode: "uncommitted", ignoreWhitespace };
   }
   const trimmedBaseRef = compare.baseRef?.trim();
   return trimmedBaseRef
-    ? { mode: "base", baseRef: trimmedBaseRef, ignoreWhitespace, contextLines }
-    : { mode: "base", ignoreWhitespace, contextLines };
+    ? { mode: compare.mode, baseRef: trimmedBaseRef, ignoreWhitespace }
+    : { mode: compare.mode, ignoreWhitespace };
 }
 
 export function useCheckoutDiffQuery({
@@ -54,27 +47,24 @@ export function useCheckoutDiffQuery({
   mode,
   baseRef,
   ignoreWhitespace,
-  contextLines,
   enabled = true,
   queryScope,
 }: UseCheckoutDiffQueryOptions) {
+  // COMPAT(checkoutDiffAll): added in v0.12.0, remove after 2027-04-21 once host floor includes All changes.
+  const allSupported = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.checkoutDiffAll === true,
+  );
+  const requiresUpdate = mode === "all" && !allSupported;
   const retainedPanelActive = useRetainedPanelActive();
   const queryEnabled = enabled && retainedPanelActive;
   const isConnected = useHostRuntimeIsConnected(serverId);
   const normalizedCompare = useMemo(
-    () =>
-      normalizeCheckoutDiffCompare({
-        mode,
-        baseRef,
-        ignoreWhitespace,
-        contextLines,
-      }),
-    [mode, baseRef, ignoreWhitespace, contextLines],
+    () => normalizeCheckoutDiffCompare({ mode, baseRef, ignoreWhitespace }),
+    [mode, baseRef, ignoreWhitespace],
   );
   const compareMode = normalizedCompare.mode;
   const compareBaseRef = normalizedCompare.baseRef;
   const compareIgnoreWhitespace = normalizedCompare.ignoreWhitespace;
-  const compareContextLines = normalizedCompare.contextLines;
   const queryKey = useMemo(() => {
     const comparisonKey = checkoutDiffQueryKey(
       serverId,
@@ -82,21 +72,12 @@ export function useCheckoutDiffQuery({
       compareMode,
       compareBaseRef,
       compareIgnoreWhitespace,
-      compareContextLines,
     );
     const normalizedScope = queryScope?.trim();
     return normalizedScope ? [...comparisonKey, "scope", normalizedScope] : comparisonKey;
-  }, [
-    serverId,
-    cwd,
-    compareMode,
-    compareBaseRef,
-    compareIgnoreWhitespace,
-    compareContextLines,
-    queryScope,
-  ]);
+  }, [serverId, cwd, compareMode, compareBaseRef, compareIgnoreWhitespace, queryScope]);
   const subscriptionId = useMemo(() => `checkoutDiff:${JSON.stringify(queryKey)}`, [queryKey]);
-  const routeEnabled = Boolean(queryEnabled && isConnected && cwd);
+  const routeEnabled = Boolean(queryEnabled && isConnected && cwd && !requiresUpdate);
 
   const query = useReplicaQuery<CheckoutDiffQueryPayload>({
     queryKey,
@@ -112,12 +93,20 @@ export function useCheckoutDiffQuery({
         mode: compareMode,
         ...(compareBaseRef ? { baseRef: compareBaseRef } : {}),
         ignoreWhitespace: compareIgnoreWhitespace,
-        ...(compareContextLines !== undefined ? { contextLines: compareContextLines } : {}),
       },
     }),
   });
 
-  return deriveCheckoutDiffResult(query.data ?? null);
+  return deriveCheckoutDiffResult(
+    requiresUpdate && isConnected
+      ? {
+          requestId: "unsupported",
+          cwd,
+          files: [],
+          error: { code: "UNKNOWN", message: "Update the host to view All changes" },
+        }
+      : (query.data ?? null),
+  );
 }
 
 export interface CheckoutDiffResult {

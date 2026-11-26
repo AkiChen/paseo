@@ -79,7 +79,6 @@ describe("usePublishWorkingDiffAttachment", () => {
     renderHook(() =>
       usePublishWorkingDiffAttachment({
         ...SCOPE_INPUT,
-        reviewDraftKey: "review:working-diff",
         attachment: null,
         enabled: true,
       }),
@@ -97,7 +96,6 @@ describe("usePublishWorkingDiffAttachment", () => {
     const { unmount } = renderHook(() =>
       usePublishWorkingDiffAttachment({
         ...SCOPE_INPUT,
-        reviewDraftKey: "review:working-diff",
         attachment: workingReview,
         enabled: true,
       }),
@@ -117,7 +115,6 @@ describe("usePublishWorkingDiffAttachment", () => {
       ({ enabled }: { enabled: boolean }) =>
         usePublishWorkingDiffAttachment({
           ...SCOPE_INPUT,
-          reviewDraftKey: "review:commit:abc123",
           attachment: commitReview,
           enabled,
         }),

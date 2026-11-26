@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   buildWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
@@ -32,7 +32,6 @@ export function useWorkingDiff({
   queryScope,
   presentation,
 }: UseWorkingDiffOptions) {
-  const [showFullContext, setShowFullContext] = useState(false);
   const {
     status,
     isLoading: isStatusLoading,
@@ -45,34 +44,18 @@ export function useWorkingDiff({
   const statusErrorMessage =
     status?.error?.message ??
     (isStatusError && statusError instanceof Error ? statusError.message : null);
-  const defaultBaseRef = gitStatus?.baseRef ?? undefined;
-  const hasUncommittedChanges = Boolean(gitStatus?.isDirty);
+  const baseRef = gitStatus?.baseRef ?? undefined;
   const currentBranchName =
     gitStatus?.currentBranch && gitStatus.currentBranch !== "HEAD" ? gitStatus.currentBranch : null;
 
-  const {
-    comparison: diffMode,
-    baseRef,
-    selectComparison,
-    selectBaseRef: selectComparisonBaseRef,
-  } = useWorkingDiffComparison({
+  const { comparison: diffMode, selectComparison } = useWorkingDiffComparison({
     serverId,
     workspaceId,
     cwd,
-    isDirty: hasUncommittedChanges,
-    defaultBaseRef,
   });
-  useEffect(() => setShowFullContext(false), [baseRef, cwd, diffMode, ignoreWhitespace, serverId]);
-  const expandFullContext = useCallback(() => setShowFullContext(true), []);
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
+  const selectAll = useCallback(() => selectComparison("all"), [selectComparison]);
   const selectBase = useCallback(() => selectComparison("base"), [selectComparison]);
-  const selectBaseRef = useCallback(
-    (nextBaseRef: string) => {
-      selectComparisonBaseRef(nextBaseRef);
-      selectComparison("base");
-    },
-    [selectComparison, selectComparisonBaseRef],
-  );
 
   const {
     files,
@@ -85,7 +68,6 @@ export function useWorkingDiff({
     mode: diffMode,
     baseRef,
     ignoreWhitespace,
-    contextLines: showFullContext ? 100000 : undefined,
     enabled: enabled && isGit,
     queryScope,
   });
@@ -128,16 +110,13 @@ export function useWorkingDiff({
     diffMode,
     selectUncommitted,
     selectBase,
-    selectBaseRef,
+    selectAll,
     files,
     diffPayloadError,
     diffTooLarge,
     isDiffLoading,
     reviewActions,
     reviewAttachment,
-    reviewDraftKey,
-    showFullContext,
-    expandFullContext,
     reviewFeedback,
   };
 }
@@ -146,14 +125,12 @@ export function usePublishWorkingDiffAttachment({
   serverId,
   workspaceId,
   cwd,
-  reviewDraftKey,
   attachment,
   enabled,
 }: {
   serverId: string;
   workspaceId?: string;
   cwd: string;
-  reviewDraftKey: string;
   attachment: ReturnType<typeof useWorkingDiff>["reviewAttachment"];
   enabled: boolean;
 }) {
@@ -161,22 +138,24 @@ export function usePublishWorkingDiffAttachment({
     () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
     [cwd, serverId, workspaceId],
   );
-  const setWorkspaceReviewAttachment = useWorkspaceAttachmentsStore(
-    (state) => state.setWorkspaceReviewAttachment,
+  const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
+    (state) => state.setWorkspaceAttachments,
+  );
+  const clearWorkspaceAttachments = useWorkspaceAttachmentsStore(
+    (state) => state.clearWorkspaceAttachments,
   );
 
   useEffect(() => {
     if (!enabled) {
       return;
     }
-    setWorkspaceReviewAttachment({ scopeKey, reviewDraftKey, attachment });
-  }, [attachment, enabled, reviewDraftKey, scopeKey, setWorkspaceReviewAttachment]);
-
-  // Withdraw on unmount only. Going inactive must keep the comments in the
-  // composer: the reader switches to the session to send them.
-  useEffect(() => {
+    const attachments = attachment ? [attachment] : [];
+    setWorkspaceAttachments({ scopeKey, attachments });
     return () => {
-      setWorkspaceReviewAttachment({ scopeKey, reviewDraftKey, attachment: null });
+      const current = useWorkspaceAttachmentsStore.getState().attachmentsByScope[scopeKey];
+      if (current === attachments) {
+        clearWorkspaceAttachments({ scopeKey });
+      }
     };
-  }, [reviewDraftKey, scopeKey, setWorkspaceReviewAttachment]);
+  }, [attachment, clearWorkspaceAttachments, enabled, scopeKey, setWorkspaceAttachments]);
 }

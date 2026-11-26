@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveSessionUsageSummary } from "./context-window-meter.utils";
+import { formatContextPercentage, resolveSessionUsageSummary } from "./context-window-meter.utils";
 
 describe("resolveSessionUsageSummary", () => {
   it("sums the three prompt buckets and output, and takes the cache-read share", () => {
@@ -48,5 +48,12 @@ describe("resolveSessionUsageSummary", () => {
 
   it("has no cache-hit share when the prompt side is empty", () => {
     expect(resolveSessionUsageSummary({ outputTokens: 12 })?.cacheHitPercent).toBeNull();
+  });
+});
+
+describe("formatContextPercentage", () => {
+  it("localizes percentages without hiding context overflow", () => {
+    expect(formatContextPercentage(125, "en")).toBe("125%");
+    expect(formatContextPercentage(42, "fr")).toBe("42\u00a0%");
   });
 });

@@ -120,6 +120,7 @@ export interface AppSettings {
   turnProcessFolding: TurnProcessFolding;
   chatOutlineEnabled: boolean;
   vimKeybindings: boolean;
+  filePanelAssociations: Record<string, string>;
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
   pullRequestOpenLocation: PullRequestOpenLocation;
@@ -182,6 +183,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   turnProcessFolding: "compact",
   chatOutlineEnabled: true,
   vimKeybindings: false,
+  filePanelAssociations: {},
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
 };
@@ -294,6 +296,7 @@ const StoredAppSettingsSchema = z
     turnProcessFolding: z.enum(["compact", "standard"]).catch("compact"),
     chatOutlineEnabled: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
+    filePanelAssociations: z.record(z.string(), z.string()).catch({}),
     openInSidePane: z
       .object({
         explorerFiles: z.boolean().catch(false),

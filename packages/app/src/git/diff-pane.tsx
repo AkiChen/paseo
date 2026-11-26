@@ -35,7 +35,6 @@ import type { ChangesState } from "@/panels/changes/state";
 import { defaultChangesState } from "@/panels/changes/state";
 import { ReviewCommentSheet, ReviewFeedbackAction } from "@/review";
 import { DiffDocument, type WorkingDiffMode } from "@/git/diff-document";
-import { areAllDiffFilesCollapsed } from "@/git/diff-document/collapse";
 import { ChangedFilesTree } from "@/git/changed-files-tree";
 import { JUMP_TO_FILE_CLEARANCE, JumpToFile } from "@/git/jump-to-file";
 import {
@@ -51,12 +50,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-  useDropdownMenuClose,
-  type MenuPageDefinition,
 } from "@/components/ui/dropdown-menu";
-import { MenuTextField } from "@/components/ui/menu";
 import * as Clipboard from "expo-clipboard";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
@@ -138,7 +133,7 @@ function useDiscardChangesAction({
 }: {
   serverId: string;
   cwd: string;
-  diffMode: "uncommitted" | "base";
+  diffMode: "uncommitted" | "base" | "all";
 }): ((path: string, oldPath?: string) => void) | undefined {
   const { t } = useTranslation();
   const toast = useToast();
@@ -286,46 +281,28 @@ export function DiffLayoutToggle({
 }
 
 interface DiffModeMenuProps {
-  baseRef?: string;
-  diffMode: "uncommitted" | "base";
+  diffMode: "uncommitted" | "base" | "all";
   committedDescription?: string;
   testIDPrefix?: string;
-  onSelectBaseRef: (baseRef: string) => void;
   onSelectUncommitted: () => void;
   onSelectBase: () => void;
+  onSelectAll: () => void;
 }
 
 export function DiffModeMenu({
-  baseRef,
   diffMode,
   committedDescription,
   testIDPrefix = "changes-diff",
-  onSelectBaseRef,
   onSelectUncommitted,
   onSelectBase,
+  onSelectAll,
 }: DiffModeMenuProps) {
   const { t } = useTranslation();
   const uncommittedLabel = t("workspace.git.diff.uncommitted");
   const committedLabel = t("workspace.git.diff.committed");
-  const pages = useMemo<MenuPageDefinition[]>(
-    () => [
-      {
-        id: "base-ref",
-        title: t("workspace.git.diff.compareBase"),
-        hoverIntent: false,
-        content: (
-          <DiffBaseRefPage
-            baseRef={baseRef}
-            testIDPrefix={testIDPrefix}
-            onApply={onSelectBaseRef}
-          />
-        ),
-      },
-    ],
-    [baseRef, onSelectBaseRef, t, testIDPrefix],
-  );
+  const allLabel = t("workspace.git.diff.all");
   return (
-    <DropdownMenu compactMode="sheet">
+    <DropdownMenu>
       <DropdownMenuTrigger
         testID={`${testIDPrefix}-status-trigger`}
         style={toolbarLabelTriggerStyle}
@@ -337,7 +314,7 @@ export function DiffModeMenu({
           return (
             <>
               <Text style={toolbarLabelTriggerTextStyle(highlighted)} numberOfLines={1}>
-                {diffMode === "uncommitted" ? uncommittedLabel : committedLabel}
+                {{ all: allLabel, uncommitted: uncommittedLabel, base: committedLabel }[diffMode]}
               </Text>
               <ToolbarLabelTriggerIcon>
                 <ThemedChevronDown size={12} uniProps={extraMutedIconColorMapping} />
@@ -346,13 +323,15 @@ export function DiffModeMenu({
           );
         }}
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        width={260}
-        pages={pages}
-        sheetTitle={t("workspace.git.diff.diffMode")}
-        testID={`${testIDPrefix}-status-menu`}
-      >
+      <DropdownMenuContent align="start" width={260} testID={`${testIDPrefix}-status-menu`}>
+        <DropdownMenuItem
+          testID={`${testIDPrefix}-mode-all`}
+          selected={diffMode === "all"}
+          onSelect={onSelectAll}
+        >
+          {allLabel}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           testID={`${testIDPrefix}-mode-uncommitted`}
           selected={diffMode === "uncommitted"}
@@ -369,53 +348,8 @@ export function DiffModeMenu({
         >
           {committedLabel}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuSubTrigger id="base-ref" value={baseRef} testID={`${testIDPrefix}-base-ref`}>
-          {t("workspace.git.diff.compareBase")}
-        </DropdownMenuSubTrigger>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function DiffBaseRefPage({
-  baseRef,
-  testIDPrefix,
-  onApply,
-}: {
-  baseRef?: string;
-  testIDPrefix: string;
-  onApply: (baseRef: string) => void;
-}) {
-  const { t } = useTranslation();
-  const closeMenu = useDropdownMenuClose();
-  const [draft, setDraft] = useState(baseRef ?? "");
-  const apply = useCallback(() => {
-    onApply(draft);
-    closeMenu();
-  }, [closeMenu, draft, onApply]);
-  const reset = useCallback(() => {
-    onApply("");
-    closeMenu();
-  }, [closeMenu, onApply]);
-  return (
-    <>
-      <MenuTextField
-        initialValue={baseRef}
-        onChangeText={setDraft}
-        onSubmitEditing={apply}
-        placeholder={t("workspace.git.diff.compareBasePlaceholder")}
-        accessibilityLabel={t("workspace.git.diff.compareBaseInput")}
-        autoFocus
-        testID={`${testIDPrefix}-base-ref-input`}
-      />
-      <DropdownMenuItem testID={`${testIDPrefix}-base-ref-apply`} onSelect={apply}>
-        {t("workspace.git.diff.applyBase")}
-      </DropdownMenuItem>
-      <DropdownMenuItem testID={`${testIDPrefix}-base-ref-reset`} onSelect={reset}>
-        {t("workspace.git.diff.useDefaultBase")}
-      </DropdownMenuItem>
-    </>
   );
 }
 
@@ -545,13 +479,12 @@ interface ChangesRepositoryToolbarModel {
 }
 
 interface ChangesComparisonToolbarModel {
-  baseRef?: string;
   committedDescription?: string;
-  diffMode: "uncommitted" | "base";
+  diffMode: "uncommitted" | "base" | "all";
   mode: ChangesToolbarMode;
   selectedDiffStat: { additions: number; deletions: number } | null;
-  onSelectBaseRef: (baseRef: string) => void;
   onSelectBase: () => void;
+  onSelectAll: () => void;
   onSelectUncommitted: () => void;
 }
 
@@ -563,17 +496,16 @@ interface ChangesHeaderProps {
 }
 
 interface BuildChangesHeaderModelInput {
-  baseRef?: string;
   branchName: string | null;
   committedDescription?: string;
   compact: boolean;
   cwd: string;
-  diffMode: "uncommitted" | "base";
+  diffMode: "uncommitted" | "base" | "all";
   gitActions: GitActions;
   mode: ChangesToolbarMode;
   onOpenPullRequest: () => void;
-  onSelectBaseRef: (baseRef: string) => void;
   onSelectBase: () => void;
+  onSelectAll: () => void;
   onSelectUncommitted: () => void;
   pullRequest: PrHint | null;
   selectedDiffStat: { additions: number; deletions: number } | null;
@@ -597,13 +529,12 @@ function buildChangesHeaderModel(input: BuildChangesHeaderModelInput): {
       workspaceId: input.workspaceId,
     },
     comparison: {
-      baseRef: input.baseRef,
       committedDescription: input.committedDescription,
       diffMode: input.diffMode,
       mode: input.mode,
       selectedDiffStat: input.selectedDiffStat,
-      onSelectBaseRef: input.onSelectBaseRef,
       onSelectBase: input.onSelectBase,
+      onSelectAll: input.onSelectAll,
       onSelectUncommitted: input.onSelectUncommitted,
     },
   };
@@ -816,12 +747,11 @@ function ChangesComparisonToolbar({
     >
       <ChangesToolbarLeading>
         <DiffModeMenu
-          baseRef={model.baseRef}
           diffMode={model.diffMode}
           committedDescription={model.committedDescription}
-          onSelectBaseRef={model.onSelectBaseRef}
           onSelectUncommitted={model.onSelectUncommitted}
           onSelectBase={model.onSelectBase}
+          onSelectAll={model.onSelectAll}
         />
         {model.selectedDiffStat ? (
           <DiffStat
@@ -1240,7 +1170,7 @@ interface ChangesEmptyAction {
 
 function computeChangesEmptyAction(input: {
   hideWhitespace: boolean;
-  diffMode: "uncommitted" | "base";
+  diffMode: "uncommitted" | "base" | "all";
   status: CheckoutStatusPayload | null;
   seeUncommittedLabel: string;
   seeCommittedLabel: string;
@@ -1512,10 +1442,9 @@ function useDiffTabNavigation({
     openWorkspacePullRequest({
       isCompact: isMobile,
       workspaceKey: persistenceKey,
-      checkout: { serverId, cwd, isGit: true },
       destination: pullRequestOpenLocation,
     });
-  }, [cwd, isMobile, persistenceKey, pullRequestOpenLocation, serverId]);
+  }, [isMobile, persistenceKey, pullRequestOpenLocation]);
   return {
     openDiff,
     openCommit,
@@ -1630,16 +1559,13 @@ export function ChangesSurface({
     diffMode,
     selectUncommitted: handleSelectUncommitted,
     selectBase: handleSelectBase,
-    selectBaseRef: handleSelectBaseRef,
+    selectAll: handleSelectAll,
     files,
     diffPayloadError,
     diffTooLarge,
     isDiffLoading,
     reviewActions,
     reviewAttachment,
-    reviewDraftKey,
-    showFullContext,
-    expandFullContext,
     reviewFeedback,
   } = useWorkingDiff({
     presentation,
@@ -1653,7 +1579,6 @@ export function ChangesSurface({
     serverId,
     workspaceId: workspaceId ?? undefined,
     cwd,
-    reviewDraftKey,
     attachment: reviewAttachment,
     enabled: true,
   });
@@ -1789,8 +1714,6 @@ export function ChangesSurface({
   const workingMode = useMemo(
     () => ({
       kind: "working" as const,
-      fullContextShown: showFullContext,
-      onExpandContext: expandFullContext,
       reviewActions,
       focusPath: documentFocusRequest?.path,
       focusRequestId: documentFocusRequest?.revision,
@@ -1808,8 +1731,6 @@ export function ChangesSurface({
     }),
     [
       reviewActions,
-      showFullContext,
-      expandFullContext,
       documentFocusRequest?.path,
       documentFocusRequest?.revision,
       serverId,
@@ -1841,7 +1762,8 @@ export function ChangesSurface({
     () => computeSelectedDiffStat(files, isDiffLoading),
     [files, isDiffLoading],
   );
-  const allFilesCollapsed = areAllDiffFilesCollapsed(files, collapsedFilePaths);
+  const allFilesCollapsed =
+    hasChanges && files.every((file) => collapsedFilePaths.includes(file.path));
   const handleCollapseAllFiles = useCallback(
     () => updateCollapsedFilePaths(files.map((file) => file.path)),
     [files, updateCollapsedFilePaths],
@@ -1982,7 +1904,6 @@ export function ChangesSurface({
   const changesHeaderModel = useMemo(
     () =>
       buildChangesHeaderModel({
-        baseRef,
         branchName: currentBranchName,
         committedDescription: committedDiffDescription,
         compact: isMobile,
@@ -1991,8 +1912,8 @@ export function ChangesSurface({
         gitActions,
         mode: toolbarMode,
         onOpenPullRequest: handleOpenPullRequest,
-        onSelectBaseRef: handleSelectBaseRef,
         onSelectBase: handleSelectBase,
+        onSelectAll: handleSelectAll,
         onSelectUncommitted: handleSelectUncommitted,
         pullRequest: selectPrHintFromStatus(pullRequestStatus, forge),
         selectedDiffStat,
@@ -2000,15 +1921,14 @@ export function ChangesSurface({
         workspaceId,
       }),
     [
-      baseRef,
       committedDiffDescription,
       currentBranchName,
       cwd,
       diffMode,
       gitActions,
       handleOpenPullRequest,
-      handleSelectBaseRef,
       handleSelectBase,
+      handleSelectAll,
       handleSelectUncommitted,
       isMobile,
       forge,

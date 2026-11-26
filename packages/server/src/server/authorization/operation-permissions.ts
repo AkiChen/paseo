@@ -6,6 +6,14 @@ type OutboundOperation = SessionOutboundMessage["type"];
 export type PermissionRequirement = DaemonPermission | readonly DaemonPermission[] | null;
 
 const INBOUND_PERMISSION = {
+  "hosts.list.request": "daemon.read",
+  "hosts.add.request": "tunnel.manage",
+  "hosts.update.request": "tunnel.manage",
+  "hosts.remove.request": "tunnel.manage",
+  "hosts.link.open.request": null,
+  "hosts.route.open.request": null,
+  "hosts.route.frame.request": null,
+  "hosts.route.close.request": null,
   abort_request: "workspace.write",
   "agent.config.apply.request": ["workspace.write", "hub.execute"],
   "agent.detach.request": "workspace.write",
@@ -212,6 +220,7 @@ const INBOUND_PERMISSION = {
   "workspace.script.stop.request": "workspace.write",
   "workspace.title.set.request": ["workspace.manage", "hub.execute"],
   workspace_setup_status_request: "workspace.read",
+  "workspace.setup.subscribe.request": "workspace.read",
   "workspace.setup.run.request": "workspace.write",
   write_project_config_request: "workspace.write",
   // COMPAT(workLedger): added in v0.11.0; drop together with the server_info gate.
@@ -224,6 +233,15 @@ const INBOUND_PERMISSION = {
 } as const satisfies Record<InboundOperation, PermissionRequirement>;
 
 const OUTBOUND_PERMISSION = {
+  "hosts.list.response": "daemon.read",
+  "hosts.changed": "daemon.read",
+  "hosts.add.response": "tunnel.manage",
+  "hosts.update.response": "tunnel.manage",
+  "hosts.remove.response": "tunnel.manage",
+  "hosts.link.open.response": null,
+  "hosts.route.open.response": null,
+  "hosts.route.frame": null,
+  "hosts.route.closed": null,
   "agent.create.response": ["workspace.write", "hub.execute"],
   "agent.create.update": ["workspace.write", "hub.execute"],
   "workspace.create.update": "workspace.manage",
@@ -447,6 +465,7 @@ const OUTBOUND_PERMISSION = {
   "workspace.title.set.response": ["workspace.manage", "hub.execute"],
   workspace_setup_progress: "workspace.read",
   workspace_setup_status_response: "workspace.read",
+  "workspace.setup.subscribe.response": "workspace.read",
   "workspace.setup.run.response": "workspace.write",
   workspace_update: ["workspace.read", "hub.execute"],
   write_project_config_response: "workspace.write",
