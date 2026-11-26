@@ -45,16 +45,16 @@ Doze 会限制网络与调度；前台服务不能简单等同于所有限制均
 
 ## 3. 当前源码已经具备什么
 
-| 能力 | 源码位置 | 对本项目的意义 |
-| --- | --- | --- |
-| 会话查询与订阅 | `packages/client/src/index.ts` 的 `agents.list`、`daemon-client.ts` 的 `fetchAgents` / `observeAgents` | 已有会话目录能力，基础原型无需先新增 HTTP API |
-| 列表状态与关注原因 | `packages/protocol/src/messages.ts` 的 `AgentListItemPayloadSchema` | 已有 `status`、`lastUserMessageAt`、`updatedAt`、`requiresAttention`、`attentionReason`、`attentionTimestamp` |
-| 状态语义 | `packages/protocol/src/agent-lifecycle.ts`、`docs/agent-lifecycle.md` | 原始状态为 initializing / idle / running / error / closed；idle 不必然表示刚完成 |
-| 主机配置与连接 | `packages/app/src/types/host-connection.ts`、`runtime/host-runtime.ts` | 已有 directTcp 与 relay 资料、服务器标识、密码等配置 |
-| Relay 加密 | `packages/client/src/daemon-client-relay-e2ee-transport.ts`、`packages/relay/src/crypto.ts` / `encrypted-channel.ts` | Relay 需要端到端握手和 NaCl 兼容加密，不能直接改成普通 HTTP 轮询 |
-| 前台活跃状态 | `packages/app/src/hooks/use-client-activity.ts`、服务端 `agent-attention-policy.ts` | 监控连接不能被误认为用户正在看会话，避免改变已有提醒行为 |
-| 原生扩展方式 | `packages/app/modules/`、`app.config.js`、`docs/android.md` | 现有 Expo 项目可加入本地原生模块与配置插件 |
-| 导航 | `packages/protocol/src/agent-deep-link.ts`、App 的 `utils/host-routes.ts` | 点击小组件可打开准确的服务器和会话 |
+| 能力               | 源码位置                                                                                                             | 对本项目的意义                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 会话查询与订阅     | `packages/client/src/index.ts` 的 `agents.list`、`daemon-client.ts` 的 `fetchAgents` / `observeAgents`               | 已有会话目录能力，基础原型无需先新增 HTTP API                                                                 |
+| 列表状态与关注原因 | `packages/protocol/src/messages.ts` 的 `AgentListItemPayloadSchema`                                                  | 已有 `status`、`lastUserMessageAt`、`updatedAt`、`requiresAttention`、`attentionReason`、`attentionTimestamp` |
+| 状态语义           | `packages/protocol/src/agent-lifecycle.ts`、`docs/agent-lifecycle.md`                                                | 原始状态为 initializing / idle / running / error / closed；idle 不必然表示刚完成                              |
+| 主机配置与连接     | `packages/app/src/types/host-connection.ts`、`runtime/host-runtime.ts`                                               | 已有 directTcp 与 relay 资料、服务器标识、密码等配置                                                          |
+| Relay 加密         | `packages/client/src/daemon-client-relay-e2ee-transport.ts`、`packages/relay/src/crypto.ts` / `encrypted-channel.ts` | Relay 需要端到端握手和 NaCl 兼容加密，不能直接改成普通 HTTP 轮询                                              |
+| 前台活跃状态       | `packages/app/src/hooks/use-client-activity.ts`、服务端 `agent-attention-policy.ts`                                  | 监控连接不能被误认为用户正在看会话，避免改变已有提醒行为                                                      |
+| 原生扩展方式       | `packages/app/modules/`、`app.config.js`、`docs/android.md`                                                          | 现有 Expo 项目可加入本地原生模块与配置插件                                                                    |
+| 导航               | `packages/protocol/src/agent-deep-link.ts`、App 的 `utils/host-routes.ts`                                            | 点击小组件可打开准确的服务器和会话                                                                            |
 
 因此，服务端开发重点是**监控身份、轻量摘要、可靠的完成标识和断线补齐**，而非重写整个会话查询系统。此前提到的 `fetch_recent_provider_sessions` 用于查找可导入的 provider 会话，不作为本功能数据入口。
 
@@ -148,17 +148,17 @@ Native Widget 从本地缓存渲染；App UI 不运行时，服务仍能写缓�
 
 ### 5.3 状态语义
 
-| 数据 | 展示行为 |
-| --- | --- |
-| initializing | 正在启动 |
-| running | 执行中 |
-| permission attention | 等待你授权；可能与 running 并存，作为展示优先状态 |
-| finished event | 本轮已完成；展示完成时间 |
-| error event / error state | 执行失败，点击查看 |
-| canceled event | 已停止/已取消，不标为成功完成 |
-| idle 无完成证据 | 等待输入 |
-| closed | 会话未运行，不标为刚完成 |
-| 网络断开 / 信息过期 | 保留最后已知状态，同时标记离线/更新于某时 |
+| 数据                      | 展示行为                                          |
+| ------------------------- | ------------------------------------------------- |
+| initializing              | 正在启动                                          |
+| running                   | 执行中                                            |
+| permission attention      | 等待你授权；可能与 running 并存，作为展示优先状态 |
+| finished event            | 本轮已完成；展示完成时间                          |
+| error event / error state | 执行失败，点击查看                                |
+| canceled event            | 已停止/已取消，不标为成功完成                     |
+| idle 无完成证据           | 等待输入                                          |
+| closed                    | 会话未运行，不标为刚完成                          |
+| 网络断开 / 信息过期       | 保留最后已知状态，同时标记离线/更新于某时         |
 
 连接健康与会话活动是两个维度。会话半小时没有变化、但心跳正常时仍可在线；缓存中的 running 在连接已断开时不能显示成毫无保留的实时执行中。
 
@@ -195,13 +195,13 @@ Native Widget 从本地缓存渲染；App UI 不运行时，服务仍能写缓�
 
 ## 7. 分阶段实施与验收门槛
 
-| 阶段 | 主要交付 | 阶段通过条件 | 参考工作量 |
-| --- | --- | --- | --- |
-| P0：可行性验证 | 明确设备/连接方式；最小原生服务；直连和真实 relay 握手；锁屏与耗电实验；服务类型结论 | 用户主动开启后无聊天页面也可接收状态；锁屏 60 分钟可测；查清断流/超时行为 | 2–4 人日 |
-| P1：服务端与协议 | capability、只读监控身份、摘要/观察接口、稳定终态事件、游标和持久化 | 多轮执行、断线、服务器重启后状态与事件正确；监控不影响原有通知策略 | 3–4 人日 |
-| P2：Android 监控引擎 | 原生服务、direct/relay、凭据桥接、缓存、网络恢复、超时/停止、短时 Worker | 不依赖 React 页面挂载；同服务器多个 widget 共享连接；停止后资源归零 | 4–6 人日 |
-| P3：小组件与配置 | 大小尺寸、主题、会话选择、开始/暂停、刷新、深链接、诊断入口 | 真机桌面可用；日夜/字体变化正常；能打开正确会话 | 2–3 人日 |
-| P4：可靠性与发布验证 | 锁屏/省电/网络矩阵、耗电和流量报告、通知去重、回归、APK | 达到下述分场景指标；限制清晰可见；构建/签名/真机结果各自记录 | 3–5 人日 |
+| 阶段                 | 主要交付                                                                             | 阶段通过条件                                                              | 参考工作量 |
+| -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- | ---------- |
+| P0：可行性验证       | 明确设备/连接方式；最小原生服务；直连和真实 relay 握手；锁屏与耗电实验；服务类型结论 | 用户主动开启后无聊天页面也可接收状态；锁屏 60 分钟可测；查清断流/超时行为 | 2–4 人日   |
+| P1：服务端与协议     | capability、只读监控身份、摘要/观察接口、稳定终态事件、游标和持久化                  | 多轮执行、断线、服务器重启后状态与事件正确；监控不影响原有通知策略        | 3–4 人日   |
+| P2：Android 监控引擎 | 原生服务、direct/relay、凭据桥接、缓存、网络恢复、超时/停止、短时 Worker             | 不依赖 React 页面挂载；同服务器多个 widget 共享连接；停止后资源归零       | 4–6 人日   |
+| P3：小组件与配置     | 大小尺寸、主题、会话选择、开始/暂停、刷新、深链接、诊断入口                          | 真机桌面可用；日夜/字体变化正常；能打开正确会话                           | 2–3 人日   |
+| P4：可靠性与发布验证 | 锁屏/省电/网络矩阵、耗电和流量报告、通知去重、回归、APK                              | 达到下述分场景指标；限制清晰可见；构建/签名/真机结果各自记录              | 3–5 人日   |
 
 完整可用版初估 **14–22 人日**，是单开发者有效工作量而非日历承诺。第三方原生加密依赖、现有设备条件和 relay 互操作会影响范围；P0 后更新估算。P0/P1 的协议设计可以部分并行，P2 必须建立在连接与状态合同已确认的基础上。
 
@@ -224,16 +224,16 @@ UI 验证至少包括浅色/深色、大小字号、长标题、两种尺寸、�
 
 ### 初始体验指标（需 P0 确认可达后冻结）
 
-| 场景 | 目标 |
-| --- | --- |
-| 服务已连接、网络正常、亮屏切到其他 App | 服务端权威状态提交至目标手机桌面可见变化，P95 ≤ 5 秒 |
-| 用户已开启监控、锁屏且后台配置经验证 | 服务端事件至设备缓存 P95 ≤ 10 秒；测试至少 60 分钟，覆盖完成/失败/授权事件 |
-| 解锁回到桌面 | 显示锁屏期间已收到的最新状态，目标 ≤ 2 秒；与网络新请求的耗时分开测量 |
-| 服务停止或系统阻止实时网络 | 明确显示最后更新时间；不适用上述实时指标 |
-| 网络恢复 | 网络可用后 P95 ≤ 10 秒恢复当前状态；历史事件按游标补齐 |
-| 同一轮完成事件重发/重连 | 状态幂等；启用本地提醒时，同一事件本地最多提醒一次 |
-| 停止或超时 | 服务、连接与唤醒锁及时释放；停止后不再主动维持实时连接 |
-| 功耗和流量 | P0 建立“关闭监控 / 空闲监控 / 活跃监控”同条件对照；P4 给出额外耗电、唤醒时长、消息数/字节数；据实决定可接受阈值 |
+| 场景                                   | 目标                                                                                                            |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 服务已连接、网络正常、亮屏切到其他 App | 服务端权威状态提交至目标手机桌面可见变化，P95 ≤ 5 秒                                                            |
+| 用户已开启监控、锁屏且后台配置经验证   | 服务端事件至设备缓存 P95 ≤ 10 秒；测试至少 60 分钟，覆盖完成/失败/授权事件                                      |
+| 解锁回到桌面                           | 显示锁屏期间已收到的最新状态，目标 ≤ 2 秒；与网络新请求的耗时分开测量                                           |
+| 服务停止或系统阻止实时网络             | 明确显示最后更新时间；不适用上述实时指标                                                                        |
+| 网络恢复                               | 网络可用后 P95 ≤ 10 秒恢复当前状态；历史事件按游标补齐                                                          |
+| 同一轮完成事件重发/重连                | 状态幂等；启用本地提醒时，同一事件本地最多提醒一次                                                              |
+| 停止或超时                             | 服务、连接与唤醒锁及时释放；停止后不再主动维持实时连接                                                          |
+| 功耗和流量                             | P0 建立“关闭监控 / 空闲监控 / 活跃监控”同条件对照；P4 给出额外耗电、唤醒时长、消息数/字节数；据实决定可接受阈值 |
 
 延迟指标从服务端生成权威状态开始计算，不把模型本身的运行耗时算入。测量同时记录事件到设备、写库、请求 Widget 更新和桌面实际显示四个时间点，区分连接问题与 launcher 刷新延迟。跨设备时间比较校准时钟并记录误差，断网或限制场景单独统计。
 
@@ -241,16 +241,16 @@ UI 验证至少包括浅色/深色、大小字号、长标题、两种尺寸、�
 
 ## 8. 预计修改位置与兼容策略
 
-| 区域 | 预计修改 |
-| --- | --- |
-| `packages/protocol/src/` | 监控能力字段、消息 schema、摘要与终态标识；新字段对既有客户端保持可选 |
-| `packages/server/src/server/` | 监控来源与认证权限、摘要观察服务、有限事件存储、能力声明；复用 agent manager / registry |
-| `packages/client/src/` | 监控 RPC 的 TS 封装、能力判断及测试工具；现有 App 配置/验证可复用 |
-| `packages/relay/` | 首选仅增加互操作测试向量和规范说明；不为了小组件改动既有加密 wire 格式 |
-| `packages/app/modules/paseo-widget/` | Kotlin/Glance 服务、传输、缓存、Worker、原生配置与 Expo 桥接 |
-| `packages/app/plugins/`、`app.config.js` | 可重复生成的原生声明与资源配置 |
-| `packages/app/src/` | 监控设置、主机授权/撤销桥接、入口状态、i18n、诊断与导航 |
-| `docs/` | 协议、设备测试结果、后台设置指南与使用限制 |
+| 区域                                     | 预计修改                                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/protocol/src/`                 | 监控能力字段、消息 schema、摘要与终态标识；新字段对既有客户端保持可选                   |
+| `packages/server/src/server/`            | 监控来源与认证权限、摘要观察服务、有限事件存储、能力声明；复用 agent manager / registry |
+| `packages/client/src/`                   | 监控 RPC 的 TS 封装、能力判断及测试工具；现有 App 配置/验证可复用                       |
+| `packages/relay/`                        | 首选仅增加互操作测试向量和规范说明；不为了小组件改动既有加密 wire 格式                  |
+| `packages/app/modules/paseo-widget/`     | Kotlin/Glance 服务、传输、缓存、Worker、原生配置与 Expo 桥接                            |
+| `packages/app/plugins/`、`app.config.js` | 可重复生成的原生声明与资源配置                                                          |
+| `packages/app/src/`                      | 监控设置、主机授权/撤销桥接、入口状态、i18n、诊断与导航                                 |
+| `docs/`                                  | 协议、设备测试结果、后台设置指南与使用限制                                              |
 
 依照 `docs/protocol-compatibility.md`：能力在单个边界判断；新旧客户端通信结构保持兼容；新服务端字段为可选；新功能缺失时直接提示升级主机。协议变更记录为何旧 App 可继续解析，新 App 为何不会向不支持的旧服务端发送新请求。
 

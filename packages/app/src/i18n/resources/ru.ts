@@ -31,6 +31,7 @@ export const ru: TranslationResources = {
     back: "Назад",
     loading: "Загрузка...",
     actions: {
+      save: "Сохранить",
       back: "Назад",
       cancel: "Отмена",
       close: "Закрыть",
@@ -124,6 +125,8 @@ export const ru: TranslationResources = {
     input: {
       accessibilityLabel: "Написать агенту...",
       terminalAccessibilityLabel: "Terminal prompt",
+      fullscreen: "Полный экран",
+      exitFullscreen: "Выйти из полноэкранного режима",
       focusHint: "{{shortcut}}, для фокуса",
       addAttachment: "Добавить вложение",
       interruptAgent: "Прервать агента",
@@ -375,6 +378,7 @@ export const ru: TranslationResources = {
       details: "Подробности",
     },
     dictation: {
+      paused: "Микрофон прерван. Ожидание возобновления…",
       start: "Начать диктовку голосом",
       cancel: "Отменить диктовку",
       retry: "Повторить диктовку",
@@ -384,6 +388,7 @@ export const ru: TranslationResources = {
       failedRetry: "Диктовка не удалась. Нажмите «Повторить».",
     },
     question: {
+      responseFailed: "Не удалось отправить ответ. Попробуйте ещё раз.",
       submit: "Отправить",
       next: "Далее",
       answerPlaceholder: "Введите ответ...",
@@ -631,6 +636,9 @@ export const ru: TranslationResources = {
       updateHost: "Обновите хост, чтобы использовать нативный рендерер терминала.",
       unableToSubscribe: "Не удалось подключиться к терминалу",
     },
+    sheet: {
+      openAsTab: "Открыть во вкладке",
+    },
     tabs: {
       loading: "Загрузка...",
       modified: "Несохранённые изменения",
@@ -646,7 +654,7 @@ export const ru: TranslationResources = {
       },
       switcher: {
         trigger: "Переключить вкладки (открыто: {{count}})",
-        title: "Переключить вкладку",
+        title: "Вкладки рабочего пространства",
         searchPlaceholder: "Поиск вкладок",
       },
       menu: {
@@ -744,6 +752,7 @@ export const ru: TranslationResources = {
     header: {
       actions: {
         workspaceActions: "Действия с рабочим пространством",
+        workspaceActionsUnhealthy: "Действия с рабочим пространством, есть неисправный сервис",
         newAgent: "Новый агент",
         newTerminal: "Новый терминал",
         newBrowser: "Новая вкладка браузера",
@@ -814,6 +823,8 @@ export const ru: TranslationResources = {
         exitCode: "Код выхода: {{code}}",
         startFailed: "Не удалось запустить скрипт {{scriptName}}",
         stopFailed: "Не удалось остановить скрипт {{scriptName}}",
+        running: "Запущен",
+        runningCount: "Запущено: {{count}}",
       },
     },
     tree: {
@@ -1311,6 +1322,7 @@ export const ru: TranslationResources = {
       empty: "Нет недавних агентов",
     },
     display: {
+      showBackground: "Показать фоновые пространства",
       trigger: "Настройки отображения",
       heading: "Отображение",
       grouping: {
@@ -1492,8 +1504,9 @@ export const ru: TranslationResources = {
     },
     fields: {
       project: "Проект",
-      base: "Базовая ветка",
+      branch: "Ветка",
       baseNotApplicable: "Неприменимо",
+      host: "Хост",
     },
     titlePlaceholder: "Заголовок (необязательно)",
     errors: {
@@ -2209,6 +2222,17 @@ export const ru: TranslationResources = {
     accessibility: "Использовано {{percentage}}% контекстного окна",
   },
   review: {
+    feedback: {
+      send: "Отправить отзыв ({{count}})",
+      sending: "Отправка отзыва ({{count}})",
+      chooseAgent: "Выберите агента",
+      sent: "Отзыв отправлен: {{recipient}}",
+      "no-agents": "Откройте вкладку агента в этой рабочей области, чтобы отправить отзыв.",
+      disconnected: "Подключитесь к хосту, чтобы отправить отзыв.",
+      "no-context": "Сохранённые комментарии больше не соответствуют этому diff.",
+      failed: "Не удалось отправить отзыв. Повторите попытку.",
+      prompt: "Пожалуйста, учтите эту проверку кода.",
+    },
     comment: {
       add: "Добавить комментарий к ревью",
       edit: "Изменить комментарий к ревью",

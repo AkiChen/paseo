@@ -57,6 +57,7 @@ interface GenericACPAgentClientOptions {
   providerId?: string;
   label?: string;
   providerParams?: unknown;
+  usageProvider?: string;
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   diagnosticPhaseTimeoutMs?: number;
@@ -77,6 +78,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
     const providerParams = parseGenericACPProviderParams(options.providerParams);
     super({
       provider: "acp",
+      usageProvider: options.usageProvider,
       logger: options.logger,
       runtimeSettings: {
         env: options.env,
