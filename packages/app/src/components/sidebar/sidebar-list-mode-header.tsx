@@ -55,7 +55,7 @@ export function SidebarListModeHeader({ onBeforeNavigate }: { onBeforeNavigate?:
   return (
     <View style={styles.container}>
       <SegmentedControl
-        size="xs"
+        size="sm"
         options={options}
         value={mode}
         onValueChange={setMode}

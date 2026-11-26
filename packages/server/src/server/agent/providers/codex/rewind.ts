@@ -8,6 +8,8 @@ import {
   parseCodexThreadForkResponse,
   parseCodexThreadRollbackResponse,
 } from "./app-server-transport.js";
+import { readCodexThreadHistoryMode, type CodexThreadHistoryMode } from "./thread-history.js";
+export { readCodexThreadHistoryMode, type CodexThreadHistoryMode };
 
 export interface CodexRewindClient {
   forkThread?(params: CodexThreadForkParams): Promise<CodexThreadForkResponse>;
@@ -18,26 +20,6 @@ export interface CodexRewindClient {
 export interface CodexUserMessageTurnIndex {
   resolve(messageId: string): { index: number; turnId: string | null } | null;
   count(): number;
-}
-
-export type CodexThreadHistoryMode = "legacy" | "paginated";
-
-export async function readCodexThreadHistoryMode(
-  client: CodexRewindClient,
-  threadId: string,
-): Promise<CodexThreadHistoryMode> {
-  const response = await client.request("thread/read", { threadId, includeTurns: false });
-  if (typeof response !== "object" || response === null || !("thread" in response)) {
-    throw new Error("Codex thread/read did not return thread metadata");
-  }
-  const thread = response.thread;
-  if (typeof thread !== "object" || thread === null || !("historyMode" in thread)) {
-    return "legacy";
-  }
-  if (thread.historyMode === "legacy" || thread.historyMode === "paginated") {
-    return thread.historyMode;
-  }
-  throw new Error(`Codex thread/read returned unknown history mode ${String(thread.historyMode)}`);
 }
 
 async function forkCodexThread(
@@ -117,7 +99,8 @@ export async function revertCodexConversation(input: {
     model: input.model ?? null,
     serviceTier: input.serviceTier ?? null,
     ...(input.config ? { config: input.config } : {}),
-    excludeTurns: false,
+    // Paseo re-reads the rewound thread through paged history, not the fork reply.
+    excludeTurns: true,
     persistExtendedHistory: true,
   };
 

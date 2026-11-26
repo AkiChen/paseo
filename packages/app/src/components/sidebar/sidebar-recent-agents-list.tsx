@@ -39,6 +39,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { deriveSidebarStateBucket, type SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { buildRecentAgentGroups } from "./sidebar-recent-agents-model";
+import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destructive });
@@ -59,6 +60,9 @@ const ThemedCircleDot = withUnistyles(CircleDot);
 const ThemedCircleX = withUnistyles(CircleX);
 const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedColorMapping} />;
 const deleteLeadingIcon = <ThemedTrash size={14} uniProps={destructiveColorMapping} />;
+
+/** A favorite is always resolved from the aggregated list, so its workspace is known. */
+type FavoriteAgent = AggregatedAgent & { workspaceId: string };
 
 interface SidebarRecentAgentsListProps {
   /** Whether the sidebar is on screen. Directory demand is only held while it is. */
@@ -104,23 +108,24 @@ export function SidebarRecentAgentsList({
   const favoriteAgentIds = useSidebarFavoriteAgentsStore((state) => state.favoriteAgentIds);
   const toggleFavoriteAgent = useSidebarFavoriteAgentsStore((state) => state.toggleFavoriteAgent);
   const favoriteAgentIdSet = useMemo(() => new Set(favoriteAgentIds), [favoriteAgentIds]);
-  const favoriteAgents = useMemo(() => {
+  const favoriteAgents = useMemo<FavoriteAgent[]>(() => {
     const agentsByKey = new Map(agents.map((agent) => [favoriteAgentKey(agent), agent] as const));
     return favoriteAgentIds.flatMap((key) => {
       const agent = agentsByKey.get(key);
-      return agent ? [agent] : [];
+      return agent && agent.workspaceId ? [{ ...agent, workspaceId: agent.workspaceId }] : [];
     });
   }, [agents, favoriteAgentIds]);
   const favoritesCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedFavorites);
   const toggleFavoritesCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleFavoritesCollapsed,
   );
+  const activeWorkspaceSelection = useActiveWorkspaceSelection();
   const {
     visibleItems: visibleFavoriteAgents,
     expanded: favoritesExpanded,
     canToggle: canToggleFavorites,
     toggleExpanded: toggleFavoritesExpanded,
-  } = useLimitedSidebarGroup(favoriteAgents);
+  } = useLimitedSidebarGroup({ items: favoriteAgents, selection: activeWorkspaceSelection });
 
   const handleRefresh = useCallback(() => {
     refreshAll();

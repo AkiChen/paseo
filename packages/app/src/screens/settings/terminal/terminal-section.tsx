@@ -153,7 +153,6 @@ export function TerminalSection() {
           hint={t("settings.general.terminalScrollback.description")}
         >
           <FormTextInput
-            size="sm"
             initialValue={scrollbackValue}
             onChangeText={handleChangeText}
             onBlur={commitScrollback}

@@ -109,7 +109,7 @@ describe("Codex Rewind", () => {
         cwd: "/workspace/project",
         model: "gpt-5.4-mini",
         serviceTier: null,
-        excludeTurns: false,
+        excludeTurns: true,
         persistExtendedHistory: true,
       },
     ]);
@@ -191,7 +191,7 @@ describe("Codex Rewind", () => {
         cwd: "/workspace/project",
         model: "gpt-5.4-mini",
         serviceTier: null,
-        excludeTurns: false,
+        excludeTurns: true,
         persistExtendedHistory: true,
       },
     ]);

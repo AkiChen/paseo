@@ -12,6 +12,11 @@ replays nothing — an ACP agent that resumes without `loadSession` — leaves t
 fallback is the only reason the copy exists; the store it replaces rewrote a whole transcript on
 every buffered update, and that write amplification is why it left production.
 
+Pagination bounds each read, not total resident history. Active and idle agents retain their
+projected transcript; archive releases it and later history reads rebuild it from the provider.
+Streaming overhead must remain proportional to the retained transcript. Cumulative text snapshots
+must be released after their deltas have been consumed.
+
 The invariants are:
 
 > A continuously subscribed client applies every committed row in order. Opening or resuming an
@@ -22,6 +27,16 @@ Tool output is bounded before it enters either delivery path. Canonical shell to
 to 64 KiB, and the same bounded item is used for durable timeline rows and live stream events.
 Provider history hydration applies the same rule so reopening an agent cannot restore an oversized
 tool payload.
+Every item is bounded before it enters either delivery path, because a timeline page is one
+WebSocket message and the daemon closes a socket whose outbound buffer passes 64 MiB. Tool calls get
+64 KiB and other items 256 KiB. Over budget, the largest strings are cut to a shared length with a
+`…[truncated 12.3 MB]` marker, and an oversized `data:` URL is replaced by the marker. Strings up
+to 1 KiB stay whole, so ids and paths survive. Arrays drop their trailing elements without a marker
+element, so typed arrays still match the wire schema. Limiting an item twice gives the same item. The
+budget does not bound wide objects or multi-byte text. The same
+bounded item is used for runtime timeline rows and live stream events. Provider history hydration
+applies the same rule so reopening an agent cannot restore an oversized payload. Fetches apply it
+again to assistant and reasoning rows the projection merges from many chunks.
 
 ## Presence is not delivery
 
