@@ -20,13 +20,23 @@ type MediaPreviewState =
   | { status: "error"; message: string };
 
 /**
- * Plays a workspace video/audio file by pointing a native media element at the
- * daemon's range-capable `/api/files/media` route.
+ * Ceiling for in-memory playback on SSH/relay hosts. The WebSocket file
+ * transfer has no streaming consumer on this side yet, so a larger file would
+ * sit in the renderer's heap; failing loudly is better than stalling the app.
+ */
+const MAX_INLINE_MEDIA_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Plays a workspace video/audio file in a native media element.
  *
- * The element does the buffering and seeking itself: the daemon answers Range
- * requests sent with a media token, so a large clip starts playing without the
- * app ever holding its bytes. The token is requested once per file and reused
- * for every range request the element issues.
+ * Two transports feed the element:
+ * - a direct-TCP host has an HTTP origin, so the element streams from the
+ *   daemon's `/api/files/media` route with a media token and range requests;
+ * - an SSH or relay host has no HTTP origin on this machine, so the bytes come
+ *   over the authenticated WebSocket file transfer and play from a Blob URL.
+ *
+ * The Blob path holds the file in memory, which is fine for the short clips the
+ * agents produce but is why the direct route exists as the preferred path.
  */
 export function FileMediaPreview({ serverId, cwd, path, client }: WorkspaceMediaPreviewProps) {
   const { t } = useTranslation();
@@ -37,6 +47,7 @@ export function FileMediaPreview({ serverId, cwd, path, client }: WorkspaceMedia
   );
   const [state, setState] = useState<MediaPreviewState>({ status: "loading" });
   const mountedRef = useRef(true);
+  const objectUrlRef = useRef<string | null>(null);
   const mimeType = useMemo(() => mediaMimeTypeOf(path), [path]);
   const kind = useMemo(() => mediaKindOf(path), [path]);
 
@@ -44,35 +55,59 @@ export function FileMediaPreview({ serverId, cwd, path, client }: WorkspaceMedia
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (objectUrlRef.current !== null) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
     };
   }, []);
 
-  const loadToken = useCallback(async () => {
-    const target = resolveDaemonHttpTarget(daemonProfile);
-    if (!client || !target.baseUrl || !mimeType || !kind) {
+  const loadMedia = useCallback(async () => {
+    if (!client || !mimeType || !kind) {
       setState({ status: "error", message: t("panels.file.noPreview") });
       return;
     }
     setState({ status: "loading" });
+    const target = resolveDaemonHttpTarget(daemonProfile);
     try {
-      const payload = await client.requestMediaToken(cwd, path);
+      if (target.baseUrl) {
+        const payload = await client.requestMediaToken(cwd, path);
+        if (!mountedRef.current) {
+          return;
+        }
+        if (!payload.token) {
+          setState({
+            status: "error",
+            message: payload.error ?? t("panels.file.failedToLoadPreview"),
+          });
+          return;
+        }
+        const url = new URL("/api/files/media", target.baseUrl);
+        url.searchParams.set("token", payload.token);
+        if (target.authCredentials) {
+          url.username = target.authCredentials.username;
+          url.password = target.authCredentials.password;
+        }
+        setState({ status: "ready", url: url.toString(), kind });
+        return;
+      }
+
+      // SSH and relay hosts: the WebSocket transport is the only channel to the
+      // daemon, so the file arrives as binary frames and plays from memory.
+      const file = await client.readFile(cwd, path, undefined, MAX_INLINE_MEDIA_BYTES);
       if (!mountedRef.current) {
         return;
       }
-      if (!payload.token) {
-        setState({
-          status: "error",
-          message: payload.error ?? t("panels.file.failedToLoadPreview"),
-        });
+      if (file.kind !== "binary") {
+        setState({ status: "error", message: t("panels.file.noPreview") });
         return;
       }
-      const url = new URL("/api/files/media", target.baseUrl);
-      url.searchParams.set("token", payload.token);
-      if (target.authCredentials) {
-        url.username = target.authCredentials.username;
-        url.password = target.authCredentials.password;
+      const blob = new Blob([file.bytes.slice().buffer], { type: file.mime || mimeType });
+      if (objectUrlRef.current !== null) {
+        URL.revokeObjectURL(objectUrlRef.current);
       }
-      setState({ status: "ready", url: url.toString(), kind });
+      objectUrlRef.current = URL.createObjectURL(blob);
+      setState({ status: "ready", url: objectUrlRef.current, kind });
     } catch (error) {
       if (!mountedRef.current) {
         return;
@@ -85,8 +120,8 @@ export function FileMediaPreview({ serverId, cwd, path, client }: WorkspaceMedia
   }, [client, cwd, daemonProfile, kind, mimeType, path, t]);
 
   useEffect(() => {
-    void loadToken();
-  }, [loadToken]);
+    void loadMedia();
+  }, [loadMedia]);
 
   const onError = useCallback(() => {
     setState({ status: "error", message: t("panels.file.failedToLoadPreview") });
