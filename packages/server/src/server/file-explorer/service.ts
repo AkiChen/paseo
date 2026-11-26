@@ -176,7 +176,6 @@ function imageMimeTypeForExtension(ext: string): string | null {
   return IMAGE_MIME_TYPES[ext] ?? null;
 }
 
-
 interface ScopedPathParams {
   root: string;
   relativePath?: string;

@@ -101,7 +101,8 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     query: (token: string) => ipcRenderer.invoke("paseo:morphic-balance:query", token),
   },
   editor: {
-    listTargets: () => ipcRenderer.invoke("paseo:editor:listTargets"),
+    listTargets: (input?: { workspacePath?: string }) =>
+      ipcRenderer.invoke("paseo:editor:listTargets", input),
     openTarget: (input: {
       editorId: string;
       workspacePath: string;

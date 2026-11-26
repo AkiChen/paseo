@@ -1,7 +1,15 @@
 import { MAX_RELAY_WEBSOCKET_MESSAGE_BYTES } from "@getpaseo/protocol/websocket-message-limit";
 import { resolve, dirname, basename } from "path";
-import { existsSync, realpathSync } from "fs";
-import { open as openFile, readFile, stat as statFile, mkdtemp, copyFile, rm } from "fs/promises";
+import {
+  open as openFile,
+  readFile,
+  stat as statFile,
+  mkdtemp,
+  copyFile,
+  realpath,
+  access,
+  rm,
+} from "fs/promises";
 import { tmpdir } from "node:os";
 import { setImmediate } from "node:timers/promises";
 import { TTLCache } from "@isaacs/ttlcache";
@@ -616,11 +624,7 @@ async function tryResolveMergeBase(cwd: string, baseRef: string): Promise<string
   }
 }
 
-type FileStat = {
-  additions: number;
-  deletions: number;
-  isBinary: boolean;
-} | null;
+type FileStat = { additions: number; deletions: number; isBinary: boolean } | null;
 
 function normalizeNumstatPath(pathField: string): string {
   if (/^"(?:\\.|[^"\\])*"$/.test(pathField)) {
@@ -787,6 +791,7 @@ async function getTrackedDiffTexts(input: {
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace: input.ignoreWhitespace,
+      contextLines: input.contextLines,
       extra: [
         ...getCheckoutDiffRefArgs(input.refsForDiff),
         "--",
@@ -1117,7 +1122,7 @@ async function getMainRepoRootFromCommonDir(
   if (!commonDir) {
     throw new Error("Not in a git repository");
   }
-  const normalized = realpathSync(commonDir);
+  const normalized = await realpath(commonDir);
 
   if (basename(normalized) === ".git") {
     return dirname(normalized);
@@ -1242,7 +1247,7 @@ export async function renameCurrentBranch(
 
   const currentBranch = await getCurrentBranch(cwd);
   if (currentBranch) {
-    rebindPaseoWorktreeChangeRequestHint(worktreeRoot, previousBranch, currentBranch);
+    await rebindPaseoWorktreeChangeRequestHint(worktreeRoot, previousBranch, currentBranch);
   }
   return { previousBranch, currentBranch };
 }
@@ -1287,8 +1292,8 @@ function storedBaseRefFromMetadata(metadata: PaseoWorktreeMetadata | null): stri
   return metadata?.baseRef ?? metadata?.baseRefName ?? null;
 }
 
-function readPaseoWorktreeBaseRef(worktreeRoot: string): string | null {
-  return storedBaseRefFromMetadata(readPaseoWorktreeMetadata(worktreeRoot));
+async function readPaseoWorktreeBaseRef(worktreeRoot: string): Promise<string | null> {
+  return storedBaseRefFromMetadata(await readPaseoWorktreeMetadata(worktreeRoot));
 }
 
 async function getStoredBaseRefForCwd(
@@ -1562,7 +1567,12 @@ async function abortGitPullConflictState(cwd: string): Promise<void> {
   const rebaseMergePath = resolve(gitDir, "rebase-merge");
   const rebaseApplyPath = resolve(gitDir, "rebase-apply");
 
-  if (existsSync(mergeHeadPath)) {
+  if (
+    await access(mergeHeadPath).then(
+      () => true,
+      () => false,
+    )
+  ) {
     try {
       await runGitCommand(["merge", "--abort"], { cwd, timeout: 120_000 });
     } catch {
@@ -1570,7 +1580,16 @@ async function abortGitPullConflictState(cwd: string): Promise<void> {
     }
   }
 
-  if (existsSync(rebaseMergePath) || existsSync(rebaseApplyPath)) {
+  if (
+    (await access(rebaseMergePath).then(
+      () => true,
+      () => false,
+    )) ||
+    (await access(rebaseApplyPath).then(
+      () => true,
+      () => false,
+    ))
+  ) {
     try {
       await runGitCommand(["rebase", "--abort"], { cwd, timeout: 120_000 });
     } catch {
@@ -1706,30 +1725,6 @@ async function resolveBestComparisonBaseRef(
   }
   if (hasLocal) {
     return normalized.localName;
-  }
-
-  // If no branch matches, accept any other commit-ish such as a tag or object id.
-  const exactCommit = await getRunGitCommand(context)(
-    ["rev-parse", "--verify", `${baseRef}^{commit}`],
-    {
-      cwd,
-      envOverlay: READ_ONLY_GIT_ENV,
-      acceptExitCodes: [0, 128],
-      logger: context?.logger,
-    },
-  );
-  if (exactCommit.exitCode === 0) {
-    return exactCommit.stdout.trim();
-  }
-
-  // A non-branch comparison is allowed to be a tag or commit SHA. Keep the
-  // failure actionable instead of reporting it as a missing branch.
-  if (
-    baseRef.startsWith("refs/tags/") ||
-    baseRef.startsWith("tag/") ||
-    /^[0-9a-f]{7,40}$/i.test(baseRef)
-  ) {
-    throw new Error(`Commit or tag not found in this checkout: ${baseRef}`);
   }
 
   const refName =
@@ -2115,7 +2110,7 @@ export async function getCheckoutSnapshotFacts(
   }
 
   const paseoWorktreeMetadata = inspected.paseoWorktree.isPaseoOwnedWorktree
-    ? readPaseoWorktreeMetadata(inspected.paseoWorktree.worktreeRoot)
+    ? await readPaseoWorktreeMetadata(inspected.paseoWorktree.worktreeRoot)
     : null;
   const storedBaseRef = storedBaseRefFromMetadata(paseoWorktreeMetadata);
   const resolvedBaseRef = storedBaseRef ?? (await resolveBaseRef(cwd, context));
@@ -2192,14 +2187,7 @@ export async function getCheckoutSnapshotFacts(
   };
 }
 
-// One file's own patch text is what decides whether that file can be shown:
-// below this it is rendered, above it the file is an honest "too large" row.
-// A combined `git diff` read stays much smaller and is bisected on overflow, so
-// one huge file cannot hide its neighbors.
-const PER_FILE_DIFF_MAX_BYTES = 3 * 1024 * 1024; // 3MB
-// Caps only the legacy `diff` string. The structured payload is bounded by the
-// wire limit below, where a file that does not fit becomes a placeholder row
-// instead of taking every other file down with it.
+const PER_FILE_DIFF_MAX_BYTES = 1024 * 1024; // 1MB
 const TOTAL_DIFF_MAX_BYTES = 2 * 1024 * 1024; // 2MB
 const CHECKOUT_DIFF_FRAME_HEADROOM_BYTES = 1024 * 1024;
 // Temporary until diffs load lazily per file. The Paseo relay's 32 MiB frame limit is
@@ -2212,12 +2200,10 @@ export const CHECKOUT_DIFF_MAX_STRUCTURED_BYTES =
 interface StructuredDiffAccumulator {
   files: ParsedDiffFile[];
   serializedBytes: number;
-  /** Set once a file does not fit; everything after it is a placeholder row. */
-  full: boolean;
 }
 
 function createStructuredDiffAccumulator(): StructuredDiffAccumulator {
-  return { files: [], serializedBytes: Buffer.byteLength("[]", "utf8"), full: false };
+  return { files: [], serializedBytes: Buffer.byteLength("[]", "utf8") };
 }
 
 function appendStructuredFile(
@@ -2233,30 +2219,6 @@ function appendStructuredFile(
   structured.files.push(file);
   structured.serializedBytes = nextBytes;
   return true;
-}
-
-/**
- * Keep a file in the list once the structured payload is full.
- *
- * A placeholder carries the path and its line counts, so the panel still shows
- * which files changed and marks the ones it cannot render. Dropping the file
- * instead — or failing the whole snapshot — would hide every other file behind
- * one payload the wire cannot carry.
- */
-function appendStructuredPlaceholder(
-  structured: StructuredDiffAccumulator,
-  change: CheckoutFileChange,
-  status: "binary" | "too_large",
-  stat: FileStat,
-): void {
-  if (appendStructuredFile(structured, buildPlaceholderParsedDiffFile(change, { status, stat }))) {
-    // One file too big to serialize is not a full payload: a smaller file after
-    // it still fits, so keep reading.
-    return;
-  }
-  // Even a placeholder does not fit: the payload is at the wire limit, so the
-  // remaining rows are lost rather than the ones already collected.
-  structured.full = true;
 }
 const UNTRACKED_BINARY_SNIFF_BYTES = 16 * 1024;
 
@@ -2338,7 +2300,6 @@ async function getUntrackedDiffText(
   cwd: string,
   change: CheckoutFileChange,
   ignoreWhitespace = false,
-  contextLines?: number,
 ): Promise<{ text: string; truncated: boolean; stat: FileStat }> {
   try {
     const inspected = await inspectUntrackedFile(cwd, change.path);
@@ -2352,7 +2313,6 @@ async function getUntrackedDiffText(
   const result = await runGitCommand(
     buildGitDiffArgs({
       ignoreWhitespace,
-      contextLines,
       extra: ["--no-index", "/dev/null", "--", change.path],
     }),
     {
@@ -2441,8 +2401,8 @@ export async function getCheckoutStatus(
 const CHECKOUT_BASE_COMMIT_LIMIT = 10;
 // Bytes git emits between fields/records. We split parsed output on these.
 const COMMIT_FIELD_SEPARATOR = "\x00";
-const COMMIT_RECORD_SEPARATOR = "\x1e";
 const COMMIT_BODY_SEPARATOR = "\x1f";
+const COMMIT_RECORD_SEPARATOR = "\x1e";
 // Record-separated, NUL-field-separated so arbitrary subject text stays parseable.
 // `%x1e`/`%x00` are git placeholders (literal text in the arg, real bytes in the
 // output) — passing actual NUL bytes as a process arg is rejected by Node.
@@ -2457,6 +2417,7 @@ interface ParsedCheckoutCommit {
   authorEmail: string;
   authorDate: string;
   subject: string;
+  /** Subject plus body: what the commit details panel shows. */
   message: string;
   files: CheckoutCommitFile[];
 }
@@ -2542,10 +2503,10 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
   const records = stdout.split(COMMIT_RECORD_SEPARATOR).filter((record) => record.length > 0);
   const commits: ParsedCheckoutCommit[] = [];
   for (const record of records) {
-    const [header, rawBody] = record.split(COMMIT_BODY_SEPARATOR, 2);
-    const lines = (rawBody ?? "").split("\n");
+    const [header, rawFiles] = record.split(COMMIT_BODY_SEPARATOR, 2);
+    const lines = (rawFiles ?? "").split("\n");
     const fields = (header ?? "").split(COMMIT_FIELD_SEPARATOR);
-    if (fields.length < 7) {
+    if (fields.length < 5) {
       continue;
     }
     const sha = (fields[0] ?? "").trim();
@@ -2578,14 +2539,17 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
       });
     }
 
+    const subject = fields[5] ?? "";
+    const body = (fields[6] ?? "").trim();
+    // `%b` is the body only; the transcript shows subject first, then the paragraphs.
     commits.push({
       sha,
       shortSha: (fields[1] ?? "").trim(),
       authorName: fields[2] ?? "",
-      authorEmail: fields[3] ?? "",
+      authorEmail: (fields[3] ?? "").trim(),
       authorDate: (fields[4] ?? "").trim(),
-      subject: fields[5] ?? "",
-      message: [fields[5] ?? "", (fields[6] ?? "").trim()].filter(Boolean).join("\n\n"),
+      subject,
+      message: body ? [subject, body].join("\n\n") : subject,
       files,
     });
   }
@@ -2717,10 +2681,10 @@ export async function listCheckoutCommits({
     sha: record.sha,
     shortSha: record.shortSha,
     subject: record.subject,
-    message: record.message,
     authorName: record.authorName,
     authorEmail: record.authorEmail,
     authorDate: record.authorDate,
+    message: record.message,
     isOnRemote: !unpushedShas.has(record.sha),
     isOnBase: !workspaceShas.has(record.sha),
     files: record.files,
@@ -2799,12 +2763,12 @@ export async function getCommitFileDiff({
   cwd,
   sha,
   path,
-  contextLines,
+  signal,
 }: {
   cwd: string;
   sha: string;
   path: string;
-  contextLines?: number;
+  signal?: AbortSignal;
 }): Promise<ParsedDiffFile | null> {
   const worktreeRoot = await requireGitWorktreeRoot(cwd);
   const renames = await getCommitRenames(worktreeRoot, sha);
@@ -2818,7 +2782,6 @@ export async function getCommitFileDiff({
       "--diff-merges=first-parent",
       "-M",
       ...GIT_PATCH_FORMAT_ARGS,
-      ...(contextLines !== undefined ? [`--unified=${contextLines}`] : []),
       "--",
       ...paths.map((filePath) => `:(literal)${filePath}`),
     ],
@@ -2833,6 +2796,7 @@ export async function getCommitFileDiff({
   }
 
   const parsedFiles = await parseAndHighlightDiff(stdout, worktreeRoot, {
+    signal,
     getOldFileContent: (file) => readGitFileContentAtRef(worktreeRoot, `${sha}^`, file.path),
     getNewFileContent: (file) => readGitFileContentAtRef(worktreeRoot, sha, file.path),
   });
@@ -3215,15 +3179,14 @@ export function warmCheckoutShortstatInBackground(
 }
 
 interface AppendStructuredTrackedDiffsInput {
+  signal?: AbortSignal;
   cwd: string;
   trackedChanges: CheckoutFileChange[];
   trackedNumstatByPath: Map<string, FileStat>;
   trackedPlaceholderByPath: Map<string, { status: "binary" | "too_large"; stat: FileStat }>;
-  trackedTextOmittedPaths: Set<string>;
   trackedDiffText: string;
   refsForDiff: CheckoutDiffRefs;
   ignoreWhitespace: boolean;
-  contextLines?: number;
   structured: StructuredDiffAccumulator;
   appendTrackedPlaceholderComment: (
     change: CheckoutFileChange,
@@ -3231,50 +3194,8 @@ interface AppendStructuredTrackedDiffsInput {
   ) => void;
 }
 
-/**
- * Read the diffs whose text did not fit the legacy string.
- *
- * Batched like the initial read — `getTrackedDiffTexts` bisects a combined
- * command that overflows, so one oversized file cannot hide its neighbors — and
- * renames keep their per-path command, exactly as above.
- */
-async function readTrackedDiffTextsForChanges(input: {
-  cwd: string;
-  refsForDiff: CheckoutDiffRefs;
-  changes: CheckoutFileChange[];
-  ignoreWhitespace: boolean;
-  contextLines?: number;
-}): Promise<Map<string, { path: string; text: string; truncated: boolean }>> {
-  if (input.changes.length === 0) return new Map();
-  const renamedPaths = new Set(input.changes.filter((change) => change.oldPath).map((c) => c.path));
-  const [ordinary, renamed] = await Promise.all([
-    getTrackedDiffTexts({
-      cwd: input.cwd,
-      refsForDiff: input.refsForDiff,
-      paths: input.changes
-        .filter((change) => !renamedPaths.has(change.path))
-        .map((change) => change.path),
-      ignoreWhitespace: input.ignoreWhitespace,
-      contextLines: input.contextLines,
-    }),
-    Promise.all(
-      input.changes
-        .filter((change) => renamedPaths.has(change.path))
-        .map((change) =>
-          getTrackedDiffTextForPath({
-            cwd: input.cwd,
-            refsForDiff: input.refsForDiff,
-            path: change.path,
-            ignoreWhitespace: input.ignoreWhitespace,
-            contextLines: input.contextLines,
-          }),
-        ),
-    ),
-  ]);
-  return new Map([...ordinary, ...renamed].map((file) => [file.path, file]));
-}
-
 async function buildHighlightedTrackedDiffFile(input: {
+  signal?: AbortSignal;
   cwd: string;
   change: CheckoutFileChange;
   parsedFile: ParsedDiffFile;
@@ -3297,6 +3218,7 @@ async function buildHighlightedTrackedDiffFile(input: {
           : null,
       ]);
   const highlightedFile = await highlightDiffWithFileContent(parsedFile, cwd, {
+    signal: input.signal,
     oldFileContent,
     newFileContent,
   });
@@ -3336,183 +3258,17 @@ function readTrackedDiffContents(
   return readGitFileContents(cwd, specs);
 }
 
-interface AppendStructuredTrackedFileInput {
-  cwd: string;
-  change: CheckoutFileChange;
-  stat: FileStat;
-  refsForDiff: CheckoutDiffRefs;
-  ignoreWhitespace: boolean;
-  contextLines?: number;
-  structured: StructuredDiffAccumulator;
-  trackedPlaceholderByPath: Map<string, { status: "binary" | "too_large"; stat: FileStat }>;
-  trackedTextOmittedPaths: Set<string>;
-  parsedTrackedByPath: Map<string, ParsedDiffFile>;
-  contents: Map<string, string | null> | null;
-  omittedTextByPath: Map<string, { path: string; text: string; truncated: boolean }>;
-  appendTrackedPlaceholderComment: (
-    change: CheckoutFileChange,
-    status: "binary" | "too_large",
-  ) => void;
-}
-
-/** Highlight one parsed tracked diff and append it, or a placeholder when it hurts. */
-async function appendHighlightedTrackedFile(input: {
-  cwd: string;
-  change: CheckoutFileChange;
-  stat: FileStat;
-  parsedFile: ParsedDiffFile;
-  refsForDiff: CheckoutDiffRefs;
-  structured: StructuredDiffAccumulator;
-  contents?: Map<string, string | null>;
-}): Promise<void> {
-  const file = await buildHighlightedTrackedDiffFile({
-    cwd: input.cwd,
-    change: input.change,
-    parsedFile: input.parsedFile,
-    refsForDiff: input.refsForDiff,
-    contents: input.contents,
-  });
-  if (!appendStructuredFile(input.structured, file)) {
-    appendStructuredPlaceholder(input.structured, input.change, "too_large", input.stat);
-  }
-  // Batched blobs remove the per-file I/O pause; keep serving other daemon work.
-  await setImmediate();
-}
-
-/**
- * Append a file that did not fit the legacy string, read on its own.
- *
- * Returns false when the file has no patch to show — a reported change with an
- * empty diff — so the caller falls through to the plain row for it.
- */
-async function appendOmittedTrackedFile(input: {
-  cwd: string;
-  change: CheckoutFileChange;
-  stat: FileStat;
-  refsForDiff: CheckoutDiffRefs;
-  structured: StructuredDiffAccumulator;
-  omittedText: { text: string; truncated: boolean } | undefined;
-}): Promise<boolean> {
-  const { cwd, change, stat, refsForDiff, structured, omittedText } = input;
-  if (omittedText === undefined || omittedText.truncated) {
-    appendStructuredPlaceholder(structured, change, "too_large", stat);
-    return true;
-  }
-  const parsedFile = parseDiff(omittedText.text)[0];
-  if (parsedFile === undefined) return false;
-  await appendHighlightedTrackedFile({ cwd, change, stat, parsedFile, refsForDiff, structured });
-  return true;
-}
-
-/** Add one tracked file to the structured output, whatever state its diff is in. */
-async function appendStructuredTrackedFile(input: AppendStructuredTrackedFileInput): Promise<void> {
-  const {
-    cwd,
-    change,
-    stat,
-    refsForDiff,
-    structured,
-    trackedPlaceholderByPath,
-    trackedTextOmittedPaths,
-    parsedTrackedByPath,
-    contents,
-    omittedTextByPath,
-    appendTrackedPlaceholderComment,
-  } = input;
-  const omittedFromText = trackedTextOmittedPaths.has(change.path);
-  if (omittedFromText) {
-    // The legacy string stops at its budget; say so there, and keep the file for
-    // the structured list below.
-    appendTrackedPlaceholderComment(change, "too_large");
-  }
-
-  if (structured.full) {
-    // The payload is full: keep the row without reading the file.
-    const known = trackedPlaceholderByPath.get(change.path);
-    appendStructuredPlaceholder(
-      structured,
-      change,
-      known?.status ?? "too_large",
-      known?.stat ?? stat,
-    );
-    return;
-  }
-
-  const placeholder = trackedPlaceholderByPath.get(change.path);
-  if (placeholder) {
-    const file = buildPlaceholderParsedDiffFile(change, {
-      status: placeholder.status,
-      stat: placeholder.stat,
-    });
-    if (!appendStructuredFile(structured, file)) {
-      appendStructuredPlaceholder(structured, change, placeholder.status, placeholder.stat);
-      return;
-    }
-    appendTrackedPlaceholderComment(change, placeholder.status);
-    return;
-  }
-
-  const parsedFile = parsedTrackedByPath.get(change.path);
-  if (parsedFile !== undefined) {
-    await appendHighlightedTrackedFile({
-      cwd,
-      change,
-      stat,
-      parsedFile,
-      refsForDiff,
-      structured,
-      contents: contents ?? undefined,
-    });
-    return;
-  }
-
-  if (omittedFromText) {
-    const handled = await appendOmittedTrackedFile({
-      cwd,
-      change,
-      stat,
-      refsForDiff,
-      structured,
-      omittedText: omittedTextByPath.get(change.path),
-    });
-    if (handled) return;
-  }
-
-  // `git diff -w --name-status` can still report a modified path even when the
-  // whitespace-filtered patch and numstat are both empty. Skip emitting a
-  // structured placeholder in that case so whitespace-only edits truly disappear.
-  if (isWhitespaceOnlyTrackedChange({ change, stat, ignoreWhitespace: input.ignoreWhitespace })) {
-    return;
-  }
-
-  const file = {
-    path: change.path,
-    ...(change.oldPath ? { oldPath: change.oldPath } : {}),
-    isNew: change.isNew,
-    isDeleted: change.isDeleted,
-    additions: stat?.additions ?? 0,
-    deletions: stat?.deletions ?? 0,
-    hunks: [],
-    status: "ok",
-  } satisfies ParsedDiffFile;
-  if (!appendStructuredFile(structured, file)) {
-    appendStructuredPlaceholder(structured, change, "too_large", stat);
-  }
-}
-
 async function appendStructuredTrackedDiffs(
   input: AppendStructuredTrackedDiffsInput,
-): Promise<void> {
+): Promise<boolean> {
   const {
     cwd,
     trackedChanges,
     trackedNumstatByPath,
     trackedPlaceholderByPath,
-    trackedTextOmittedPaths,
     trackedDiffText,
     refsForDiff,
     ignoreWhitespace,
-    contextLines,
     structured,
     appendTrackedPlaceholderComment,
   } = input;
@@ -3530,52 +3286,78 @@ async function appendStructuredTrackedDiffs(
       ),
       refsForDiff,
     );
-    const omittedTextByPath = await readTrackedDiffTextsForChanges({
-      cwd,
-      refsForDiff,
-      changes: changes.filter((change) => trackedTextOmittedPaths.has(change.path)),
-      ignoreWhitespace,
-      contextLines,
-    });
     for (const change of changes) {
-      await appendStructuredTrackedFile({
-        cwd,
-        change,
-        stat: trackedNumstatByPath.get(change.path) ?? null,
-        refsForDiff,
-        ignoreWhitespace,
-        contextLines,
-        structured,
-        trackedPlaceholderByPath,
-        trackedTextOmittedPaths,
-        parsedTrackedByPath,
-        contents,
-        omittedTextByPath,
-        appendTrackedPlaceholderComment,
-      });
+      const placeholder = trackedPlaceholderByPath.get(change.path);
+      if (placeholder) {
+        const file = buildPlaceholderParsedDiffFile(change, {
+          status: placeholder.status,
+          stat: placeholder.stat,
+        });
+        if (!appendStructuredFile(structured, file)) {
+          return false;
+        }
+        appendTrackedPlaceholderComment(change, placeholder.status);
+        continue;
+      }
+
+      const stat = trackedNumstatByPath.get(change.path) ?? null;
+      const parsedFile = parsedTrackedByPath.get(change.path);
+      if (parsedFile) {
+        const file = await buildHighlightedTrackedDiffFile({
+          signal: input.signal,
+          cwd,
+          change,
+          parsedFile,
+          refsForDiff,
+          contents: contents ?? undefined,
+        });
+        if (!appendStructuredFile(structured, file)) {
+          return false;
+        }
+        // Batched blobs remove the per-file I/O pause; keep serving other daemon work.
+        await setImmediate();
+        continue;
+      }
+
+      // `git diff -w --name-status` can still report a modified path even when the
+      // whitespace-filtered patch and numstat are both empty. Skip emitting a
+      // structured placeholder in that case so whitespace-only edits truly disappear.
+      if (isWhitespaceOnlyTrackedChange({ change, stat, ignoreWhitespace })) {
+        continue;
+      }
+
+      const file = {
+        path: change.path,
+        ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+        isNew: change.isNew,
+        isDeleted: change.isDeleted,
+        additions: stat?.additions ?? 0,
+        deletions: stat?.deletions ?? 0,
+        hunks: [],
+        status: "ok",
+      } satisfies ParsedDiffFile;
+      if (!appendStructuredFile(structured, file)) {
+        return false;
+      }
     }
   }
+
+  return true;
 }
 
 interface ProcessUntrackedChangeInput {
+  signal?: AbortSignal;
   cwd: string;
   change: CheckoutFileChange;
   ignoreWhitespace: boolean;
-  contextLines?: number;
   includeStructured: boolean;
   structured: StructuredDiffAccumulator;
   appendDiff: (text: string) => void;
 }
 
-async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promise<void> {
-  const { cwd, change, ignoreWhitespace, contextLines, includeStructured, structured, appendDiff } =
-    input;
-  const { text, truncated, stat } = await getUntrackedDiffText(
-    cwd,
-    change,
-    ignoreWhitespace,
-    contextLines,
-  );
+async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promise<boolean> {
+  const { cwd, change, ignoreWhitespace, includeStructured, structured, appendDiff } = input;
+  const { text, truncated, stat } = await getUntrackedDiffText(cwd, change, ignoreWhitespace);
 
   if (!includeStructured) {
     if (stat?.isBinary) {
@@ -3585,7 +3367,7 @@ async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promi
     } else {
       appendDiff(text);
     }
-    return;
+    return true;
   }
 
   if (stat?.isBinary) {
@@ -3595,10 +3377,10 @@ async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promi
         buildPlaceholderParsedDiffFile(change, { status: "binary", stat }),
       )
     ) {
-      appendStructuredPlaceholder(structured, change, "binary", stat);
+      return false;
     }
     appendDiff(`# ${change.path}: binary diff omitted\n`);
-    return;
+    return true;
   }
 
   if (truncated) {
@@ -3608,14 +3390,14 @@ async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promi
         buildPlaceholderParsedDiffFile(change, { status: "too_large", stat }),
       )
     ) {
-      appendStructuredPlaceholder(structured, change, "too_large", stat);
+      return false;
     }
     appendDiff(`# ${change.path}: diff too large omitted\n`);
-    return;
+    return true;
   }
 
   appendDiff(text);
-  const parsed = await parseAndHighlightDiff(text, cwd);
+  const parsed = await parseAndHighlightDiff(text, cwd, { signal: input.signal });
   const parsedFile =
     parsed[0] ??
     ({
@@ -3634,9 +3416,7 @@ async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promi
     isDeleted: change.isDeleted,
     status: "ok",
   } satisfies ParsedDiffFile;
-  if (!appendStructuredFile(structured, file)) {
-    appendStructuredPlaceholder(structured, change, "too_large", stat);
-  }
+  return appendStructuredFile(structured, file);
 }
 
 interface ProcessTrackedChangesInput {
@@ -3644,22 +3424,19 @@ interface ProcessTrackedChangesInput {
   refsForDiff: CheckoutDiffRefs;
   trackedChanges: CheckoutFileChange[];
   ignoreWhitespace: boolean;
-  contextLines?: number;
   appendDiff: (text: string) => void;
 }
 
 interface ProcessTrackedChangesResult {
   trackedNumstatByPath: Map<string, FileStat>;
   trackedPlaceholderByPath: Map<string, { status: "binary" | "too_large"; stat: FileStat }>;
-  /** Files that did not fit the legacy `diff` string, which the structured output still shows. */
-  trackedTextOmittedPaths: Set<string>;
   trackedDiffText: string;
 }
 
 async function processTrackedChanges(
   input: ProcessTrackedChangesInput,
 ): Promise<ProcessTrackedChangesResult> {
-  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, contextLines, appendDiff } = input;
+  const { cwd, refsForDiff, trackedChanges, ignoreWhitespace, appendDiff } = input;
   const trackedNumstatByPath =
     trackedChanges.length > 0
       ? await getTrackedNumstatByPath(cwd, refsForDiff, ignoreWhitespace)
@@ -3681,7 +3458,6 @@ async function processTrackedChanges(
 
   let trackedDiffText = "";
   let trackedDiffBytes = 0;
-  const trackedTextOmittedPaths = new Set<string>();
   const oldPathByPath = new Map(
     trackedChanges
       .filter((change) => change.oldPath)
@@ -3695,7 +3471,6 @@ async function processTrackedChanges(
       refsForDiff,
       paths: paths.filter((path) => !oldPathByPath.has(path)),
       ignoreWhitespace,
-      contextLines,
     });
     const renamed = await Promise.all(
       paths
@@ -3707,7 +3482,6 @@ async function processTrackedChanges(
             path,
             oldPath: oldPathByPath.get(path),
             ignoreWhitespace,
-            contextLines,
           }),
         ),
     );
@@ -3724,10 +3498,10 @@ async function processTrackedChanges(
       }
       const diffBytes = Buffer.byteLength(fileDiff.text, "utf8");
       if (trackedDiffBytes + diffBytes > TOTAL_DIFF_MAX_BYTES) {
-        // The legacy diff string stops here. This file is not too large to show —
-        // other files filled the string first — so the structured output still
-        // carries it, fetched on its own when its turn comes.
-        trackedTextOmittedPaths.add(fileDiff.path);
+        trackedPlaceholderByPath.set(fileDiff.path, {
+          status: "too_large",
+          stat: trackedNumstatByPath.get(fileDiff.path) ?? null,
+        });
         continue;
       }
       trackedDiffBytes += diffBytes;
@@ -3739,7 +3513,6 @@ async function processTrackedChanges(
   return {
     trackedNumstatByPath,
     trackedPlaceholderByPath,
-    trackedTextOmittedPaths,
     trackedDiffText,
   };
 }
@@ -3753,17 +3526,15 @@ async function resolveCheckoutDiffRefs(
     return { baseRef: "HEAD", includeUntracked: true };
   }
   const { storedBaseRef, resolvedBaseRef } = await resolveBaseRefForCwd(cwd, context);
-  // An explicit comparison is a read-only inspection choice and may intentionally differ from
-  // the workspace's stored base branch. The stored-base compatibility check is for mutating
-  // operations such as merge, not for viewing a diff.
-  const requestedBaseRef = compare.baseRef?.trim();
-  const baseRef = requestedBaseRef
-    ? requestedBaseRef
-    : resolveOperationBaseRef({ storedBaseRef, resolvedBaseRef });
+  const baseRef = resolveOperationBaseRef({
+    storedBaseRef,
+    resolvedBaseRef,
+    requestedBaseRef: compare.baseRef,
+  });
   if (!baseRef) {
     return null;
   }
-  const bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef, context);
+  const bestBaseRef = await resolveBestComparisonBaseRef(cwd, baseRef);
   return {
     baseRef: (await tryResolveMergeBase(cwd, bestBaseRef)) ?? bestBaseRef,
     targetRef: compare.mode === "base" ? "HEAD" : undefined,
@@ -3822,6 +3593,7 @@ export async function getCheckoutDiff(
   cwd: string,
   compare: CheckoutDiffCompare,
   context?: CheckoutContext,
+  signal?: AbortSignal,
 ): Promise<CheckoutDiffResult> {
   cwd = await requireGitWorktreeRoot(cwd);
 
@@ -3833,10 +3605,15 @@ export async function getCheckoutDiff(
   const index =
     compare.mode === "all" ? await prepareAllChangesIndex(cwd, refsForDiff.baseRef) : null;
   try {
-    return await readCheckoutDiff(cwd, compare, {
-      ...refsForDiff,
-      indexEnv: index ? { GIT_INDEX_FILE: index.indexFile } : undefined,
-    });
+    return await readCheckoutDiff(
+      cwd,
+      compare,
+      {
+        ...refsForDiff,
+        indexEnv: index ? { GIT_INDEX_FILE: index.indexFile } : undefined,
+      },
+      signal,
+    );
   } finally {
     await index?.cleanup();
   }
@@ -3846,9 +3623,9 @@ async function readCheckoutDiff(
   cwd: string,
   compare: CheckoutDiffCompare,
   refsForDiff: CheckoutDiffRefs,
+  signal?: AbortSignal,
 ): Promise<CheckoutDiffResult> {
   const ignoreWhitespace = compare.ignoreWhitespace === true;
-  const contextLines = compare.contextLines;
   let effectiveRefsForDiff = refsForDiff;
   let changes: CheckoutFileChange[];
   try {
@@ -3891,7 +3668,6 @@ async function readCheckoutDiff(
     refsForDiff: effectiveRefsForDiff,
     trackedChanges,
     ignoreWhitespace,
-    contextLines,
     appendDiff,
   });
 
@@ -3907,54 +3683,46 @@ async function readCheckoutDiff(
   };
 
   if (compare.includeStructured) {
-    await appendStructuredTrackedDiffs({
+    const didAppendTrackedDiffs = await appendStructuredTrackedDiffs({
+      signal,
       cwd,
       trackedChanges,
       trackedNumstatByPath: trackedDiff.trackedNumstatByPath,
       trackedPlaceholderByPath: trackedDiff.trackedPlaceholderByPath,
-      trackedTextOmittedPaths: trackedDiff.trackedTextOmittedPaths,
       trackedDiffText: trackedDiff.trackedDiffText,
       refsForDiff: effectiveRefsForDiff,
       ignoreWhitespace,
-      contextLines,
       structured,
       appendTrackedPlaceholderComment,
     });
+    if (!didAppendTrackedDiffs) {
+      return { diff: "", structured: [], diffTooLarge: true };
+    }
   } else {
     for (const change of trackedChanges) {
       const placeholder = trackedDiff.trackedPlaceholderByPath.get(change.path);
       if (placeholder) {
         appendTrackedPlaceholderComment(change, placeholder.status);
-        continue;
-      }
-      // Omitted from the string only because earlier files filled it.
-      if (trackedDiff.trackedTextOmittedPaths.has(change.path)) {
-        appendTrackedPlaceholderComment(change, "too_large");
       }
     }
   }
 
-  const includeStructured = compare.includeStructured === true;
   for (const change of untrackedChanges) {
-    // The string stops at its budget; the structured list still needs every
-    // changed path, and appending text is already a no-op once the string is full.
-    if (!includeStructured && diffBytes >= TOTAL_DIFF_MAX_BYTES) {
+    if (diffBytes >= TOTAL_DIFF_MAX_BYTES) {
       break;
     }
-    if (includeStructured && structured.full) {
-      // No room left in the payload: list the file, but do not diff it.
-      appendStructuredPlaceholder(structured, change, "too_large", null);
-      continue;
-    }
-    await processUntrackedChange({
+    const didAppendUntrackedDiff = await processUntrackedChange({
+      signal,
       cwd,
       change,
       ignoreWhitespace,
-      contextLines,
-      includeStructured,
+      includeStructured: compare.includeStructured === true,
       structured,
       appendDiff,
     });
+    if (!didAppendUntrackedDiff) {
+      return { diff: "", structured: [], diffTooLarge: true };
+    }
   }
 
   if (compare.includeStructured) {

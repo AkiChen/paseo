@@ -27,17 +27,19 @@ import {
   type ThemePreference,
 } from "@/styles/theme";
 import { z } from "zod";
-import { APP_SETTINGS_KEY, LEGACY_SETTINGS_KEY } from "./keys";
-import { migrateAppSettings } from "./migrations";
 import { DEFAULT_TERMINAL_THEME, isTerminalThemeId, type TerminalThemeId } from "@/terminal/themes";
 import {
   DEFAULT_TERMINAL_CURSOR_STYLE,
   isTerminalCursorStyle,
   type TerminalCursorStyle,
 } from "@/terminal/cursor-style";
+import { APP_SETTINGS_KEY, LEGACY_SETTINGS_KEY } from "./keys";
+import { migrateAppSettings } from "./migrations";
 
 export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
+
+export type SendShortcut = "enter" | "mod-enter";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
@@ -46,8 +48,8 @@ export type WorkspaceTitleSource = "title" | "branch";
 export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
 export type SidebarWorkspaceTrailing = "diff" | "timestamp" | "none";
-export type ToolCallDetailLevel = "overview" | "detailed";
-export type TurnProcessFolding = "compact" | "standard";
+/** How much of an agent's work the chat shows between the user's message and the reply. */
+export type ChatDisplay = "full" | "collapseToolCalls" | "collapseTurns";
 
 const ThemePreferenceSchema = z.enum([
   ...THEME_OPTIONS.map((option) => option.name),
@@ -58,6 +60,9 @@ export const DEFAULT_THEME_PREFERENCE = "auto" satisfies ThemePreference;
 export const DEFAULT_TERMINAL_SCROLLBACK_LINES = 10_000;
 export const MIN_TERMINAL_SCROLLBACK_LINES = 0;
 export const MAX_TERMINAL_SCROLLBACK_LINES = 1_000_000;
+export const DEFAULT_TERMINAL_FONT_SIZE = 13;
+export const MIN_TERMINAL_FONT_SIZE = 9;
+export const MAX_TERMINAL_FONT_SIZE = 30;
 export function defaultUiBaseFontSize(native: boolean): number {
   return native ? 15 : FONT_SIZE.base;
 }
@@ -75,9 +80,6 @@ export const MAX_CONTENT_FONT_SIZE = 21;
 export const DEFAULT_CODE_FONT_SIZE = 12; // == FONT_SIZE.code
 export const MIN_CODE_FONT_SIZE = 9;
 export const MAX_CODE_FONT_SIZE = 22; // line-height 1.5×22=33 stays safe
-export const DEFAULT_TERMINAL_FONT_SIZE = 13;
-export const MIN_TERMINAL_FONT_SIZE = 9;
-export const MAX_TERMINAL_FONT_SIZE = 30;
 export const MAX_FONT_FAMILY_LENGTH = 200;
 export { DEFAULT_CONTENT_MAX_WIDTH };
 export const MIN_CONTENT_MAX_WIDTH = 600;
@@ -91,12 +93,6 @@ export interface AppSettings {
   sendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
   terminalScrollbackLines: number;
-  terminalTheme: TerminalThemeId;
-  terminalCursorStyle: TerminalCursorStyle;
-  terminalFontFamily: string; // "" = platform default terminal font
-  terminalFontSize: number; // clamped px, default 13
-  isTerminalCloseConfirmationEnabled: boolean;
-  useLegacyTerminalRenderer: boolean;
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
   uiBaseFontSize: number; // clamped px, platform default 14 or 15
@@ -104,6 +100,12 @@ export interface AppSettings {
   codeFontSize: number; // clamped px, default 12
   /** Max width of chat and markdown content in px; null follows the current default. */
   contentMaxWidth: number | null;
+  terminalTheme: TerminalThemeId;
+  terminalCursorStyle: TerminalCursorStyle;
+  terminalFontFamily: string; // "" = platform default terminal font
+  terminalFontSize: number; // clamped px, default 13
+  isTerminalCloseConfirmationEnabled: boolean;
+  useLegacyTerminalRenderer: boolean;
   syntaxTheme: SyntaxThemeId; // default "one"
   workspaceTitleSource: WorkspaceTitleSource;
   sidebarWorkspaceTrailing: SidebarWorkspaceTrailing;
@@ -116,10 +118,10 @@ export interface AppSettings {
   /** How usage reads and which windows the sidebar summary shows. */
   usage: UsagePreferences;
   autoExpandReasoning: boolean;
-  toolCallDetailLevel: ToolCallDetailLevel;
-  turnProcessFolding: TurnProcessFolding;
+  chatDisplay: ChatDisplay;
   chatOutlineEnabled: boolean;
   vimKeybindings: boolean;
+  sendShortcut: SendShortcut;
   filePanelAssociations: Record<string, string>;
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
@@ -158,18 +160,18 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sendBehavior: "steer",
   serviceUrlBehavior: "ask",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
-  terminalTheme: DEFAULT_TERMINAL_THEME,
-  terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
-  terminalFontFamily: "",
-  terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
-  isTerminalCloseConfirmationEnabled: true,
-  useLegacyTerminalRenderer: false,
   uiFontFamily: "",
   monoFontFamily: "",
   uiBaseFontSize: DEFAULT_UI_BASE_FONT_SIZE,
   contentFontSize: DEFAULT_CONTENT_FONT_SIZE,
   codeFontSize: DEFAULT_CODE_FONT_SIZE,
   contentMaxWidth: null,
+  terminalTheme: DEFAULT_TERMINAL_THEME,
+  terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+  terminalFontFamily: "",
+  terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+  isTerminalCloseConfirmationEnabled: true,
+  useLegacyTerminalRenderer: false,
   syntaxTheme: "one",
   workspaceTitleSource: "title",
   sidebarWorkspaceTrailing: "timestamp",
@@ -179,10 +181,10 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sidebarFooterItems: [],
   usage: DEFAULT_USAGE_PREFERENCES,
   autoExpandReasoning: false,
-  toolCallDetailLevel: "detailed",
-  turnProcessFolding: "compact",
+  chatDisplay: "collapseTurns",
   chatOutlineEnabled: true,
   vimKeybindings: false,
+  sendShortcut: "enter",
   filePanelAssociations: {},
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
@@ -223,6 +225,7 @@ const SidebarRowItemsSchema = z
 type StoredAppSettingsFallback = AppSettings & {
   uiFontSize?: number;
   compactToolCalls?: boolean;
+  toolCallDetailLevel?: "overview" | "detailed";
   manageBuiltInDaemon?: boolean;
   releaseChannel?: ReleaseChannel;
   needsWrite: boolean;
@@ -246,17 +249,6 @@ const StoredAppSettingsSchema = z
       MIN_TERMINAL_SCROLLBACK_LINES,
       MAX_TERMINAL_SCROLLBACK_LINES,
     ).catch(DEFAULT_TERMINAL_SCROLLBACK_LINES),
-    terminalTheme: z.string().refine(isTerminalThemeId).catch(DEFAULT_TERMINAL_THEME),
-    terminalCursorStyle: z
-      .string()
-      .refine(isTerminalCursorStyle)
-      .catch(DEFAULT_TERMINAL_CURSOR_STYLE),
-    terminalFontFamily: sanitizedFontFamily().catch(""),
-    terminalFontSize: clampedNumber(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE).catch(
-      DEFAULT_TERMINAL_FONT_SIZE,
-    ),
-    isTerminalCloseConfirmationEnabled: z.boolean().catch(true),
-    useLegacyTerminalRenderer: z.boolean().catch(false),
     uiFontFamily: sanitizedFontFamily().catch(""),
     monoFontFamily: sanitizedFontFamily().catch(""),
     uiBaseFontSize: clampedNumber(MIN_UI_BASE_FONT_SIZE, MAX_UI_BASE_FONT_SIZE)
@@ -274,6 +266,17 @@ const StoredAppSettingsSchema = z
       .null()
       .or(clampedNumber(MIN_CONTENT_MAX_WIDTH, MAX_CONTENT_MAX_WIDTH))
       .catch(null),
+    terminalTheme: z.string().refine(isTerminalThemeId).catch(DEFAULT_TERMINAL_THEME),
+    terminalCursorStyle: z
+      .string()
+      .refine(isTerminalCursorStyle)
+      .catch(DEFAULT_TERMINAL_CURSOR_STYLE),
+    terminalFontFamily: sanitizedFontFamily().catch(""),
+    terminalFontSize: clampedNumber(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE).catch(
+      DEFAULT_TERMINAL_FONT_SIZE,
+    ),
+    isTerminalCloseConfirmationEnabled: z.boolean().catch(true),
+    useLegacyTerminalRenderer: z.boolean().catch(false),
     syntaxTheme: z.string().refine(isSyntaxThemeId).catch("one"),
     workspaceTitleSource: z.enum(["title", "branch"]).catch("title"),
     sidebarWorkspaceTrailing: z.enum(["diff", "timestamp", "none"]).catch("timestamp"),
@@ -286,16 +289,18 @@ const StoredAppSettingsSchema = z
     sidebarFooterItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     usage: UsagePreferencesSchema,
     autoExpandReasoning: z.boolean().catch(false),
+    chatDisplay: z.enum(["full", "collapseToolCalls", "collapseTurns"]).optional().catch("full"),
+    // COMPAT(toolCallDetailLevel): replaced by chatDisplay in v0.13, remove after 2027-04-24.
     toolCallDetailLevel: z
       .enum(["overview", "detailed"])
       .or(z.literal("concise").transform(() => "overview" as const))
       .optional()
-      .catch("detailed"),
+      .catch(undefined),
     // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
     compactToolCalls: z.boolean().optional().catch(undefined),
-    turnProcessFolding: z.enum(["compact", "standard"]).catch("compact"),
     chatOutlineEnabled: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
+    sendShortcut: z.enum(["enter", "mod-enter"]).catch("enter"),
     filePanelAssociations: z.record(z.string(), z.string()).catch({}),
     openInSidePane: z
       .object({
@@ -341,8 +346,10 @@ const StoredAppSettingsSchema = z
       (isChecksHiddenByLegacyRowItem(stored.sidebarRowItems)
         ? "none"
         : DEFAULT_SIDEBAR_CHECKS_DISPLAY);
-    const toolCallDetailLevel =
-      stored.toolCallDetailLevel ?? (stored.compactToolCalls ? "overview" : "detailed");
+    const groupsToolCalls = stored.toolCallDetailLevel
+      ? stored.toolCallDetailLevel === "overview"
+      : stored.compactToolCalls === true;
+    const chatDisplay = stored.chatDisplay ?? (groupsToolCalls ? "collapseToolCalls" : "full");
     return {
       ...stored,
       openInSidePane,
@@ -357,7 +364,7 @@ const StoredAppSettingsSchema = z
           stored.sidebarRowItems.services ??
           (stored.sidebarRowItems.scripts === false ? false : DEFAULT_SIDEBAR_ROW_ITEMS.services),
       },
-      toolCallDetailLevel,
+      chatDisplay,
       needsWrite,
     };
   })
@@ -424,11 +431,9 @@ export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<Ap
  * Reads whichever of the settings blobs exists, without migrating. `needsWrite` covers the reads
  * that produce settings the stored blob does not already spell out.
  */
-async function readAppSettings(deps: SettingsDeps): Promise<{
-  settings: AppSettings;
-  needsWrite: boolean;
-  stored: StoredAppSettings;
-}> {
+async function readAppSettings(
+  deps: SettingsDeps,
+): Promise<{ settings: AppSettings; needsWrite: boolean; stored: StoredAppSettings }> {
   const stored = await readSettingsObject(deps.storage, APP_SETTINGS_KEY);
   if (stored) {
     return {
@@ -487,6 +492,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     manageBuiltInDaemon: _manageBuiltInDaemon,
     releaseChannel: _releaseChannel,
     compactToolCalls: _compactToolCalls,
+    toolCallDetailLevel: _toolCallDetailLevel,
     uiFontSize: _uiFontSize,
     ...settings
   } = StoredAppSettingsSchema.parse(value);
