@@ -402,6 +402,7 @@ export function SidebarWorkspaceContextMenu({
     serviceLabel: serviceSummary
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
+    t,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(
     () => ({

@@ -35,15 +35,7 @@ const commit: ClassifiedCheckoutCommit = {
 };
 
 function renderRow(onCommitPress: (sha: string) => void = vi.fn()): void {
-  render(
-    <CommitRow
-      commit={commit}
-      isFirst
-      isLast
-      now={new Date("2026-11-12T11:00:00.000Z")}
-      onCommitPress={onCommitPress}
-    />,
-  );
+  render(<CommitRow commit={commit} isFirst isLast onCommitPress={onCommitPress} />);
 }
 
 beforeEach(() => {

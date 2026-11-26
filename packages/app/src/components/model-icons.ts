@@ -1,7 +1,7 @@
+import { Bot } from "lucide-react-native";
 import { ChatGptIcon } from "@/components/icons/chatgpt-icon";
 import { DeepSeekIcon } from "@/components/icons/deepseek-icon";
 import { MoonshotIcon } from "@/components/icons/moonshot-icon";
-import { resolveProviderIconName } from "@/components/provider-icon-name";
 import { getProviderIcon, type ProviderIconComponent } from "@/components/provider-icons";
 
 const CHATGPT_ICON_ID = "chatgpt";
@@ -89,12 +89,13 @@ export function getModelIcon({
   modelLabel,
   serverId,
 }: ModelIconInput): ProviderIconComponent {
-  if (resolveProviderIconName(provider, serverId).kind !== "bot") {
-    return getProviderIcon(provider, serverId);
+  const providerIcon = getProviderIcon(provider, serverId);
+  if (providerIcon !== Bot) {
+    return providerIcon;
   }
   const familyId = resolveModelIconId(modelId, modelLabel);
   if (!familyId) {
-    return getProviderIcon(provider, serverId);
+    return providerIcon;
   }
   return LOCAL_FAMILY_ICONS[familyId] ?? getProviderIcon(familyId);
 }

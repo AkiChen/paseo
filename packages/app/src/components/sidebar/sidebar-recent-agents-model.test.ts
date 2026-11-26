@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { TFunction } from "i18next";
+import { en } from "@/i18n/resources/en";
 import type { AggregatedAgent } from "@/hooks/use-aggregated-agents";
 import { TURN_LIVENESS_IDLE } from "@/timeline/turn-liveness";
 import {
@@ -6,6 +8,13 @@ import {
   selectRecentAgents,
   type RecentAgentGroup,
 } from "./sidebar-recent-agents-model";
+
+/** Stand-in for i18next's `t` that reads the English resource, so labels stay the real text. */
+const translate: TFunction = ((key: string) =>
+  key.split(".").reduce<unknown>((node, part) => {
+    if (typeof node !== "object" || node === null) return undefined;
+    return (node as Record<string, unknown>)[part];
+  }, en) ?? key) as unknown as TFunction;
 
 function agentIdsByGroup(groups: RecentAgentGroup[]): string[][] {
   return groups.map((group) => group.agents.map((agent) => agent.id));
@@ -117,7 +126,7 @@ describe("buildRecentAgentGroups", () => {
       createAgent({ id: "attention", requiresAttention: true }),
     ];
 
-    const groups = buildRecentAgentGroups(agents);
+    const groups = buildRecentAgentGroups(agents, translate);
 
     expect(groups.map((group) => group.bucket)).toEqual([
       "needs_input",
@@ -154,7 +163,7 @@ describe("buildRecentAgentGroups", () => {
       lastActivityAt: new Date("2026-10-01T09:00:00.000Z"),
     });
 
-    const running = buildRecentAgentGroups([later, earlier]).find(
+    const running = buildRecentAgentGroups([later, earlier], translate).find(
       (group) => group.bucket === "running",
     );
 
@@ -171,17 +180,22 @@ describe("buildRecentAgentGroups", () => {
       lastActivityAt: new Date("2026-10-01T12:00:00.000Z"),
     });
 
-    const done = buildRecentAgentGroups([older, newer]).find((group) => group.bucket === "done");
+    const done = buildRecentAgentGroups([older, newer], translate).find(
+      (group) => group.bucket === "done",
+    );
 
     expect(done?.agents.map((agent) => agent.id)).toEqual(["z-agent", "a-agent"]);
   });
 
   it("leaves archived agents and subagents out of every group", () => {
-    const groups = buildRecentAgentGroups([
-      createAgent({ id: "root" }),
-      createAgent({ id: "archived", archivedAt: new Date("2026-10-01T13:00:00.000Z") }),
-      createAgent({ id: "child", parentAgentId: "root" }),
-    ]);
+    const groups = buildRecentAgentGroups(
+      [
+        createAgent({ id: "root" }),
+        createAgent({ id: "archived", archivedAt: new Date("2026-10-01T13:00:00.000Z") }),
+        createAgent({ id: "child", parentAgentId: "root" }),
+      ],
+      translate,
+    );
 
     expect(allAgentIds(groups)).toEqual(["root"]);
   });

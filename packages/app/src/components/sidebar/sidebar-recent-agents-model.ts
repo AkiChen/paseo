@@ -1,5 +1,6 @@
+import type { TFunction } from "i18next";
 import type { AggregatedAgent } from "@/hooks/use-aggregated-agents";
-import { STATUS_BUCKET_LABELS } from "@/hooks/sidebar-status-view-model";
+import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 import {
   deriveSidebarStateBucket,
   STATUS_BUCKET_ORDER,
@@ -33,7 +34,10 @@ export function selectRecentAgents(agents: readonly AggregatedAgent[]): Aggregat
  * only stable key an agent has. Every other bucket keeps newest-activity-first, because there the
  * user is looking for what just happened rather than trying to click a moving target.
  */
-export function buildRecentAgentGroups(agents: readonly AggregatedAgent[]): RecentAgentGroup[] {
+export function buildRecentAgentGroups(
+  agents: readonly AggregatedAgent[],
+  t: TFunction,
+): RecentAgentGroup[] {
   const buckets = new Map<SidebarStateBucket, AggregatedAgent[]>();
   for (const agent of selectRecentAgents(agents)) {
     const bucket = deriveSidebarStateBucket({
@@ -54,7 +58,7 @@ export function buildRecentAgentGroups(agents: readonly AggregatedAgent[]): Rece
       continue;
     }
     rows.sort(bucket === "running" ? compareByAgentId : compareRecentAgents);
-    groups.push({ bucket, label: STATUS_BUCKET_LABELS[bucket], agents: rows });
+    groups.push({ bucket, label: getStatusBucketLabel(bucket, t), agents: rows });
   }
   return groups;
 }

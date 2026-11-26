@@ -98,3 +98,6 @@ app.json
 /.tmp/
 /.tmp-build/
 packages/desktop/assets/_backup-*/
+
+# Project-local Serena configuration and memories.
+.serena/

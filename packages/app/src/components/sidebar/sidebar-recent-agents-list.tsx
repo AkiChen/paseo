@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useAggregatedAgents, type AggregatedAgent } from "@/hooks/use-aggregated-agents";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
-import { useCompactTimeAgo } from "@/hooks/use-compact-time-ago";
+import { useCompactTimeAgo } from "@/hooks/use-time-ago";
 import { useDeleteAgent, type DeleteAgentInput } from "@/hooks/use-delete-agent";
 import { useHosts } from "@/runtime/host-runtime";
 import { useHostProjects } from "@/projects/host-projects";
@@ -95,7 +95,7 @@ export function SidebarRecentAgentsList({
   const { agents, isInitialLoad, isRevalidating, refreshAll } = useAggregatedAgents({
     demand: active,
   });
-  const groups = useMemo(() => buildRecentAgentGroups(agents), [agents]);
+  const groups = useMemo(() => buildRecentAgentGroups(agents, t), [agents, t]);
 
   // Starred agents get their own block above the status groups, the way Pinned sits above the
   // workspace list. The star is the membership test, so nothing has to be pruned when an agent
