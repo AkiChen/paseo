@@ -8,10 +8,10 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Alert } from "@/components/ui/alert";
 import {
   View,
   Pressable,
-  Platform,
   Text,
   StyleSheet as RNStyleSheet,
   type PressableStateCallbackType,
@@ -31,6 +31,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { CHAT_COLUMN_RAIL_DATASET } from "@/chat-rail";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import {
   controlSizingForLayout,
@@ -149,6 +150,7 @@ import { RenderProfile } from "@/utils/render-profiler";
 import { AfterPaintPublication } from "@/composer/after-paint-publication";
 import { isWeb, isNative } from "@/constants/platform";
 import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
+import type { AgentMetric } from "@getpaseo/protocol/agent-types";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -297,20 +299,7 @@ function buildRealtimeVoiceButtonStyle(pressed: boolean, voiceButtonDisabled: bo
   );
 }
 
-/**
- * Session-cumulative buckets as flat primitives.
- *
- * The selector below is compared shallowly, and one `??` chain per bucket keeps
- * the selector's own branch count low enough to stay readable.
- */
-function sessionUsageFields(usage: AgentUsage | undefined) {
-  return {
-    sessionUncachedInputTokens: usage?.sessionUncachedInputTokens ?? null,
-    sessionCacheReadTokens: usage?.sessionCacheReadTokens ?? null,
-    sessionCacheWriteTokens: usage?.sessionCacheWriteTokens ?? null,
-    sessionOutputTokens: usage?.sessionOutputTokens ?? null,
-  };
-}
+const EMPTY_METRICS: AgentMetric[] = [];
 
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
@@ -320,7 +309,7 @@ function buildAgentStateSelector(serverId: string, agentId: string) {
       contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
       contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
       totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
-      ...sessionUsageFields(agent?.lastUsage),
+      sessionMetrics: agent?.sessionMetrics ?? EMPTY_METRICS,
       model: agent?.model ?? null,
     };
   };
@@ -333,13 +322,22 @@ interface RenderLeftContentArgs {
   focusInput: () => void;
   isCompactLayout: boolean;
   showAgentControls: boolean;
+  showToolbar: boolean;
 }
 
 function renderLeftContent(args: RenderLeftContentArgs): ReactElement | null {
-  const { agentControls, agentId, serverId, focusInput, isCompactLayout } = args;
+  const { agentControls, agentId, serverId, focusInput, isCompactLayout, showToolbar } = args;
   if (!args.showAgentControls) return null;
   if (resolveAgentControlsMode(agentControls) === "draft" && agentControls) {
-    return <DraftAgentControls {...agentControls} isCompactLayout={isCompactLayout} />;
+    return (
+      <DraftAgentControls
+        {...agentControls}
+        draftId={agentId}
+        serverId={serverId}
+        isCompactLayout={isCompactLayout}
+        showToolbar={showToolbar}
+      />
+    );
   }
   return (
     <AgentControls
@@ -347,6 +345,7 @@ function renderLeftContent(args: RenderLeftContentArgs): ReactElement | null {
       serverId={serverId}
       onDropdownClose={focusInput}
       isCompactLayout={isCompactLayout}
+      showToolbar={showToolbar}
     />
   );
 }
@@ -1025,6 +1024,8 @@ interface ComposerProps {
    * `inputMode`.
    */
   editingSession?: ComposerEditingSession;
+  /** Caller-owned submission error rendered in the composer's shared error slot. */
+  error?: string | null;
 }
 
 const EMPTY_ARRAY: readonly QueuedMessage[] = [];
@@ -1263,14 +1264,17 @@ export function Composer({ isPaneFocused, ...props }: ComposerProps) {
   // user's own pane: closing the panel does not bring focus back.
   const isCompact = useIsCompactFormFactor();
   const paneHost = usePaneHost();
-  const overlayPanelRequested = usePanelStore((state) =>
-    isMobilePanelCoveringHost(state.mobilePanel.target, paneHost),
-  );
-  const coveredByOverlayPanel = isCompact && overlayPanelRequested;
+  const mobilePanelTarget = usePanelStore((state) => state.mobilePanel.target);
+  const coveredByOverlayPanel = isCompact && isMobilePanelCoveringHost(mobilePanelTarget, paneHost);
+  // Search from the sidebar uses the center pane as its context.
+  const commandCenterPanel = mobilePanelTarget === "agent-list" ? "agent" : mobilePanelTarget;
+  const coveredForCommandCenter =
+    isCompact && isMobilePanelCoveringHost(commandCenterPanel, paneHost);
   return (
     <ComposerKeyboardScopeProvider
       isPaneFocused={isPaneFocused}
       isActiveComposer={isPaneFocused && !coveredByOverlayPanel}
+      isCommandCenterTarget={isPaneFocused && !coveredForCommandCenter}
     >
       <OverlayDismissalScope>
         <RenderProfile id="ComposerContent">
@@ -1325,6 +1329,7 @@ function ComposerContentImpl({
   isCompactLayout: isCompactLayoutOverride,
   inputMode = "chat",
   editingSession: providedEditingSession,
+  error: externalError,
   readOnly = false,
   submitLabel,
   placeholder,
@@ -1534,6 +1539,7 @@ function ComposerContentImpl({
       isLive: isInputLive,
       revealed: inputRevealed,
       isRevealed: isInputRevealed,
+      isFocused: () => messageInputRef.current?.isFocused() ?? false,
       focus: takeInputFocus,
       textSource,
       setText: replaceUserInput,
@@ -2216,21 +2222,6 @@ function ComposerContentImpl({
     ],
   );
 
-  const contextWindowMeterGlyphSize = iconSizeFor("md")[controlSizing];
-  const sessionUsage = useMemo<SessionUsageBuckets | null>(
-    () => ({
-      uncachedInputTokens: agentState.sessionUncachedInputTokens,
-      cacheReadTokens: agentState.sessionCacheReadTokens,
-      cacheWriteTokens: agentState.sessionCacheWriteTokens,
-      outputTokens: agentState.sessionOutputTokens,
-    }),
-    [
-      agentState.sessionUncachedInputTokens,
-      agentState.sessionCacheReadTokens,
-      agentState.sessionCacheWriteTokens,
-      agentState.sessionOutputTokens,
-    ],
-  );
   const beforeVoiceContent = useMemo(
     () =>
       hasAgent ? (
@@ -2241,8 +2232,7 @@ function ComposerContentImpl({
             maxTokens={agentState.contextWindowMaxTokens}
             usedTokens={agentState.contextWindowUsedTokens}
             totalCostUsd={agentState.totalCostUsd}
-            sessionUsage={sessionUsage}
-            glyphSize={contextWindowMeterGlyphSize}
+            sessionMetrics={agentState.sessionMetrics}
             toolbarRing={TOOLBAR_RINGS[controlSizing]}
           />
         </View>
@@ -2254,8 +2244,7 @@ function ComposerContentImpl({
       agentState.contextWindowMaxTokens,
       agentState.contextWindowUsedTokens,
       agentState.totalCostUsd,
-      sessionUsage,
-      contextWindowMeterGlyphSize,
+      agentState.sessionMetrics,
       controlSizing,
     ],
   );
@@ -2384,6 +2373,7 @@ function ComposerContentImpl({
       focusInput,
       isCompactLayout,
       showAgentControls: mode.showAgentControls,
+      showToolbar: !isFullscreen,
     });
     return controls ? (
       <ComposerInputProvider value={composerInput}>{controls}</ComposerInputProvider>
@@ -2394,6 +2384,7 @@ function ComposerContentImpl({
     composerInput,
     focusInput,
     isCompactLayout,
+    isFullscreen,
     mode.showAgentControls,
     serverId,
   ]);
@@ -2566,14 +2557,13 @@ function ComposerContentImpl({
   // Focusing the composer on a touch screen raises the on-screen keyboard over the conversation.
   const messageInputAutoFocus = autoFocus && isDesktopWebBreakpoint && hasFinePointer;
   const submitLoadingPressHandler = isAgentRunning ? handleCancelAgent : undefined;
+  const displayError = externalError || sendError;
   const sendErrorNode = useMemo(
     () =>
-      sendError ? (
-        <Text accessibilityRole="alert" style={styles.sendErrorText}>
-          {sendError}
-        </Text>
+      displayError ? (
+        <Alert variant="error" size="sm" description={displayError} testID="composer-error" />
       ) : null,
-    [sendError],
+    [displayError],
   );
   const githubEmptyText = githubSearchResultsQuery.isFetching
     ? t("composer.github.searching")
@@ -2598,7 +2588,10 @@ function ComposerContentImpl({
       >
         <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
         {/* Input area */}
-        <View style={inputAreaContainerStyle}>
+        <View
+          style={inputAreaContainerStyle}
+          dataSet={isFullscreen ? undefined : CHAT_COLUMN_RAIL_DATASET}
+        >
           <View style={inputAreaContentStyle}>
             {isFullscreen ? null : queueList}
             {!isFullscreen && sendErrorNode}
@@ -2855,10 +2848,6 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   queueSendButton: {
     backgroundColor: theme.colors.accent,
-  },
-  sendErrorText: {
-    color: theme.colors.palette.red[500],
-    fontSize: theme.fontSize.base,
   },
 })) as unknown as Record<string, object>;
 

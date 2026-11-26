@@ -36,6 +36,7 @@ function createSnapshot(
     labels: (input.labels ?? {}) as AgentSnapshotPayload["labels"],
     ...(input.controls ? { controls: input.controls } : {}),
     ...(input.options ? { options: input.options } : {}),
+    ...(input.sessionMetrics ? { sessionMetrics: input.sessionMetrics } : {}),
   };
 }
 
@@ -77,6 +78,15 @@ describe("normalizeAgentSnapshot", () => {
       status: "running",
       activeTurn: snapshot.activeTurn,
     });
+  });
+
+  it("round-trips session metrics through the canonical snapshot boundary", () => {
+    const sessionMetrics = [{ label: "Cost", value: "$0.42", tone: "warning" as const }];
+
+    const agent = normalizeAgentSnapshot(createSnapshot({ sessionMetrics }), "server-1");
+
+    expect(agent.sessionMetrics).toEqual(sessionMetrics);
+    expect(projectAgentSnapshot(agent).sessionMetrics).toEqual(sessionMetrics);
   });
 
   it("normalizes identified and legacy active turns at the snapshot boundary", () => {

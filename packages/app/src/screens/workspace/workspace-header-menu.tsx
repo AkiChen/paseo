@@ -4,12 +4,13 @@ import { View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { useTranslation } from "react-i18next";
 import {
-  ClipboardList,
+  Archive,
   Copy,
   Ellipsis,
   Globe,
   Import as ImportIcon,
   Settings,
+  ClipboardList,
   Trash2,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -29,6 +30,7 @@ import {
   useIconButtonChromeStyle,
 } from "@/components/ui/icon-button-chrome";
 import { TerminalProfileIcon } from "@/components/terminal-profile-icon";
+import { useActiveWorkspaceArchive } from "@/hooks/use-active-workspace-archive";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import {
   getTerminalProfileIcon,
@@ -43,6 +45,7 @@ import {
 import { usePluginWorkspaceMenu } from "@/plugins";
 
 const ThemedEllipsis = withUnistyles(Ellipsis);
+const ThemedArchive = withUnistyles(Archive);
 const ThemedCopy = withUnistyles(Copy);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
@@ -56,6 +59,7 @@ const destructiveColorMapping = (theme: Theme) => ({ color: theme.colors.destruc
 const MENU_NEW_BROWSER_ICON = <ThemedGlobe size={16} uniProps={mutedColorMapping} />;
 const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />;
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
+const MENU_ARCHIVE_ICON = <ThemedArchive size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const MENU_DELETE_AGENT_ICON = <ThemedTrash size={16} uniProps={destructiveColorMapping} />;
 const MENU_WORK_LEDGER_ICON = <ThemedClipboardList size={16} uniProps={mutedColorMapping} />;
@@ -327,6 +331,10 @@ export function WorkspaceHeaderMenuMobile({
   const handleEditProfiles = useCallback(() => {
     router.push(buildSettingsHostSectionRoute(normalizedServerId, "terminals") as Href);
   }, [normalizedServerId, router]);
+  const { canArchive, archive } = useActiveWorkspaceArchive();
+  const handleArchiveWorkspace = useCallback(() => {
+    archive();
+  }, [archive]);
   const scriptsMenu = useWorkspaceScriptsMenuPages(scripts);
   const pluginMenu = usePluginWorkspaceMenu(normalizedServerId, normalizedWorkspaceId);
   const pages = useMemo(
@@ -398,6 +406,15 @@ export function WorkspaceHeaderMenuMobile({
         ) : null}
         <WorkspaceHeaderWorkspaceActionItems {...workspaceActions} />
         {agentActions ? <WorkspaceHeaderAgentActionItem {...agentActions} /> : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          testID="workspace-header-archive-workspace"
+          leading={MENU_ARCHIVE_ICON}
+          disabled={!canArchive}
+          onSelect={handleArchiveWorkspace}
+        >
+          {t("sidebar.workspace.actions.archiveWorkspace")}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{t("workspace.tabs.actions.terminalProfilesMenu")}</DropdownMenuLabel>
         {profiles.map((profile) => (

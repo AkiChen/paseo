@@ -361,6 +361,7 @@ describe("toAgentPayload", () => {
         nativeHandle: { id: "native" } as unknown,
         metadata: {
           restored: new Date("2025-03-01T00:00:00.000Z"),
+          paseoInstructionReceipt: { threadId: "persist-99", digest: "internal-digest" },
           empty: {},
           mcpServers: {
             hub: {
@@ -411,6 +412,8 @@ describe("toAgentPayload", () => {
           sessionId: "persist-stored",
           metadata: {
             conversationId: "conversation-stored",
+            pluginAppendSystemPrompt: ["plugin instruction"],
+            daemonAppendSystemPrompt: "daemon instruction",
             mcpServers: {
               hub: {
                 type: "http",
@@ -426,6 +429,8 @@ describe("toAgentPayload", () => {
 
     expect(record.persistence?.metadata).toEqual({
       conversationId: "conversation-stored",
+      pluginAppendSystemPrompt: ["plugin instruction"],
+      daemonAppendSystemPrompt: "daemon instruction",
       mcpServers: {
         hub: {
           type: "http",
@@ -513,6 +518,38 @@ describe("toAgentPayload", () => {
     expect(
       buildStoredAgentPayload({ ...record, lastError: null }, ["codex"], ownOptionsOnly),
     ).not.toHaveProperty("lastError");
+  });
+
+  it("shows session metrics on a live agent and on the same agent once it is closed", () => {
+    const sessionMetrics = [
+      { label: "Cost", value: "$1.23" },
+      { label: "Cache", value: "82%", tone: "ok" as const },
+    ];
+    const agent = createManagedAgent({
+      provider: "codex",
+      config: { provider: "codex" },
+      sessionMetrics,
+    });
+
+    const record = toStoredAgentRecord(agent);
+
+    expect(toAgentPayload(agent).sessionMetrics).toEqual(sessionMetrics);
+    expect(record.sessionMetrics).toEqual(sessionMetrics);
+    expect(buildStoredAgentPayload(record, ["codex"], ownOptionsOnly).sessionMetrics).toEqual(
+      sessionMetrics,
+    );
+  });
+
+  it("omits session metrics for an agent whose provider reports none", () => {
+    const agent = createManagedAgent({ provider: "codex", config: { provider: "codex" } });
+    const record = toStoredAgentRecord(agent);
+
+    expect(toAgentPayload(agent)).not.toHaveProperty("sessionMetrics");
+    expect(record).not.toHaveProperty("sessionMetrics");
+    expect(buildStoredAgentPayload(record, ["codex"], ownOptionsOnly)).not.toHaveProperty(
+      "sessionMetrics",
+    );
+    expect(toAgentPayload({ ...agent, sessionMetrics: [] })).not.toHaveProperty("sessionMetrics");
   });
 
   it("omits lastUsage when not available", () => {

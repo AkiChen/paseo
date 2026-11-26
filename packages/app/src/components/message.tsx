@@ -3,6 +3,7 @@ import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
+import { TurnMetricsButton } from "@/components/turn-metrics";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import {
   AttachmentFrame,
@@ -11,8 +12,12 @@ import {
 } from "@/components/attachment-pill";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
-import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
+import {
+  isRewindableMessage,
+  RewindMenu,
+  useRewindAgentMutation,
+  type RewindMode,
+} from "@/components/rewind";
 import { TaskListRow } from "@/components/task-list-row";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -32,7 +37,11 @@ import { useToolCallExpanded } from "@/tool-calls/expansion-context";
 import { useTargetAgentTitle } from "@/tool-calls/use-target-agent-title";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
-import type { AgentCapabilityFlags, ToolCallDetail } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentCapabilityFlags,
+  AgentMetric,
+  ToolCallDetail,
+} from "@getpaseo/protocol/agent-types";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import MaskedView from "@react-native-masked-view/masked-view";
 import {
@@ -531,7 +540,7 @@ export const UserMessage = memo(function UserMessage({
             <Text style={userMessageStylesheet.timestampText} testID="user-message-timestamp">
               {formattedTimestamp}
             </Text>
-            {capabilities && messageId ? (
+            {capabilities && isRewindableMessage(messageId, message) ? (
               <RewindMenu
                 capabilities={capabilities}
                 isPending={rewindMutation.isPending}
@@ -559,6 +568,8 @@ interface AssistantTurnFooterProps {
   onFork?: (target: AssistantForkTarget) => Promise<void> | void;
   /** Branch the provider session at this turn. Absent when unsupported. */
   onForkSession?: () => Promise<void> | void;
+  /** What the provider reported about the turn. Without any, the footer has no stats button. */
+  metrics?: AgentMetric[];
 }
 
 const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
@@ -595,6 +606,8 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     flexShrink: 0,
     color: theme.colors.foregroundMuted,
     fontSize: STREAM_METADATA_FONT_SIZE,
+    // React Native Web preserves trailing spaces at line wraps by default.
+    ...(isWeb ? { whiteSpace: "normal" } : {}),
   },
   overlappingLabel: {
     marginLeft: "-100%",
@@ -617,6 +630,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   durationMs,
   onFork,
   onForkSession,
+  metrics,
 }: AssistantTurnFooterProps) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
@@ -666,10 +680,11 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
     [onFork],
   );
   const canFork = Boolean(onFork);
+  const hasMetrics = metrics !== undefined && metrics.length > 0;
 
   return (
     <View style={assistantTurnFooterStylesheet.container}>
-      {getContent || canFork ? (
+      {getContent || canFork || hasMetrics ? (
         <View style={assistantTurnFooterStylesheet.actions}>
           {getContent ? (
             <TurnCopyButton
@@ -678,6 +693,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
             />
           ) : null}
           {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
+          {hasMetrics ? <TurnMetricsButton metrics={metrics} /> : null}
         </View>
       ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
