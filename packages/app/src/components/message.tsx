@@ -684,7 +684,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
 
   return (
     <View style={assistantTurnFooterStylesheet.container}>
-      {getContent || canFork || hasMetrics ? (
+      {getContent || canFork || hasMetrics || onForkSession ? (
         <View style={assistantTurnFooterStylesheet.actions}>
           {getContent ? (
             <TurnCopyButton
@@ -693,11 +693,10 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
             />
           ) : null}
           {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
+          {onForkSession ? <AssistantSessionForkButton onFork={onForkSession} /> : null}
           {hasMetrics ? <TurnMetricsButton metrics={metrics} /> : null}
         </View>
       ) : null}
-      {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
-      {onForkSession ? <AssistantSessionForkButton onFork={onForkSession} /> : null}
       {primaryLabel ? (
         <Pressable
           style={assistantTurnFooterStylesheet.labelButton}

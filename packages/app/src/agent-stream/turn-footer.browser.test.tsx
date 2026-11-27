@@ -198,6 +198,25 @@ describe("native session fork", () => {
 
     expect(onForkSession).toHaveBeenCalledWith({ boundaryMessageId: "handed-over" });
   });
+
+  it("puts each fork in the footer once, beside the other turn actions", () => {
+    act(() =>
+      root.render(
+        <CompletedTurnFooterRow
+          strategy={createNativeStreamStrategy()}
+          items={[handedOverReply]}
+          timing={COMPLETED_TIMING}
+          startIndex={0}
+          supportsTimelineCursor={false}
+          onForkAssistantTurn={vi.fn()}
+          onForkSession={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(host.querySelectorAll('[data-testid="assistant-fork-menu-trigger"]')).toHaveLength(1);
+    expect(host.querySelectorAll('[data-testid="assistant-session-fork-trigger"]')).toHaveLength(1);
+  });
 });
 
 const projectedReply: StreamItem = {
