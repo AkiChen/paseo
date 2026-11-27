@@ -2,7 +2,11 @@ import { Bot } from "lucide-react-native";
 import { ChatGptIcon } from "@/components/icons/chatgpt-icon";
 import { DeepSeekIcon } from "@/components/icons/deepseek-icon";
 import { MoonshotIcon } from "@/components/icons/moonshot-icon";
-import { getProviderIcon, type ProviderIconComponent } from "@/components/provider-icons";
+import {
+  getProviderIcon,
+  useProviderIcon,
+  type ProviderIconComponent,
+} from "@/components/provider-icons";
 
 const CHATGPT_ICON_ID = "chatgpt";
 const DEEPSEEK_ICON_ID = "deepseek";
@@ -83,13 +87,10 @@ export interface ModelIconInput {
  * lists. Only a generic harness — no icon, so the robot fallback — takes the
  * selected model's family, which is what a multi-vendor front end needs.
  */
-export function getModelIcon({
-  provider,
-  modelId,
-  modelLabel,
-  serverId,
-}: ModelIconInput): ProviderIconComponent {
-  const providerIcon = getProviderIcon(provider, serverId);
+function resolveModelGlyph(
+  { modelId, modelLabel }: ModelIconInput,
+  providerIcon: ProviderIconComponent,
+): ProviderIconComponent {
   if (providerIcon !== Bot) {
     return providerIcon;
   }
@@ -98,4 +99,17 @@ export function getModelIcon({
     return providerIcon;
   }
   return LOCAL_FAMILY_ICONS[familyId] ?? getProviderIcon(familyId);
+}
+
+/** The glyph read once, outside a render: the host snapshot as it stands right now. */
+export function getModelIcon(input: ModelIconInput): ProviderIconComponent {
+  return resolveModelGlyph(input, getProviderIcon(input.provider, input.serverId));
+}
+
+/**
+ * The same glyph for a render path. It subscribes to the host's provider snapshot,
+ * so a daemon that supplies its own mark replaces the fallback once it arrives.
+ */
+export function useModelIcon(input: ModelIconInput): ProviderIconComponent {
+  return resolveModelGlyph(input, useProviderIcon(input.provider, input.serverId));
 }

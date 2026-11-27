@@ -1,10 +1,18 @@
 import { useShallow } from "zustand/shallow";
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n/i18next";
-import { useProviderIcon } from "@/components/provider-icons";
+import { useModelIcon } from "@/components/model-icons";
 import type { PanelDescriptor } from "@/panels/panel-registry";
 import { useSessionStore, selectAgentTurnPresentation, type Agent } from "@/stores/session-store";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
+
+/**
+ * Live first: `model_changed` writes runtimeInfo, so it is the model the agent is running now; the
+ * snapshot field covers agents created before any runtime info existed.
+ */
+export function resolveAgentModel(agent: Agent | null | undefined): string | null {
+  return agent?.runtimeInfo?.model ?? agent?.model ?? null;
+}
 
 function formatProviderLabel(provider: Agent["provider"]): string {
   if (!provider) {
@@ -43,6 +51,7 @@ export function useAgentDescriptor(
         session?.agents?.get(target.agentId) ?? session?.agentDetails?.get(target.agentId) ?? null;
       return {
         provider: agent?.provider ?? "codex",
+        model: resolveAgentModel(agent),
         title: agent?.title ?? null,
         status: agent?.status ?? null,
         backgroundWork: agent?.backgroundWork,
@@ -53,7 +62,13 @@ export function useAgentDescriptor(
       };
     }),
   );
-  const icon = useProviderIcon(descriptorState.provider, context.serverId);
+  // The tab glyph follows the agent's model, not just its provider, so a harness
+  // that fronts several vendors does not show one robot for all of them.
+  const icon = useModelIcon({
+    provider: descriptorState.provider,
+    modelId: descriptorState.model,
+    serverId: context.serverId,
+  });
   return buildAgentDescriptor({ ...descriptorState, icon });
 }
 
