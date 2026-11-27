@@ -1299,14 +1299,6 @@ export const fr: TranslationResources = {
       hoursAgo: "il y a {{count}} h",
       daysAgo: "il y a {{count}} j",
     },
-    popup: {
-      title: "Index de travail",
-      open: "Voir toutes les tâches",
-      attention: "À surveiller",
-      review: "À vérifier",
-      recent: "Activité récente",
-      none: "Rien ne demande attention.",
-    },
   },
   workspaceLabels: {
     title: "Étiquettes",

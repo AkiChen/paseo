@@ -1291,14 +1291,6 @@ export const ja: TranslationResources = {
       hoursAgo: "{{count}} 時間前",
       daysAgo: "{{count}} 日前",
     },
-    popup: {
-      title: "作業インデックス",
-      open: "すべてのタスクを見る",
-      attention: "要注意",
-      review: "確認待ち",
-      recent: "最近の動き",
-      none: "今は注意が必要な項目はありません。",
-    },
   },
   workspaceLabels: {
     title: "ラベル",

@@ -1262,14 +1262,6 @@ export const zhCN: TranslationResources = {
       hoursAgo: "{{count}} 小时前",
       daysAgo: "{{count}} 天前",
     },
-    popup: {
-      title: "工作索引",
-      open: "查看全部事项",
-      attention: "需关注",
-      review: "待验收",
-      recent: "最近进展",
-      none: "当前没有需要关注的事项。",
-    },
   },
   workspaceLabels: {
     title: "标签",

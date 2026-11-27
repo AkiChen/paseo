@@ -3,11 +3,9 @@ import type { WorkLedgerItem } from "@getpaseo/protocol/work-ledger/types";
 import {
   buildScopeOptions,
   buildWorkLedgerRows,
-  collectAttentionCounts,
   itemMatchesStatusFilter,
   orderAgentLinks,
   resolveWorkLedgerBodyState,
-  selectPopupHosts,
   type WorkLedgerHostView,
 } from "./work-ledger-screen-state";
 
@@ -196,47 +194,6 @@ describe("work ledger body state", () => {
         filtersActive,
       }).kind,
     ).toBe("load-error");
-  });
-
-  test("popup counts include cached items from hosts whose status has not settled", () => {
-    const counts = collectAttentionCounts([
-      host({ items: [item({ attention: ["blocked"] }), item({ id: "b", status: "review" })] }),
-      host({
-        serverId: "s2",
-        status: "offline",
-        items: [item({ id: "c", attention: ["stalled"] })],
-      }),
-    ]);
-    // Real work must not disappear from the summary because a host's status lags.
-    expect(counts).toEqual({ attention: 2, review: 1, inProgress: 2, total: 3 });
-  });
-});
-
-describe("popup host selection", () => {
-  test("every host with items is summarized, whichever one the workspace is on", () => {
-    const hosts = [
-      host({ serverId: "s1", items: [item({ id: "local" })] }),
-      host({ serverId: "s2", items: [item({ id: "remote" })] }),
-      host({ serverId: "s3", status: "offline" }),
-      host({ serverId: "s4", status: "unsupported", syncedAt: null }),
-    ];
-    expect(selectPopupHosts({ hosts, serverId: "s1" }).map((entry) => entry.serverId)).toEqual([
-      "s1",
-      "s2",
-    ]);
-    expect(selectPopupHosts({ hosts }).map((entry) => entry.serverId)).toEqual(["s1", "s2"]);
-  });
-
-  test("an empty host only shows while it is the current one, and unsupported never shows", () => {
-    const hosts = [
-      host({ serverId: "s1" }),
-      host({ serverId: "s2", status: "unsupported", syncedAt: null }),
-    ];
-    expect(selectPopupHosts({ hosts, serverId: "s2" })).toEqual([]);
-    expect(selectPopupHosts({ hosts, serverId: "missing" })).toEqual([]);
-    expect(selectPopupHosts({ hosts, serverId: "s1" }).map((entry) => entry.serverId)).toEqual([
-      "s1",
-    ]);
   });
 });
 

@@ -1292,14 +1292,6 @@ export const ru: TranslationResources = {
       hoursAgo: "{{count}} ч назад",
       daysAgo: "{{count}} дн. назад",
     },
-    popup: {
-      title: "Индекс работ",
-      open: "Все задачи",
-      attention: "Требуют внимания",
-      review: "На проверке",
-      recent: "Недавняя активность",
-      none: "Сейчас ничего не требует внимания.",
-    },
   },
   workspaceLabels: {
     title: "Метки",

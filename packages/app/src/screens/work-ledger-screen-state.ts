@@ -203,52 +203,6 @@ export function buildScopeOptions(input: {
   return options;
 }
 
-export function collectAttentionCounts(hosts: readonly WorkLedgerHostView[]): {
-  attention: number;
-  review: number;
-  inProgress: number;
-  total: number;
-} {
-  let attention = 0;
-  let review = 0;
-  let inProgress = 0;
-  let total = 0;
-  for (const host of hosts) {
-    // Cached items count: a host whose status has not settled still has work worth
-    // naming in the summary.
-    for (const item of host.items) {
-      total += 1;
-      if (item.attention.length > 0) attention += 1;
-      if (item.status === "review") review += 1;
-      if (item.status === "in_progress") inProgress += 1;
-    }
-  }
-  return { attention, review, inProgress, total };
-}
-
-/**
- * Which hosts the popup reads. It is a summary, not a host-scoped view: by default it
- * covers every host that has data, because an item written by an agent on another
- * daemon is exactly the thing a user is looking for here.
- *
- * Hosts with no items and hosts that do not serve the ledger are dropped; a host
- * whose status has not settled (offline, still connecting) still contributes its
- * cached items. Hiding real work behind a status flag is worse than showing items a
- * moment stale.
- */
-export function selectPopupHosts(input: {
-  hosts: readonly WorkLedgerHostView[];
-  serverId?: string;
-}): WorkLedgerHostView[] {
-  return input.hosts.filter((host) => {
-    if (host.status === "unsupported") return false;
-    if (host.items.length > 0) return true;
-    // An empty host only earns a slot while it is the one being looked at, so the
-    // popup can still say "nothing here yet" for the workspace the user is in.
-    return host.serverId === input.serverId;
-  });
-}
-
 export function sortAttentionReasons(
   reasons: readonly WorkLedgerAttentionReason[],
 ): WorkLedgerAttentionReason[] {

@@ -57,7 +57,6 @@ import {
   MobileWorkspaceTabSwitcher,
 } from "@/screens/workspace/compact-workspace-header";
 import { WorkspaceHeaderTitleEditor } from "@/screens/workspace/workspace-header-title-editor";
-import { WorkLedgerPopup } from "@/components/work-ledger-popup";
 import { HostBadge } from "@/hosts/host-badge";
 import { useHostBadges } from "@/hosts/use-host-badges";
 import {
@@ -3252,7 +3251,6 @@ function WorkspaceScreenContent({
     () => (
       <View style={styles.headerRight}>
         <PluginHeaderButtons serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
-        <WorkLedgerPopup serverId={normalizedServerId} />
         {workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
             actions={scriptActions}

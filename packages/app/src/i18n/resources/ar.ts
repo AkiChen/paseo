@@ -1270,14 +1270,6 @@ export const ar: TranslationResources = {
       hoursAgo: "قبل {{count}} س",
       daysAgo: "قبل {{count}} ي",
     },
-    popup: {
-      title: "فهرس العمل",
-      open: "عرض كل المهام",
-      attention: "يتطلب انتباهًا",
-      review: "بانتظار المراجعة",
-      recent: "النشاط الأخير",
-      none: "لا شيء يتطلب الانتباه الآن.",
-    },
   },
   workspaceLabels: {
     title: "التسميات",

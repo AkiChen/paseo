@@ -1277,14 +1277,6 @@ export const ko: TranslationResources = {
       hoursAgo: "{{count}}시간 전",
       daysAgo: "{{count}}일 전",
     },
-    popup: {
-      title: "작업 인덱스",
-      open: "모든 작업 보기",
-      attention: "주의 필요",
-      review: "검토 필요",
-      recent: "최근 활동",
-      none: "지금 주의가 필요한 항목이 없습니다.",
-    },
   },
   workspaceLabels: {
     title: "레이블",

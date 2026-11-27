@@ -1300,14 +1300,6 @@ export const ptBR: TranslationResources = {
       hoursAgo: "há {{count}} h",
       daysAgo: "há {{count}} d",
     },
-    popup: {
-      title: "Índice de trabalho",
-      open: "Ver todas as tarefas",
-      attention: "Precisam de atenção",
-      review: "Para revisar",
-      recent: "Atividade recente",
-      none: "Nada precisa de atenção agora.",
-    },
   },
   workspaceLabels: {
     title: "Etiquetas",

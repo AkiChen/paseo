@@ -1282,14 +1282,6 @@ export const en = {
       hoursAgo: "{{count}}h ago",
       daysAgo: "{{count}}d ago",
     },
-    popup: {
-      title: "Work index",
-      open: "View all tasks",
-      attention: "Needs attention",
-      review: "Needs review",
-      recent: "Recent activity",
-      none: "Nothing needs attention right now.",
-    },
   },
   workspaceLabels: {
     title: "Labels",
