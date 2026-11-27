@@ -307,6 +307,10 @@ const StoredAppSettingsSchema = z
       .catch(undefined),
     // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
     compactToolCalls: z.boolean().optional().catch(undefined),
+    // COMPAT(turnProcessFolding): this fork's own fold switch, replaced by chatDisplay when the
+    // upstream settings landed. `compact` folded a turn's process; `standard` left it open.
+    // Without this a reader upgrading from the fork falls through to `full` and loses the fold.
+    turnProcessFolding: z.enum(["compact", "standard"]).optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
     sendShortcut: z.enum(["enter", "mod-enter"]).catch("enter"),
@@ -345,7 +349,8 @@ const StoredAppSettingsSchema = z
     const needsWrite =
       contentMaxWidth !== undefined ||
       (stored.uiBaseFontSize === undefined && stored.uiFontSize !== undefined) ||
-      stored.contentFontSize === undefined;
+      stored.contentFontSize === undefined ||
+      stored.turnProcessFolding !== undefined;
     const uiBaseFontSize =
       stored.uiBaseFontSize ??
       (stored.uiFontSize === undefined
@@ -359,7 +364,12 @@ const StoredAppSettingsSchema = z
     const groupsToolCalls = stored.toolCallDetailLevel
       ? stored.toolCallDetailLevel === "overview"
       : stored.compactToolCalls === true;
-    const chatDisplay = stored.chatDisplay ?? (groupsToolCalls ? "collapseToolCalls" : "full");
+    // The fork's own fold switch wins: chatDisplay did not exist when it was written.
+    let legacyChatDisplay: ChatDisplay = groupsToolCalls ? "collapseToolCalls" : "full";
+    if (stored.turnProcessFolding === "compact") {
+      legacyChatDisplay = "collapseTurns";
+    }
+    const chatDisplay = stored.chatDisplay ?? legacyChatDisplay;
     return {
       ...stored,
       contentWidth: stored.contentWidth ?? contentMaxWidth ?? "default",

@@ -862,6 +862,39 @@ describe("appearance settings", () => {
     expect((await loadAppSettingsFromStorage(deps)).chatDisplay).toBe(display);
   });
 
+  it("reads this fork's compact turn folding as collapsed turns", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ turnProcessFolding: "compact" }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).chatDisplay).toBe("collapseTurns");
+  });
+
+  it("keeps the fork's standard turn folding open", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ turnProcessFolding: "standard" }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).chatDisplay).toBe("full");
+  });
+
+  it("keeps a stored chat display over the fork's turn folding", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          chatDisplay: "full",
+          turnProcessFolding: "compact",
+        }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).chatDisplay).toBe("full");
+  });
+
   it("keeps a stored chat display over the tool call detail level it replaced", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
