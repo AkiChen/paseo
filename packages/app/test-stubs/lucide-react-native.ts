@@ -50,6 +50,7 @@ export const FolderTree = StubIcon;
 export const Gift = StubIcon;
 export const GitBranch = StubIcon;
 export const GitCommitHorizontal = StubIcon;
+export const GitFork = StubIcon;
 export const GitMerge = StubIcon;
 export const GitPullRequest = StubIcon;
 export const GitPullRequestClosed = StubIcon;

@@ -9,6 +9,7 @@ import { i18n } from "@/i18n/i18next";
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
 import { createNativeStreamStrategy } from "./strategy-native";
+import type { AssistantTurnForkBoundary } from "./turn-boundary";
 import { CompletedTurnFooterRow } from "./turn-footer";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -148,6 +149,54 @@ describe("turn stats", () => {
     renderFooterWithMetrics(metrics);
 
     expect(host.getBoundingClientRect().height).toBe(without);
+  });
+});
+
+const handedOverReply: StreamItem = {
+  kind: "assistant_message",
+  id: "handed-over",
+  messageId: "handed-over",
+  text: "Done.",
+  timestamp: FRIDAY_NIGHT,
+};
+
+describe("native session fork", () => {
+  function renderFooterWithSessionFork(
+    onForkSession?: (boundary: AssistantTurnForkBoundary) => void,
+  ): void {
+    act(() =>
+      root.render(
+        <CompletedTurnFooterRow
+          strategy={createNativeStreamStrategy()}
+          items={[handedOverReply]}
+          timing={COMPLETED_TIMING}
+          startIndex={0}
+          supportsTimelineCursor={false}
+          onForkSession={onForkSession}
+        />,
+      ),
+    );
+  }
+
+  it("shows the session fork only when a provider can branch its own session", () => {
+    renderFooterWithSessionFork(undefined);
+    expect(host.querySelector('[data-testid="assistant-session-fork-trigger"]')).toBeNull();
+
+    renderFooterWithSessionFork(vi.fn());
+    expect(host.querySelector('[data-testid="assistant-session-fork-trigger"]')).not.toBeNull();
+  });
+
+  it("forks at the boundary of the turn that was clicked", async () => {
+    const onForkSession = vi.fn();
+    renderFooterWithSessionFork(onForkSession);
+
+    const trigger = host.querySelector<HTMLElement>(
+      '[data-testid="assistant-session-fork-trigger"]',
+    );
+    expect(trigger).not.toBeNull();
+    await act(async () => trigger?.click());
+
+    expect(onForkSession).toHaveBeenCalledWith({ boundaryMessageId: "handed-over" });
   });
 });
 
