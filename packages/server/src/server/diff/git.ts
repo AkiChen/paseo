@@ -42,8 +42,10 @@ interface WorktreeInput {
   oldBlob: string | null;
   /** A regular file whose bytes readGitInputs blob-hashes. */
   hashed: boolean;
-  /** Content Git cannot read as a regular file, such as a symlink target or submodule state. */
+  /** Content Git cannot read as a regular file: a symlink target or a submodule state. */
   literal: string | null;
+  /** Git listed the path, but the worktree holds no copy of it. */
+  missing: boolean;
 }
 interface ResolvedComparison {
   baseSha: string;
@@ -75,6 +77,9 @@ export class DiffReadError extends Error {
   }
 }
 const EMPTY = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+// Keeps one re-listing's argument list short enough for the Windows command
+// line, so a large sparse changes view does not become one process per path.
+const VANISHED_PATH_BATCH_SIZE = 200;
 export function validateCompare(compare: Compare): void {
   if (compare.head.kind === "empty")
     throw new DiffReadError("INVALID_COMPARE", "The head cannot be empty");
@@ -228,6 +233,7 @@ async function readComparisonList(
     const untracked = await listUntrackedFiles(options);
     files.push(...untracked.files);
     for (const [path, input] of untracked.worktreeInputs) worktreeInputs.set(path, input);
+    await dropVanishedEntries(files, worktreeInputs, args, options);
   }
   files.sort((a, b) => a.entry.path.localeCompare(b.entry.path));
   for (const file of files) tracked.interpretationPaths.add(file.entry.path);
@@ -391,22 +397,24 @@ async function readTrackedFiles(
     else if (oldPath !== null) change = "renamed";
     let identity = header.join(" ");
     if (compare.head.kind === "worktree") {
+      // A sparse checkout keeps an entry in the index without materializing it,
+      // and Git still diffs it, so an absent file is not a vanished path.
+      const content =
+        code === "D"
+          ? null
+          : await readWorktreeContent({ path, header, text: !counts.binary, options });
       const input: WorktreeInput = {
         oldMode: code === "A" ? null : header[0],
         oldBlob: code === "A" ? null : absentBlob(header[2]),
-        hashed: false,
-        literal: null,
+        hashed: content?.hashed ?? false,
+        literal: content?.literal ?? null,
+        missing: content === null && code !== "D",
       };
-      if (code !== "D") {
-        const worktree = await readWorktreeContent({
-          path,
-          header,
-          text: !counts.binary,
-          options,
-        });
-        if (worktree === null) continue;
-        input.hashed = worktree.hashed;
-        input.literal = worktree.literal;
+      const listedBlob = absentBlob(header[3]);
+      if (input.missing && listedBlob !== null) {
+        // Git diffs a path it cannot read from the worktree against the blob the
+        // index holds, so that blob is the content identity of the change.
+        input.literal = `index-blob:${listedBlob}`;
       }
       worktreeInputs.set(path, input);
       identity = "";
@@ -433,9 +441,51 @@ async function readTrackedFiles(
 // paths before the content read. A vanished path is not part of this revision's
 // worktree state, so the caller drops the entry and the next revision reports
 // the deletion, instead of failing the comparison with a raw ENOENT.
+//
+// Git decides which absent paths vanished: a sparse checkout's unmaterialized
+// entry stays listed while the working-tree diff names it, even with the index
+// flag spelled out as something sparse checkout did not set.
 function isVanishedPath(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === "ENOENT" || code === "ENOTDIR";
+}
+
+// Drop the listed entries that the worktree lost before this revision read them.
+// The private index must reach this check: its GIT_INDEX_FILE decides whether the
+// worktree diff can see the entries at all.
+async function dropVanishedEntries(
+  files: ListedFile[],
+  worktreeInputs: Map<string, WorktreeInput>,
+  diffArgs: string[],
+  options: GitCommandOptions,
+): Promise<void> {
+  const absent = files
+    .filter((file) => worktreeInputs.get(file.entry.path)?.missing === true)
+    .map((file) => file.entry.path);
+  if (absent.length === 0) return;
+  const listed = new Set<string>();
+  for (let start = 0; start < absent.length; start += VANISHED_PATH_BATCH_SIZE) {
+    const paths = absent
+      .slice(start, start + VANISHED_PATH_BATCH_SIZE)
+      .map((path) => `:(literal)${path}`);
+    const result = await runGitCommand(
+      [...diffArgs.filter((arg) => arg !== "-w"), "--raw", "-z", "--", ...paths],
+      { ...options, envOverlay: { ...options.envOverlay, GIT_LITERAL_PATHSPECS: "1" } },
+    );
+    for (const record of result.stdout.split("\0")) {
+      const separator = record.indexOf("\t");
+      if (separator >= 0) listed.add(record.slice(separator + 1));
+    }
+  }
+  // Nothing vanished: every listed path is still the worktree's state.
+  if (listed.size === 0) return;
+  const kept = files.filter((file) => {
+    const path = file.entry.path;
+    if (!listed.has(path)) return true;
+    worktreeInputs.delete(path);
+    return false;
+  });
+  files.splice(0, files.length, ...kept);
 }
 
 export async function readWorktreeContent({
@@ -545,6 +595,7 @@ async function listUntrackedFiles(
         oldBlob: null,
         hashed: !symlink && !binary && !omitted,
         literal: symlink ? `symlink:${content.toString("utf8")}` : null,
+        missing: false,
       });
       files.push({
         entry: {

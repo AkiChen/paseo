@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from "react";
-import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
+import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { CircleCheck, CircleDot, CircleX, MessageCircleWarning } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
 import { useAggregatedAgents } from "@/hooks/use-aggregated-agents";
 import { usePanelStore } from "@/stores/panel-store";
 import { useSidebarListModeStore } from "@/stores/sidebar-list-mode-store";
@@ -21,13 +21,6 @@ const waitingColorMapping = (theme: Theme) => ({ color: theme.colors.statusDotWa
 const failedColorMapping = (theme: Theme) => ({ color: theme.colors.statusDotDanger });
 const runningColorMapping = (theme: Theme) => ({ color: theme.colors.statusDotRunning });
 const attentionColorMapping = (theme: Theme) => ({ color: theme.colors.statusDotSuccess });
-
-function itemPressableStyle({
-  hovered,
-  pressed,
-}: PressableStateCallbackType & { hovered?: boolean }) {
-  return [styles.item, (Boolean(hovered) || pressed) && styles.itemHovered];
-}
 
 /**
  * The top bar's live agent pulse. It reads one global aggregate, not the
@@ -95,24 +88,16 @@ export function AgentStatusSummary() {
   return (
     <View style={styles.row} testID="agent-status-summary">
       {items.map((item) => (
-        <Tooltip key={item.key} delayDuration={400} enabledOnDesktop enabledOnMobile={false}>
-          <TooltipTrigger asChild>
-            <Pressable
-              testID={`agent-status-summary-${item.key}`}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              hitSlop={4}
-              onPress={handleOpenAgents}
-              style={itemPressableStyle}
-            >
-              {item.icon}
-              <Text style={styles.count}>{item.count}</Text>
-            </Pressable>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="center" offset={8}>
-            <Text style={styles.tooltipText}>{item.label}</Text>
-          </TooltipContent>
-        </Tooltip>
+        <ToolbarButton
+          key={item.key}
+          testID={`agent-status-summary-${item.key}`}
+          label={item.label}
+          onPress={handleOpenAgents}
+          style={styles.item}
+        >
+          {item.icon}
+          <Text style={styles.count}>{item.count}</Text>
+        </ToolbarButton>
       ))}
     </View>
   );
@@ -128,21 +113,13 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
+    width: "auto",
     paddingHorizontal: theme.spacing[1],
-    paddingVertical: 2,
-    borderRadius: theme.borderRadius.md,
-  },
-  itemHovered: {
-    backgroundColor: theme.colors.surfaceSidebarHover,
   },
   count: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.foreground,
     fontVariant: ["tabular-nums"],
-  },
-  tooltipText: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.popoverForeground,
   },
 }));

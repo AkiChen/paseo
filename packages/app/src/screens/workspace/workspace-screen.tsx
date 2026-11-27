@@ -48,6 +48,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import invariant from "tiny-invariant";
 import { SidebarMenuToggle } from "@/components/headers/sidebar-menu-toggle";
+import { AgentStatusSummary } from "@/components/headers/agent-status-summary";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { FloatingHeaderLayout } from "@/components/floating-header";
@@ -228,6 +229,7 @@ import {
 import { RenderProfile } from "@/utils/render-profiler";
 import { useWorkspaceCheckoutStatus } from "@/screens/workspace/use-workspace-checkout-status";
 import { useWorkspacePullRequestDiscovery } from "@/panels/pull-request";
+import { MorphicBalance } from "@/morphic-balance/balance";
 
 const NO_SHEETS: readonly SheetTab[] = [];
 const WORKSPACE_FLOATING_PANEL_PORTAL_HOST_PREFIX = "workspace-floating-panels";
@@ -3250,7 +3252,9 @@ function WorkspaceScreenContent({
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        {!isMobile ? <AgentStatusSummary /> : null}
         <PluginHeaderButtons serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
+        {!isMobile && getIsElectron() ? <MorphicBalance /> : null}
         {workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
             actions={scriptActions}
@@ -3290,6 +3294,7 @@ function WorkspaceScreenContent({
       handleOpenUrlInBrowserTab,
       explorerControls.headerAction,
       workspaceActionsInBar,
+      isMobile,
     ],
   );
 

@@ -32,7 +32,12 @@ describe("summarizeAgentStatusCounts", () => {
       createAgent({ id: "permission", pendingPermissionCount: 1 }),
       createAgent({ id: "review", requiresAttention: true }),
       createAgent({ id: "running", status: "running" }),
-      createAgent({ id: "failed", status: "error" }),
+      createAgent({
+        id: "failed",
+        status: "error",
+        requiresAttention: true,
+        attentionReason: "error",
+      }),
       createAgent({ id: "done" }),
     ]);
 
@@ -42,6 +47,14 @@ describe("summarizeAgentStatusCounts", () => {
       attention: 1,
       running: 1,
     });
+  });
+
+  it("stays silent for an error the user already read", () => {
+    expect(
+      summarizeAgentStatusCounts([
+        createAgent({ status: "error", requiresAttention: false, attentionReason: null }),
+      ]),
+    ).toEqual({ waiting: 0, failed: 0, attention: 0, running: 0 });
   });
 
   it("counts an initializing agent as running instead of done", () => {

@@ -816,6 +816,53 @@ test("an uninitialized submodule below a bare repository layout does not fail th
   }
 });
 
+test("a sparse worktree lists an unmaterialized entry and diffs it from the index blob", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "diff-sparse-"));
+  const git = (...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  const { mkdir } = await import("node:fs/promises");
+  try {
+    git("init", "-b", "main");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    git("config", "core.autocrlf", "false");
+    await mkdir(join(cwd, "tests"));
+    await writeFile(join(cwd, "tests", "a.py"), "before\n");
+    await writeFile(join(cwd, "tests", "same.py"), "unchanged\n");
+    git("add", ".");
+    git("-c", "commit.gpgsign=false", "commit", "-m", "base");
+    const base = git("rev-parse", "HEAD");
+    await writeFile(join(cwd, "tests", "a.py"), "after\n");
+    git("add", ".");
+    git("-c", "commit.gpgsign=false", "commit", "-m", "edit");
+    // A sparse checkout keeps both paths in the index and out of the worktree.
+    git("update-index", "--skip-worktree", "tests/a.py", "tests/same.py");
+    await rm(join(cwd, "tests", "a.py"));
+    await rm(join(cwd, "tests", "same.py"));
+    expect(git("diff", "--raw", "--no-abbrev", base)).toContain("tests/a.py");
+
+    const comparison = await listComparison({
+      cwd,
+      base: { kind: "rev", rev: base },
+      head: { kind: "worktree" },
+      highlight: false,
+    });
+    try {
+      expect(comparison.files.map((file) => [file.entry.path, file.entry.change])).toEqual([
+        ["tests/a.py", "modified"],
+      ]);
+      const record = await readBody(comparison);
+      expect(record.body.hunks.flatMap((hunk) => hunk.lines)).toContainEqual({
+        type: "add",
+        content: "after",
+      });
+    } finally {
+      await comparison.close();
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("a worktree entry deleted after Git listed it reads as gone instead of failing", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "diff-vanished-entry-"));
   const header = ["100644", "100644", "0".repeat(40), "0".repeat(40)];
