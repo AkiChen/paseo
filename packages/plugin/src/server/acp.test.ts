@@ -1361,6 +1361,10 @@ lines.on("line", (line) => {
       const harness = connectorHarness({
         handleMessage(instance, message) {
           if (!("method" in message) || !("id" in message)) return false;
+          if (message.method === "session/cancel") {
+            instance.respond(message as AcpRequestMessage, {});
+            return true;
+          }
           if (message.method !== "session/prompt") return false;
           instance.notify("vendor/phase", { id: "phase-1", label: "Preparing" });
           instance.respond(message as AcpRequestMessage, { stopReason });
@@ -2415,7 +2419,7 @@ describe("runAcpProvider streamed chunks without messageId (#4699)", () => {
     const chunksByPrompt: Record<string, Chunk[]> = {
       first: [
         { kind: "agent_message_chunk", text: "- **Current tem" },
-        { kind: "agent_message_chunk", text: "perature**: 25°C" },
+        { kind: "agent_message_chunk", text: "perature**: 25鎺矯" },
       ],
       second: [{ kind: "agent_message_chunk", text: "next turn" }],
       // An explicit-id text chunk between two id-less thoughts separates them.
@@ -2485,7 +2489,7 @@ describe("runAcpProvider streamed chunks without messageId (#4699)", () => {
     );
     expect(items).toEqual([
       { id: "agent_message_chunk:1", text: "- **Current tem" },
-      { id: "agent_message_chunk:1", text: "- **Current temperature**: 25°C" },
+      { id: "agent_message_chunk:1", text: "- **Current temperature**: 25鎺矯" },
       { id: "agent_message_chunk:2", text: "next turn" },
       { id: "agent_thought_chunk:3", text: "think A" },
       {
@@ -2770,7 +2774,7 @@ describe("ACP session history replay", () => {
           status: "in_progress",
         },
         { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" },
-        textChunk("It is 25°C"),
+        textChunk("It is 25鎺矯"),
       ],
       "replay",
     );
@@ -2785,7 +2789,7 @@ describe("ACP session history replay", () => {
         { type: "reasoning", id: "agent_thought_chunk:1", text: "Checking the sensor" },
         { type: "tool_call", id: "tool-1", status: "running" },
         { type: "tool_call", id: "tool-1", status: "completed" },
-        { type: "assistant_message", id: "agent_message_chunk:2", text: "It is 25°C" },
+        { type: "assistant_message", id: "agent_message_chunk:2", text: "It is 25鎺矯" },
       ]);
       const lastReplayed = events.findLastIndex((event) => event.type === "timeline.item");
       const opened = events.findIndex((event) => event.type === "session.opened");
@@ -2803,7 +2807,7 @@ describe("ACP session history replay", () => {
         textChunk("Checking ", "agent_thought_chunk", "shared-id"),
         textChunk("the sensor", "agent_thought_chunk", "shared-id"),
         textChunk("It is ", "agent_message_chunk", "shared-id"),
-        textChunk("25°C", "agent_message_chunk", "shared-id"),
+        textChunk("25鎺矯", "agent_message_chunk", "shared-id"),
       ],
       "replay",
     );
@@ -2829,7 +2833,7 @@ describe("ACP session history replay", () => {
           type: "assistant_message",
           id: '["agent_message_chunk","shared-id"]',
           messageId: "shared-id",
-          text: "It is 25°C",
+          text: "It is 25鎺矯",
         },
       ]);
     } finally {
@@ -7452,6 +7456,171 @@ lines.on("line", (line) => {
       capabilities: ["prompt.message", "session.launch_wrap"],
     });
     expect(connection.capabilities).not.toContain("session.launch_wrap");
+  });
+
+  it("shows an ask-style tool call as a question card instead of a tool row", async () => {
+    const { registration } = askHarness();
+    const { connection, events, card } = await connectAndAsk(registration);
+
+    expect(card).toMatchObject({
+      id: "question:ask-1",
+      kind: "question",
+      title: "Which branch?",
+      input: {
+        questions: [
+          {
+            question: "Which branch?",
+            header: "Which branch?",
+            options: [{ label: "main" }],
+            multiSelect: false,
+            allowOther: true,
+          },
+        ],
+      },
+    });
+    expect(askToolRows(events)).toEqual([]);
+    await connection.close();
+  });
+
+  it("sends the card's answer as the prompt the agent reads it from", async () => {
+    const { registration, promptTexts } = askHarness();
+    const { connection, events, card } = await connectAndAsk(registration);
+
+    await connection.send({
+      type: "session.permission",
+      sessionId: "session-1",
+      permissionId: card?.id ?? "",
+      response: { behavior: "allow", updatedInput: { answers: { "Which branch?": "release" } } },
+    });
+
+    const waitForAnswerPrompt = expect.poll(() => promptTexts);
+    await waitForAnswerPrompt.toEqual(["ask", "release"]);
+    expect(hasUserMessage(events, "release")).toBe(true);
+    expect(hasResolved(events, card?.id ?? "")).toBe(true);
+    expect(askToolRows(events)).toEqual([]);
+    await connection.close();
+  });
+
+  it("closes the card when the user's own prompt answers the question", async () => {
+    const { registration, promptTexts } = askHarness();
+    const { connection, events, card } = await connectAndAsk(registration);
+
+    await connection.send({
+      type: "session.prompt",
+      sessionId: "session-1",
+      prompt: {
+        clientMessageId: "typed",
+        delivery: "auto",
+        input: { type: "message", content: [{ type: "text", text: "typed answer" }] },
+      },
+    });
+
+    const waitForResolution = expect.poll(() => hasResolved(events, card?.id ?? ""));
+    await waitForResolution.toBe(true);
+    expect(promptTexts).toEqual(["ask", "typed answer"]);
     await connection.close();
   });
 });
+
+const askToolCall = {
+  sessionUpdate: "tool_call",
+  toolCallId: "ask-1",
+  name: "ask_question",
+  status: "in_progress",
+  kind: "other",
+  rawInput: { questions: [{ question: "Which branch?", options: ["main"] }] },
+};
+
+function hasResolved(events: ProviderEvent[], permissionId: string): boolean {
+  return events.some(
+    (event) => event.type === "session.permission_resolved" && event.permissionId === permissionId,
+  );
+}
+
+function hasUserMessage(events: ProviderEvent[], text: string): boolean {
+  return events.some(
+    (event) =>
+      event.type === "timeline.item" &&
+      event.item.type === "user_message" &&
+      event.item.text === text,
+  );
+}
+
+function askToolRows(events: ProviderEvent[]) {
+  return events.filter(
+    (event) => event.type === "timeline.item" && event.item.type === "tool_call",
+  );
+}
+
+async function waitForQuestionCard(events: ProviderEvent[]) {
+  const card = await waitForEvent(
+    events,
+    (event) => event.type === "session.permission" && event.request.kind === "question",
+  );
+  return card.type === "session.permission" ? card.request : null;
+}
+
+// The agent publishes the tool's row, and the first prompt text decides whether to ask.
+function askHarness() {
+  const promptTexts: string[] = [];
+  const harness = connectorHarness({
+    handleMessage(instance, message) {
+      if (!("method" in message) || !("id" in message)) return false;
+      if (message.method === "session/cancel") {
+        instance.respond(message as AcpRequestMessage, {});
+        return true;
+      }
+      if (message.method !== "session/prompt") return false;
+      const { prompt } = message.params as { prompt: Array<{ type: string; text?: string }> };
+      const text = prompt.find((part) => part.type === "text")?.text ?? "";
+      promptTexts.push(text);
+      if (text === "ask") {
+        instance.notify("session/update", { sessionId: "connector-session", update: askToolCall });
+        instance.notify("session/update", {
+          sessionId: "connector-session",
+          update: { ...askToolCall, sessionUpdate: "tool_call_update", status: "pending" },
+        });
+      }
+      instance.respond(message as AcpRequestMessage, { stopReason: "end_turn" });
+      return true;
+    },
+  });
+  const registration = runAcpProvider({
+    id: "ask-acp",
+    label: "Ask ACP",
+    connector: harness.connector,
+    transformers: [
+      {
+        toolCallQuestion: (call) =>
+          call.name === "ask_question"
+            ? {
+                questions: [{ question: "Which branch?", options: [{ label: "main" }] }],
+                promptText: (answers) => answers[0] ?? "",
+              }
+            : null,
+      },
+    ],
+  });
+  return { promptTexts, registration };
+}
+
+async function connectAndAsk(registration: ReturnType<typeof askHarness>["registration"]) {
+  const connection = await registration.connect({
+    versions: [1],
+    capabilities: ["prompt.message", "permission"],
+  });
+  const events: ProviderEvent[] = [];
+  connection.onEvent((event) => events.push(event));
+  await connection.send(openInput());
+  await waitForEvent(events, (event) => event.type === "session.ready");
+  await connection.send({
+    type: "session.prompt",
+    sessionId: "session-1",
+    prompt: {
+      clientMessageId: "first",
+      delivery: "auto",
+      input: { type: "message", content: [{ type: "text", text: "ask" }] },
+    },
+  });
+  return { connection, events, card: await waitForQuestionCard(events) };
+}

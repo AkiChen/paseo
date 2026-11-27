@@ -1,4 +1,10 @@
-import type { AcpToolCallSnapshot, AcpTransformer } from "@getpaseo/plugin/server/acp";
+import type {
+  AcpQuestion,
+  AcpQuestionOption,
+  AcpToolCallQuestion,
+  AcpToolCallSnapshot,
+  AcpTransformer,
+} from "@getpaseo/plugin/server/acp";
 import type { ProviderToolCallDetail } from "@getpaseo/plugin/server/provider";
 import { z } from "zod";
 
@@ -14,6 +20,65 @@ const fileRead = z.object({
 });
 const fileWrite = z.object({ Path: z.string(), Content: z.string().optional() });
 const webSearch = z.object({ query: z.string() });
+
+// ask_question's own argument names are snake_case (`is_multi_select`), and an option is a bare
+// string. Accept the camelCase and object shapes too, as agy is free to change them.
+const askOption = z.union([z.string(), z.object({ label: z.string() }).passthrough()]);
+const askQuestion = z.object({
+  question: z.string(),
+  options: z.array(askOption).optional(),
+  is_multi_select: z.boolean().optional(),
+  isMultiSelect: z.boolean().optional(),
+  multiSelect: z.boolean().optional(),
+});
+const askInput = z.object({ questions: z.array(askQuestion) });
+
+/**
+ * agy asks the user through the `ask_question` tool rather than an ACP permission request: the
+ * call stays pending, the agent writes the question as a message and ends the turn, and the next
+ * prompt is the answer. Without this, the question is ordinary text and its tool row never settles.
+ */
+export const askQuestionFromToolCall: NonNullable<AcpTransformer["toolCallQuestion"]> = (call) => {
+  if (call.name !== "ask_question") return null;
+  const parsed = askInput.safeParse(call.input);
+  if (!parsed.success) return null;
+  const questions: AcpQuestion[] = parsed.data.questions.map((question) => ({
+    question: question.question,
+    options: question.options?.map(readOption) ?? [],
+    multiSelect:
+      question.is_multi_select === true ||
+      question.isMultiSelect === true ||
+      question.multiSelect === true,
+  }));
+  const only = questions.length === 1 ? questions[0] : undefined;
+  return {
+    questions,
+    // One question's answer is the whole prompt; several are numbered against their questions.
+    promptText: (answers) => (only ? (answers[0] ?? "") : formatAnswers(questions, answers)),
+  } satisfies AcpToolCallQuestion;
+};
+
+function readOption(option: z.infer<typeof askOption>): AcpQuestionOption {
+  if (typeof option === "string") return stripRecommended(option);
+  return stripRecommended(option.label);
+}
+
+/** agy ranks an option by prefixing it; the cards mark the first choice themselves. */
+function stripRecommended(label: string): AcpQuestionOption {
+  const trimmed = label.trim();
+  const marked = /^\(recommended\)\s*/i.exec(trimmed);
+  return { label: marked ? trimmed.slice(marked[0].length).trim() : trimmed };
+}
+
+function formatAnswers(questions: readonly AcpQuestion[], answers: readonly string[]): string {
+  return questions
+    .map((question, index) => {
+      const answer = (answers[index] ?? "").trim();
+      return answer.length > 0 ? `${index + 1}. ${answer}` : "";
+    })
+    .filter((line) => line.length > 0)
+    .join("\n");
+}
 
 export const mapToolCall: NonNullable<AcpTransformer["toolCall"]> = (call, context) => {
   if (call.name?.startsWith("mcp_")) {

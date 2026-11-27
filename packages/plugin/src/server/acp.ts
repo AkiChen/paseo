@@ -128,6 +128,35 @@ export interface AcpToolCallSnapshot {
   detail?: ProviderToolCallDetail;
 }
 
+/** One choice an ask-style tool call offers. */
+export interface AcpQuestionOption {
+  label: string;
+  description?: string;
+}
+
+/** A question the agent asks through a tool call rather than an ACP permission request. */
+export interface AcpQuestion {
+  question: string;
+  options: readonly AcpQuestionOption[];
+  multiSelect?: boolean;
+}
+
+/**
+ * A tool call that asks the user a question and reads the answer from the next prompt.
+ *
+ * Antigravity's `ask_question` works this way: the call stays pending, the agent writes the
+ * question as a message and ends the turn, and whatever the user sends next is the answer.
+ * Paseo shows the question as a card instead, and sends the answer as that next prompt.
+ */
+export interface AcpToolCallQuestion {
+  questions: readonly AcpQuestion[];
+  /**
+   * The prompt text that carries the answers back, one entry per question in order. Defaults to
+   * one numbered line per answer: `1. <answer>`.
+   */
+  promptText?(answers: readonly string[]): string;
+}
+
 export type AcpVendorUpdate =
   | { type: "commands"; commands: readonly ProviderCommand[] }
   | { type: "config"; config: ProviderConfigState }
@@ -164,6 +193,11 @@ export interface AcpTransformer {
       previous?: AcpToolCallSnapshot;
     },
   ): AcpToolCallSnapshot;
+  /**
+   * Reads a call as a question to the user. The first transformer that returns one owns the call:
+   * Paseo stops publishing its tool row and shows a question card for it until it is answered.
+   */
+  toolCallQuestion?(toolCall: AcpToolCallSnapshot, context: AcpContext): AcpToolCallQuestion | null;
 }
 
 export function runAcpProvider(options: RunAcpProviderOptions): ProviderRegistration {

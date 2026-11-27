@@ -27,6 +27,7 @@ import type {
   AcpConfigChange,
   AcpConfigureContext,
   AcpRequest,
+  AcpToolCallQuestion,
   AcpToolCallSnapshot,
   AcpTransformer,
   AcpVendorUpdate,
@@ -449,6 +450,17 @@ interface PendingPermission {
   resolve(response: RequestPermissionResponse): void;
 }
 
+/**
+ * An ask-style tool call shown as a question card. The answers leave as a prompt, because the
+ * agent reads the next prompt as its answer rather than through an ACP response.
+ */
+interface PendingToolCallQuestion {
+  permissionId: string;
+  toolCallId: string;
+  question: AcpToolCallQuestion;
+  turnId: string | undefined;
+}
+
 type DeferredTurnOutcome =
   | { type: "complete"; terminalizeTools: boolean }
   | { type: "cancel" }
@@ -500,6 +512,12 @@ class AcpRuntime {
   private readonly vendorToolCalls = new Map<string, ToolCallTimelineItem>();
   private readonly pendingCompactions = new Set<string>();
   private readonly permissions = new Map<string, PendingPermission>();
+  /**
+   * Ask-style tool calls answered with a prompt, and the tool call ids already turned into one.
+   * The ids outlive the answer: the agent publishes the same call again when it reads the answer.
+   */
+  private readonly toolCallQuestions = new Map<string, PendingToolCallQuestion>();
+  private readonly answeredToolCallQuestions = new Set<string>();
   private readonly transformers: readonly AcpTransformer[];
   private configOptions: SessionConfigOption[] = [];
   private modes: NewSessionResponse["modes"] = null;
@@ -839,6 +857,8 @@ class AcpRuntime {
       }
     }
     const prompt = toAcpPrompt(input.prompt);
+    // A prompt the user types next is the answer an ask-style call waits for, so its card is done.
+    this.clearToolCallQuestions();
     this.replayWindow = null;
     const turnId = `acp:${input.prompt.clientMessageId}`;
     this.fallbackChunkIds.clear();
@@ -1014,6 +1034,11 @@ class AcpRuntime {
     permissionId: string,
     response: Extract<ProviderInput, { type: "session.permission" }>["response"],
   ): void {
+    const question = this.toolCallQuestions.get(permissionId);
+    if (question) {
+      this.answerToolCallQuestion(question, response);
+      return;
+    }
     const pending = this.permissions.get(permissionId);
     if (!pending) return;
     const active = this.activePrompt;
@@ -1649,6 +1674,9 @@ class AcpRuntime {
         source: { ...tool.source, status: completed.status },
         presentation: completed,
       });
+      // An ask-style call is a question card, never a row: it also stays pending until answered,
+      // which a turn ended by the question itself must not settle.
+      if (this.answeredToolCallQuestions.has(id)) continue;
       this.emit({
         type: "timeline.item",
         sessionId: this.options.boundarySessionId,
@@ -1714,14 +1742,135 @@ class AcpRuntime {
       if (isOpen) this.liveOpenToolIds.add(snapshot.id);
       else this.liveOpenToolIds.delete(snapshot.id);
     }
+    const isOpenQualifying =
+      this.liveOpenToolIds.has(snapshot.id) && this.toolKeepsTurnOpen(snapshot);
+    this.noteDeferredToolTransition(wasOpenQualifying, isOpenQualifying, isOpen, snapshot, wireSeq);
+    if (this.answeredToolCallQuestions.has(snapshot.id)) {
+      // The question card already showed the call; a row would repeat it. The first settled
+      // update ends the branch, since the agent publishes nothing more for the call.
+      if (!isOpen && this.replayWindow === null) {
+        this.answeredToolCallQuestions.delete(snapshot.id);
+      }
+      return;
+    }
+    if (this.askQuestion(snapshot, isOpen)) return;
     this.emit({
       type: "timeline.item",
       sessionId: this.options.boundarySessionId,
       item: toolTimelineItem(snapshot),
     });
-    const isOpenQualifying =
-      this.liveOpenToolIds.has(snapshot.id) && this.toolKeepsTurnOpen(snapshot);
-    this.noteDeferredToolTransition(wasOpenQualifying, isOpenQualifying, isOpen, snapshot, wireSeq);
+  }
+
+  /**
+   * Reads an open tool call as a question to the user, and shows it as a card instead of a row.
+   * Returns whether this call became a question.
+   */
+  private askQuestion(snapshot: AcpToolCallSnapshot, isOpen: boolean): boolean {
+    if (!isOpen || this.replayWindow !== null || this.activePrompt?.cancelling) return false;
+    let question: AcpToolCallQuestion | null = null;
+    for (const transformer of this.transformers) {
+      const found = transformer.toolCallQuestion?.(snapshot, {
+        sessionId: this.options.boundarySessionId,
+      });
+      if (found && found.questions.length > 0) {
+        question = found;
+        break;
+      }
+    }
+    if (!question) return false;
+    const headers = uniqueQuestionHeaders(question.questions);
+    const permissionId = `question:${snapshot.id}`;
+    this.answeredToolCallQuestions.add(snapshot.id);
+    this.toolCallQuestions.set(permissionId, {
+      permissionId,
+      toolCallId: snapshot.id,
+      question,
+      turnId: this.activePrompt?.turnId,
+    });
+    this.emit({
+      type: "session.permission",
+      sessionId: this.options.boundarySessionId,
+      request: {
+        id: permissionId,
+        name: snapshot.name ?? "ask_question",
+        kind: "question",
+        title: question.questions[0]?.question,
+        input: jsonRecord({
+          questions: question.questions.map((item, index) => ({
+            question: item.question,
+            header: headers[index] ?? `Question ${index + 1}`,
+            options: item.options.map((option) => ({ ...option })),
+            multiSelect: item.multiSelect === true,
+            allowOther: true,
+          })),
+        }),
+        metadata: { toolCallId: snapshot.id },
+      },
+    });
+    return true;
+  }
+
+  /** Drops unanswered question cards, for a prompt that replaces them or a session that ends. */
+  private clearToolCallQuestions(turnId?: string): void {
+    for (const [permissionId, pending] of this.toolCallQuestions) {
+      if (turnId !== undefined && pending.turnId !== turnId) continue;
+      this.toolCallQuestions.delete(permissionId);
+      this.emit({
+        type: "session.permission_resolved",
+        sessionId: this.options.boundarySessionId,
+        permissionId,
+      });
+    }
+  }
+
+  /**
+   * Sends the card's answers as the prompt the agent reads them from: the call stays pending while
+   * the agent waits, so a held-open turn takes the answers as a steer, and an ended turn gets a
+   * fresh one.
+   */
+  private answerToolCallQuestion(
+    pending: PendingToolCallQuestion,
+    response: Extract<ProviderInput, { type: "session.permission" }>["response"],
+  ): void {
+    this.toolCallQuestions.delete(pending.permissionId);
+    this.emit({
+      type: "session.permission_resolved",
+      sessionId: this.options.boundarySessionId,
+      permissionId: pending.permissionId,
+    });
+    if (response.behavior !== "allow") return;
+    const headers = uniqueQuestionHeaders(pending.question.questions);
+    const answers = pending.question.questions.map((_item, index) => {
+      const answer = readQuestionAnswers(response.updatedInput)?.[headers[index] ?? ""];
+      return typeof answer === "string" ? answer : "";
+    });
+    const text = (pending.question.promptText ?? defaultQuestionPromptText)(answers).trim();
+    if (text.length === 0) return;
+    const prompt = {
+      clientMessageId: `question:${pending.toolCallId}:${++this.messageSequence}`,
+      input: { type: "message" as const, content: [{ type: "text" as const, text }] },
+    };
+    const active = this.activePrompt;
+    if (active?.deferred) {
+      this.steerDeferredPrompt({
+        type: "session.prompt",
+        sessionId: this.options.boundarySessionId,
+        prompt: { ...prompt, delivery: "steer" },
+      });
+      return;
+    }
+    // An agent that asks mid-turn keeps reading updates until it ends that turn. A turn that
+    // already ended took the question as its reply, so the answer starts a new one.
+    const ended = !active || active.lastPromptResponseWireSeq !== null;
+    const send = () => {
+      void this.prompt({
+        type: "session.prompt",
+        sessionId: this.options.boundarySessionId,
+        prompt: { ...prompt, delivery: "auto" },
+      }).catch(() => undefined);
+    };
+    if (ended) send();
+    else void active.settled.then(send, send);
   }
 
   private vendorNotification(method: string, params: unknown): void {
@@ -1801,6 +1950,7 @@ class AcpRuntime {
       permission.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.permissions.clear();
+    this.clearToolCallQuestions();
     if (this.activePrompt?.deferred) {
       this.finishDeferredTurn(
         this.activePrompt,
@@ -2471,6 +2621,47 @@ function configValues(
 }
 
 type ToolCallTimelineItem = Extract<ProviderTimelineItem, { type: "tool_call" }>;
+
+/**
+ * One unique, non-empty answer key per question. Paseo answers by header, so questions that share
+ * one, or carry none, fall back to their position.
+ */
+function uniqueQuestionHeaders(questions: AcpToolCallQuestion["questions"]): string[] {
+  const used = new Set<string>();
+  return questions.map((question, index) => {
+    const base = firstText(question.question)?.trim().slice(0, 60) || `Question ${index + 1}`;
+    let header = base;
+    let suffix = 2;
+    while (used.has(header)) {
+      header = `${base} (${suffix})`;
+      suffix += 1;
+    }
+    used.add(header);
+    return header;
+  });
+}
+
+/** The answers the question card sends back, keyed by header. */
+function readQuestionAnswers(
+  input: Readonly<Record<string, JsonValue>> | undefined,
+): Record<string, JsonValue> | null {
+  const answers = input?.answers;
+  if (typeof answers !== "object" || answers === null || Array.isArray(answers)) return null;
+  return answers as Record<string, JsonValue>;
+}
+
+/**
+ * The prompt text that carries the answers. The agent reads the whole prompt as its answer, so a
+ * single answer goes as written and several are numbered against the questions.
+ */
+function defaultQuestionPromptText(answers: readonly string[]): string {
+  const filled = answers.filter((answer) => answer.trim().length > 0);
+  if (filled.length <= 1) return filled[0] ?? "";
+  return answers
+    .map((answer, index) => (answer.trim().length > 0 ? `${index + 1}. ${answer}` : ""))
+    .filter((line) => line.length > 0)
+    .join("\n");
+}
 
 function toolCallDetail(snapshot: AcpToolCallSnapshot): ProviderToolCallDetail {
   return snapshot.detail ?? standardToolCallDetail(snapshot);

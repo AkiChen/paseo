@@ -958,3 +958,108 @@ child.on("exit", (code) => process.exit(code ?? 1));
     await connection.close();
   }
 });
+
+it("shows an ask_question call as a question card and sends the answer as the next prompt", async () => {
+  const { directory, launch } = await launchAgent(`
+    const { createInterface } = require("node:readline");
+    const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+    const ask = {
+      toolCallId: "call_ask",
+      name: "ask_question",
+      title: "Run ask_question",
+      kind: "other",
+      rawInput: { questions: [
+        { question: "Which branch?", is_multi_select: false, options: ["(Recommended) main", "dev"] },
+      ] },
+    };
+    const modes = { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }] };
+    createInterface({ input: process.stdin }).on("line", (line) => {
+      const { id, method, params } = JSON.parse(line);
+      const update = (update) => send({ method: "session/update", params: { sessionId: params.sessionId ?? "agy-session", update } });
+      if (method === "initialize") send({ id, result: { protocolVersion: 1, agentCapabilities: {} } });
+      else if (method === "session/new") {
+        send({ id, result: { sessionId: "agy-session", modes } });
+        update({ sessionUpdate: "available_commands_update", availableCommands: [] });
+      } else if (method === "session/prompt") {
+        const text = (params.prompt ?? []).map((part) => part.text ?? "").join("\\n");
+        require("node:fs").appendFileSync(process.env.CAPTURE, JSON.stringify({ prompt: text }) + "\\n");
+        if (text === "ask") {
+          update({ sessionUpdate: "tool_call", status: "in_progress", ...ask });
+          update({ sessionUpdate: "tool_call_update", toolCallId: "call_ask", status: "pending" });
+        }
+        send({ id, result: { stopReason: "end_turn" } });
+      } else if (method === "session/close" || method === "session/cancel") send({ id, result: {} });
+    });
+  `);
+  const connection = await createAntigravityProvider().connect({
+    launch,
+    versions: [1],
+    capabilities: ["prompt.message", "permission"],
+  });
+  const events: ProviderEvent[] = [];
+  connection.onEvent((event) => events.push(event));
+  try {
+    await connection.send({
+      type: "session.open",
+      requestId: "open",
+      sessionId: "test",
+      history: "skip",
+      config: { cwd: directory, env: {}, mcpServers: {}, settings: {}, persist: false },
+    });
+    await expect
+      .poll(() =>
+        events.find((event) => event.type === "session.ready" || event.type === "request.failed"),
+      )
+      .toMatchObject({ type: "session.ready" });
+    await connection.send({
+      type: "session.prompt",
+      sessionId: "test",
+      prompt: {
+        clientMessageId: "ask",
+        delivery: "auto",
+        input: { type: "message", content: [{ type: "text", text: "ask" }] },
+      },
+    });
+
+    const card = () =>
+      events.find(
+        (event) => event.type === "session.permission" && event.request.kind === "question",
+      );
+    await expect.poll(() => card()).toBeDefined();
+    expect(card()).toMatchObject({
+      request: {
+        id: "question:call_ask",
+        title: "Which branch?",
+        input: {
+          questions: [
+            {
+              question: "Which branch?",
+              options: [{ label: "main" }, { label: "dev" }],
+              multiSelect: false,
+              allowOther: true,
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      events.some((event) => event.type === "timeline.item" && event.item.type === "tool_call"),
+    ).toBe(false);
+
+    await connection.send({
+      type: "session.permission",
+      sessionId: "test",
+      permissionId: "question:call_ask",
+      response: { behavior: "allow", updatedInput: { answers: { "Which branch?": "dev" } } },
+    });
+
+    const prompts = async () =>
+      (await readFile(launch.env.CAPTURE, "utf8"))
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line).prompt as string);
+    await expect.poll(prompts).toEqual(["ask", "dev"]);
+  } finally {
+    await connection.close();
+  }
+});
