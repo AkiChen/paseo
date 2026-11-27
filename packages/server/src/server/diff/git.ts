@@ -404,6 +404,7 @@ async function readTrackedFiles(
           text: !counts.binary,
           options,
         });
+        if (worktree === null) continue;
         input.hashed = worktree.hashed;
         input.literal = worktree.literal;
       }
@@ -428,7 +429,16 @@ async function readTrackedFiles(
   return { files, worktreeInputs, interpretationPaths };
 }
 
-async function readWorktreeContent({
+// Git's listing is a snapshot; deletes, checkouts, and test artifacts remove
+// paths before the content read. A vanished path is not part of this revision's
+// worktree state, so the caller drops the entry and the next revision reports
+// the deletion, instead of failing the comparison with a raw ENOENT.
+function isVanishedPath(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+export async function readWorktreeContent({
   path,
   header,
   text,
@@ -438,11 +448,20 @@ async function readWorktreeContent({
   header: string[];
   text: boolean;
   options: GitCommandOptions;
-}): Promise<{ hashed: boolean; literal: string | null }> {
+}): Promise<{ hashed: boolean; literal: string | null } | null> {
   const absolutePath = resolve(options.cwd, path);
-  const value = await lstat(absolutePath, { bigint: true });
-  if (value.isSymbolicLink())
-    return { hashed: false, literal: `symlink:${await readlink(absolutePath)}` };
+  const value = await lstat(absolutePath, { bigint: true }).catch((error: unknown) => {
+    if (isVanishedPath(error)) return null;
+    throw error;
+  });
+  if (value === null) return null;
+  if (value.isSymbolicLink()) {
+    const target = await readlink(absolutePath).catch((error: unknown) => {
+      if (isVanishedPath(error)) return null;
+      throw error;
+    });
+    return target === null ? null : { hashed: false, literal: `symlink:${target}` };
+  }
   if (value.isDirectory() && (header[0] === ":160000" || header[1] === "160000")) {
     return { hashed: false, literal: await readSubmoduleIdentity(path, absolutePath, options) };
   }
@@ -505,40 +524,45 @@ async function listUntrackedFiles(
     options,
   );
   for (const path of untracked.stdout.split("\0").filter(Boolean)) {
-    const value = await lstat(resolve(cwd, path), { bigint: true });
-    if (!value.isFile() && !value.isSymbolicLink()) continue;
-    const symlink = value.isSymbolicLink();
-    let binary = false;
-    let omitted = false;
-    if (!symlink) {
-      const inspected = await inspectUntrackedFile(cwd, path);
-      binary = inspected.stat?.isBinary === true;
-      omitted = inspected.truncated;
+    try {
+      const value = await lstat(resolve(cwd, path), { bigint: true });
+      if (!value.isFile() && !value.isSymbolicLink()) continue;
+      const symlink = value.isSymbolicLink();
+      let binary = false;
+      let omitted = false;
+      if (!symlink) {
+        const inspected = await inspectUntrackedFile(cwd, path);
+        binary = inspected.stat?.isBinary === true;
+        omitted = inspected.truncated;
+      }
+      const content = await readUntrackedText(resolve(cwd, path), symlink, binary || omitted);
+      const additions =
+        binary || content.length === 0
+          ? 0
+          : content.toString("utf8").split("\n").length - Number(content.at(-1) === 10);
+      worktreeInputs.set(path, {
+        oldMode: null,
+        oldBlob: null,
+        hashed: !symlink && !binary && !omitted,
+        literal: symlink ? `symlink:${content.toString("utf8")}` : null,
+      });
+      files.push({
+        entry: {
+          path,
+          oldPath: null,
+          change: "added",
+          content: binary ? "binary" : "text",
+          additions,
+          deletions: 0,
+          body: !binary,
+        },
+        identity: "",
+        source: { kind: "untracked", size: Number(value.size) },
+      });
+    } catch (error) {
+      if (isVanishedPath(error)) continue;
+      throw error;
     }
-    const content = await readUntrackedText(resolve(cwd, path), symlink, binary || omitted);
-    const additions =
-      binary || content.length === 0
-        ? 0
-        : content.toString("utf8").split("\n").length - Number(content.at(-1) === 10);
-    worktreeInputs.set(path, {
-      oldMode: null,
-      oldBlob: null,
-      hashed: !symlink && !binary && !omitted,
-      literal: symlink ? `symlink:${content.toString("utf8")}` : null,
-    });
-    files.push({
-      entry: {
-        path,
-        oldPath: null,
-        change: "added",
-        content: binary ? "binary" : "text",
-        additions,
-        deletions: 0,
-        body: !binary,
-      },
-      identity: "",
-      source: { kind: "untracked", size: Number(value.size) },
-    });
   }
   return { files, worktreeInputs };
 }

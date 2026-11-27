@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, rm, readFile, lstat, utimes } from "node:fs/promise
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "vitest";
-import { listComparison, type Comparison } from "./git.js";
+import { listComparison, readWorktreeContent, type Comparison } from "./git.js";
 
 test("working tree comparisons preserve staged deletions whose file remains on disk", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "diff-comparison-"));
@@ -811,6 +811,33 @@ test("an uninitialized submodule below a bare repository layout does not fail th
     } finally {
       await comparison.close();
     }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a worktree entry deleted after Git listed it reads as gone instead of failing", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "diff-vanished-entry-"));
+  const header = ["100644", "100644", "0".repeat(40), "0".repeat(40)];
+  const options = { cwd, envOverlay: { GIT_OPTIONAL_LOCKS: "0" } };
+  try {
+    await writeFile(join(cwd, "kept.txt"), "edited\n");
+    expect(await readWorktreeContent({ path: "kept.txt", header, text: true, options })).toEqual({
+      hashed: true,
+      literal: null,
+    });
+
+    // Git's listing still names these paths; the worktree changed before the read.
+    expect(await readWorktreeContent({ path: "gone.txt", header, text: true, options })).toBeNull();
+    await writeFile(join(cwd, "now-a-file"), "not a directory\n");
+    expect(
+      await readWorktreeContent({
+        path: join("now-a-file", "child.txt"),
+        header,
+        text: true,
+        options,
+      }),
+    ).toBeNull();
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
