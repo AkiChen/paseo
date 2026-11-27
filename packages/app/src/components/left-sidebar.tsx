@@ -112,6 +112,9 @@ import { UsageSidebarItem, UsageSidebarRoot, useUsageSummary, useOpenSidebarUsag
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
+import { SidebarRecentAgentsList } from "@/components/sidebar/sidebar-recent-agents-list";
+import { SidebarListModeHeader } from "@/components/sidebar/sidebar-list-mode-header";
+import { useSidebarListModeStore } from "@/stores/sidebar-list-mode-store";
 
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
 
@@ -603,6 +606,7 @@ function MobileSidebar({
 }: MobileSidebarProps) {
   const insets = useSafeAreaInsets();
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
+  const listMode = useSidebarListModeStore((state) => state.mode);
   const { gesture: closeGesture, gestureRef: closeGestureRef } = useCloseAgentListGesture();
 
   const handleWorkspacePress = useCallback(() => {
@@ -639,6 +643,37 @@ function MobileSidebar({
     />
   );
 
+  let sidebarBody: ReactNode;
+  if (listMode === "agents") {
+    sidebarBody = <SidebarRecentAgentsList active={active} onBeforeNavigate={closeSidebar} />;
+  } else if (isInitialLoad && !hasActiveHostFilter) {
+    sidebarBody = <SidebarAgentListSkeleton />;
+  } else {
+    sidebarBody = (
+      <SidebarWorkspaceList
+        collapsedProjectKeys={collapsedProjectKeys}
+        onToggleProjectCollapsed={toggleProjectCollapsed}
+        shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+        groupMode={groupMode}
+        workspaceGroups={workspaceGroups}
+        projectIconTargets={projectIconTargets}
+        pinnedGroups={pinnedGroups}
+        projects={projects}
+        hasProjectsBeforeFilter={hasProjectsBeforeFilter}
+        hasActiveProjectFilter={hasActiveProjectFilter}
+        workspaceEntriesByKey={workspaceEntriesByKey}
+        isRefreshing={isManualRefresh && isRevalidating}
+        onRefresh={handleRefresh}
+        onWorkspacePress={handleWorkspacePress}
+        onAddProject={handleOpenProject}
+        onImportSession={handleImportSession}
+        parentGestureRef={closeGestureRef}
+        dragGestureHostActive={active}
+        listHeaderComponent={workspacesSectionHeaderElement}
+      />
+    );
+  }
+
   return (
     <MobilePanelOverlay
       panel="agent-list"
@@ -649,33 +684,11 @@ function MobileSidebar({
         <WindowChromeSafeArea placement="below" />
         <SidebarNavScroll closeGestureRef={closeGestureRef}>{navRows}</SidebarNavScroll>
 
+        <SidebarListModeHeader onBeforeNavigate={closeSidebar} />
+
         <SidebarViewSlot dismiss={handleWorkspacePress}>
           <SidebarToastRegion active={active}>
-            {isInitialLoad && !hasActiveHostFilter ? (
-              <SidebarAgentListSkeleton />
-            ) : (
-              <SidebarWorkspaceList
-                collapsedProjectKeys={collapsedProjectKeys}
-                onToggleProjectCollapsed={toggleProjectCollapsed}
-                shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
-                groupMode={groupMode}
-                workspaceGroups={workspaceGroups}
-                projectIconTargets={projectIconTargets}
-                pinnedGroups={pinnedGroups}
-                projects={projects}
-                hasProjectsBeforeFilter={hasProjectsBeforeFilter}
-                hasActiveProjectFilter={hasActiveProjectFilter}
-                workspaceEntriesByKey={workspaceEntriesByKey}
-                isRefreshing={isManualRefresh && isRevalidating}
-                onRefresh={handleRefresh}
-                onWorkspacePress={handleWorkspacePress}
-                onAddProject={handleOpenProject}
-                onImportSession={handleImportSession}
-                parentGestureRef={closeGestureRef}
-                dragGestureHostActive={active}
-                listHeaderComponent={workspacesSectionHeaderElement}
-              />
-            )}
+            {sidebarBody}
             <SidebarSelectionHost active={active} workspaceEntriesByKey={workspaceEntriesByKey} />
           </SidebarToastRegion>
         </SidebarViewSlot>
@@ -764,6 +777,7 @@ function DesktopSidebar({
 }: DesktopSidebarProps) {
   const ownsTopLeft = useOwnsWindowChromeCorner("top-left");
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
+  const listMode = useSidebarListModeStore((state) => state.mode);
   const setSidebarWidth = usePanelStore((state) => state.setSidebarWidth);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -867,6 +881,37 @@ function DesktopSidebar({
   // nav scroller existed: no strip above it and no divider below it.
   const hasNavRows = useVisibleSidebarNavItems().length > 0;
   const showsDragStrip = hasNavRows && !showsChromeRow && !inTopBand;
+  let sidebarBody: ReactNode;
+  if (listMode === "agents") {
+    sidebarBody = <SidebarRecentAgentsList active={active} />;
+  } else if (isInitialLoad && !hasActiveHostFilter) {
+    sidebarBody = <SidebarAgentListSkeleton />;
+  } else {
+    sidebarBody = (
+      <SidebarWorkspaceList
+        collapsedProjectKeys={collapsedProjectKeys}
+        onToggleProjectCollapsed={toggleProjectCollapsed}
+        shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
+        groupMode={groupMode}
+        workspaceGroups={workspaceGroups}
+        projectIconTargets={projectIconTargets}
+        pinnedGroups={pinnedGroups}
+        projects={projects}
+        hasProjectsBeforeFilter={hasProjectsBeforeFilter}
+        hasActiveProjectFilter={hasActiveProjectFilter}
+        workspaceEntriesByKey={workspaceEntriesByKey}
+        isRefreshing={isManualRefresh && isRevalidating}
+        onRefresh={handleRefresh}
+        onAddProject={handleOpenProject}
+        onImportSession={handleImportSession}
+        onWorkspacePress={closeSidebar}
+        parentGestureRef={closeGestureRef}
+        dragGestureHostActive={active}
+        listHeaderComponent={workspacesSectionHeaderElement}
+      />
+    );
+  }
+
   return (
     <>
       {peek.enabled ? (
@@ -920,6 +965,8 @@ function DesktopSidebar({
               </SidebarNavScroll>
             ) : null}
 
+            <SidebarListModeHeader />
+
             <SidebarViewSlot dismiss={closeSidebar}>
               <SidebarToastRegion active={active}>
                 {isInitialLoad && !hasActiveHostFilter ? (
@@ -935,33 +982,7 @@ function DesktopSidebar({
             </SidebarViewSlot>
 
             <SidebarViewSlot dismiss={closeSidebar}>
-              <SidebarToastRegion active={active}>
-                {isInitialLoad && !hasActiveHostFilter ? (
-                  <SidebarAgentListSkeleton />
-                ) : (
-                  <SidebarWorkspaceList
-                    collapsedProjectKeys={collapsedProjectKeys}
-                    onToggleProjectCollapsed={toggleProjectCollapsed}
-                    shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
-                    groupMode={groupMode}
-                    workspaceGroups={workspaceGroups}
-                    projectIconTargets={projectIconTargets}
-                    pinnedGroups={pinnedGroups}
-                    projects={projects}
-                    hasProjectsBeforeFilter={hasProjectsBeforeFilter}
-                    hasActiveProjectFilter={hasActiveProjectFilter}
-                    workspaceEntriesByKey={workspaceEntriesByKey}
-                    isRefreshing={isManualRefresh && isRevalidating}
-                    onRefresh={handleRefresh}
-                    onAddProject={handleOpenProject}
-                    onImportSession={handleImportSession}
-                    onWorkspacePress={closeSidebar}
-                    parentGestureRef={closeGestureRef}
-                    dragGestureHostActive={active}
-                    listHeaderComponent={workspacesSectionHeaderElement}
-                  />
-                )}
-              </SidebarToastRegion>
+              <SidebarToastRegion active={active}>{sidebarBody}</SidebarToastRegion>
             </SidebarViewSlot>
 
             <SidebarCalloutSlot />
