@@ -101,6 +101,7 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import { FileAgentTimelineStore } from "./agent/file-agent-timeline-store.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
@@ -165,7 +166,9 @@ import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
 } from "./agent/provider-launch-config.js";
-import { type PersistedConfig } from "./persisted-config.js";
+import { type PersistedConfig, readFileAccessRoots } from "./persisted-config.js";
+import { configureFileAccessRoots } from "./file-explorer/service.js";
+import { getProviderImageAttachmentDir } from "./agent/providers/provider-image-output.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
@@ -608,6 +611,22 @@ export async function createPaseoDaemon(
   const elapsed = () => `${(performance.now() - bootstrapStart).toFixed(0)}ms`;
   const daemonVersion = config.daemonVersion ?? resolveDaemonVersion(import.meta.url);
   const initialMutableConfig = createInitialMutableDaemonConfig(config);
+  // The directories a client may read files through. The configured list is read
+  // fresh on every call, so an edit plus `paseo reload` reaches readers that are
+  // already open; the provider-image directory is a temp dir this process owns and
+  // is where an image an agent handed to the user lands.
+  let providerImageDir: string | null = null;
+  const fileAccessRoots = (): string[] => {
+    const configured = readFileAccessRoots(config.paseoHome);
+    return providerImageDir === null ? configured : [...configured, providerImageDir];
+  };
+  // A daemon that cannot create its image directory still boots; it just cannot
+  // hand that directory to a reader on another machine.
+  providerImageDir = await getProviderImageAttachmentDir().catch((error: unknown) => {
+    logger.warn({ err: error }, "Failed to create the provider image attachment directory");
+    return null;
+  });
+  configureFileAccessRoots(fileAccessRoots());
   const speechService = createSpeechService({
     logger,
     openaiConfig: config.openai,
@@ -629,6 +648,9 @@ export async function createPaseoDaemon(
           cli: config.configReload?.cli,
           relayEnabledFallback: config.configReload?.relayEnabledFallback,
         });
+        // File access roots are re-read here so `paseo reload` reaches sessions
+        // that are already open.
+        configureFileAccessRoots(fileAccessRoots());
         return {
           mutable: createInitialMutableDaemonConfig(reloaded),
           listen: config.configReload
@@ -930,6 +952,10 @@ export async function createPaseoDaemon(
   }
 
   const agentStorage = new AgentStorage(config.agentStoragePath, logger);
+  // Durable canonical rows for agents whose provider cannot replay its own
+  // transcript. Providers that can still win: a resumed agent skips provider
+  // hydration once these rows exist, and a forced hydration replaces them.
+  const durableTimelineStore = new FileAgentTimelineStore(path.join(config.paseoHome, "timelines"));
   const projectRegistry = new FileBackedProjectRegistry(
     path.join(config.paseoHome, "projects", "projects.json"),
     logger,
@@ -1015,6 +1041,7 @@ export async function createPaseoDaemon(
   });
   const initialAgentManagerState = providerSnapshotManager.getAgentManagerProviderState();
   const agentManager = new AgentManager({
+    durableTimelineStore,
     pluginLifecycle: pluginRuntime,
     pluginSessions: pluginRuntime,
     clients: initialAgentManagerState.clients,

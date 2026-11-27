@@ -346,6 +346,16 @@ export const PersistedConfigSchema = z
           .strict()
           .optional(),
         auth: DaemonAuthSchema.optional(),
+        fileAccess: z
+          .object({
+            // Directories the file explorer may reach outside the workspace root.
+            // Each entry is `~`-expanded and resolved against the workspace when
+            // relative. Everything inside one of these roots is reachable exactly
+            // like the workspace itself, so keep the list tight.
+            allowedRoots: z.array(z.string()).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .transform(({ allowedHosts, ...daemon }) => {
@@ -517,6 +527,19 @@ function warnDiscardedSpeechKeys(
       if (logger?.warn) logger.warn(message);
       else console.warn(message);
     }
+  }
+}
+
+/**
+ * Directories the file explorer may reach outside a workspace root, read fresh so
+ * an edit plus `paseo reload` reaches sessions that are already open. A missing
+ * or unreadable config leaves the list empty, which is the closed default.
+ */
+export function readFileAccessRoots(paseoHome: string): string[] {
+  try {
+    return loadPersistedConfig(paseoHome).daemon?.fileAccess?.allowedRoots ?? [];
+  } catch {
+    return [];
   }
 }
 

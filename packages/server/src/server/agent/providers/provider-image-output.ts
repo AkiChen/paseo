@@ -40,6 +40,18 @@ async function createAttachmentDirectory(): Promise<string> {
   return dir;
 }
 
+/**
+ * The directory provider images are materialized into.
+ *
+ * A client reads those files back through the daemon's file API, which refuses
+ * anything outside a workspace root unless the daemon says otherwise, so the
+ * daemon adds this directory to its allowed roots at boot: without that, an image
+ * an agent handed over is visible to a local client and invisible to a remote one.
+ */
+export function getProviderImageAttachmentDir(): Promise<string> {
+  return getMaterializedImageAttachmentDir();
+}
+
 function isMissingPath(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return code === "ENOENT" || code === "ENOTDIR";
