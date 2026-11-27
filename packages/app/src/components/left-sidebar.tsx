@@ -974,15 +974,12 @@ function DesktopSidebar({
                 ) : (
                   <TitlebarDragRegion />
                 )}
+                {sidebarBody}
                 <SidebarSelectionHost
                   active={active}
                   workspaceEntriesByKey={workspaceEntriesByKey}
                 />
               </SidebarToastRegion>
-            </SidebarViewSlot>
-
-            <SidebarViewSlot dismiss={closeSidebar}>
-              <SidebarToastRegion active={active}>{sidebarBody}</SidebarToastRegion>
             </SidebarViewSlot>
 
             <SidebarCalloutSlot />
